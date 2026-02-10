@@ -610,9 +610,36 @@ static inline void applyEncoder() {
   encLastSW = sw;
 }
 
+// Forward declarations for WiFi event handler
+extern String gDeviceName;
+extern String gStaSsid, gStaPass;
+extern bool   gIsSta;
+extern uint32_t gLastWifiOkMs;
+extern uint32_t gLastWifiAttemptMs;
+extern uint8_t  gWifiFailCount;
+extern bool     gMdnsStarted;
+static inline void startMDNS();
+
 static void WiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
-  if (event == ARDUINO_EVENT_WIFI_STA_DISCONNECTED) {
-    Serial.printf("STA_DISCONNECTED reason=%d\n", info.wifi_sta_disconnected.reason);
+  switch (event) {
+    case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
+      Serial.printf("STA_DISCONNECTED reason=%d\n", info.wifi_sta_disconnected.reason);
+      if (gWifiFailCount < 255) gWifiFailCount++;
+      gLastWifiAttemptMs = 0;
+      MDNS.end();
+      gMdnsStarted = false;
+      break;
+    case ARDUINO_EVENT_WIFI_STA_GOT_IP:
+      gIsSta = true;
+      gLastWifiOkMs = millis();
+      gWifiFailCount = 0;
+      startMDNS();
+      break;
+    case ARDUINO_EVENT_WIFI_STA_LOST_IP:
+      Serial.println("STA_LOST_IP");
+      break;
+    default:
+      break;
   }
 }
 
@@ -994,11 +1021,28 @@ struct LastState {
   uint8_t  den;
   uint8_t  drumsel;
 };
-LastState LS = {255,255,255,255,255,0,255,255,255,255,255,9999.0f,255,255,255,255,2.0f,255,255,255,255,255};
+LastState LS = {};
+
+static inline bool sseCanWrite(size_t need) {
+  if (!sseConnected) return false;
+  if (!sseClient.connected()) { sseConnected = false; return false; }
+  int avail = sseClient.availableForWrite();
+  return avail < 0 || avail >= (int)need;
+}
 
 static inline void sseSend(const char* event, const char* data) {
   if (!sseConnected) return;
   if (!sseClient.connected()) { sseConnected = false; return; }
+
+  const bool critical =
+    (strcmp(event, "hello") == 0) ||
+    (strcmp(event, "state") == 0) ||
+    (strcmp(event, "scope") == 0);
+
+  if (!critical) {
+    size_t need = 8 + strlen(event) + 7 + strlen(data) + 2;
+    if (!sseCanWrite(need)) return;
+  }
   sseClient.printf("event: %s\n", event);
   sseClient.printf("data: %s\n\n", data);
 }
@@ -1180,6 +1224,18 @@ static inline void handlePalettes() {
   server.send_P(200, "application/json", PALETTES_JSON);
 }
 
+static inline void handleNotFound() {
+  const String uri = server.uri();
+  if (uri == "/generate_204" ||
+      uri == "/hotspot-detect.html" ||
+      uri == "/ncsi.txt" ||
+      uri == "/favicon.ico") {
+    server.send(204);
+    return;
+  }
+  server.send(404, "text/plain", "Not found");
+}
+
 // -------------------- Control endpoints --------------------
 static inline void setBPM() {
   if (server.hasArg("v")) {
@@ -1296,6 +1352,15 @@ String gDeviceName;
 String gStaSsid, gStaPass;
 bool   gIsSta = false;
 IPAddress gApIP(192,168,4,1);
+uint32_t gLastWifiOkMs = 0;
+uint32_t gLastWifiAttemptMs = 0;
+uint32_t gLastWifiResetMs = 0;
+uint8_t  gWifiFailCount = 0;
+bool     gMdnsStarted = false;
+const uint32_t WIFI_CHECK_MS = 1000;
+const uint32_t WIFI_RECONNECT_MS = 5000;
+const uint32_t WIFI_RESET_MS = 30000;
+const uint32_t WIFI_RESET_COOLDOWN_MS = 60000;
 
 static inline String shortChipId() {
   uint8_t mac[6]; WiFi.macAddress(mac);
@@ -1306,8 +1371,49 @@ static inline String shortChipId() {
 
 static inline void startMDNS() {
   if (gDeviceName.length() == 0) gDeviceName = "beca-" + shortChipId();
+  if (gMdnsStarted) return;
   if (MDNS.begin(gDeviceName.c_str())) {
-    MDNS.addService("http", "tcp", 80);
+    if (MDNS.addService("http", "tcp", 80)) {
+      gMdnsStarted = true;
+    } else {
+      MDNS.end();
+      gMdnsStarted = false;
+    }
+  }
+}
+
+static inline bool wifiReady() {
+  return WiFi.status() == WL_CONNECTED && WiFi.localIP() != IPAddress(0,0,0,0);
+}
+
+static inline void maintainWiFi(uint32_t now) {
+  if (!gIsSta || gStaSsid.length() == 0) return;
+  static uint32_t lastCheckMs = 0;
+  if ((int32_t)(now - lastCheckMs) < (int32_t)WIFI_CHECK_MS) return;
+  lastCheckMs = now;
+
+  if (wifiReady()) {
+    gLastWifiOkMs = now;
+    gWifiFailCount = 0;
+    return;
+  }
+
+  if ((int32_t)(now - gLastWifiAttemptMs) >= (int32_t)WIFI_RECONNECT_MS) {
+    gLastWifiAttemptMs = now;
+    bool shouldReset =
+      (gLastWifiOkMs == 0) ? false : ((int32_t)(now - gLastWifiOkMs) >= (int32_t)WIFI_RESET_MS);
+
+    if (gWifiFailCount >= 6) shouldReset = true;
+
+    if (shouldReset && (int32_t)(now - gLastWifiResetMs) >= (int32_t)WIFI_RESET_COOLDOWN_MS) {
+      gLastWifiResetMs = now;
+      WiFi.disconnect(true, true);
+      WiFi.mode(WIFI_STA);
+      WiFi.setHostname(gDeviceName.c_str());
+      WiFi.begin(gStaSsid.c_str(), gStaPass.c_str());
+    } else {
+      WiFi.reconnect();
+    }
   }
 }
 
@@ -1337,7 +1443,7 @@ button{cursor:pointer}
   <button onclick="forget()">Forget Wi-Fi</button>
 </div>
 <script>
-async function load(){
+window.load = async () => {
   try{
     const s = await (await fetch('/wifi/scan')).json();
     const info = await (await fetch('/api/info')).json();
@@ -1347,7 +1453,7 @@ async function load(){
     if(info.ssid){ [...sel.options].forEach(o=>{ if(o.textContent===info.ssid) o.selected=true; }); }
   }catch(e){}
 }
-async function save(){
+window.save = async () => {
   const body = new URLSearchParams();
   body.set('name', document.getElementById('name').value);
   body.set('ssid', document.getElementById('ssid').value);
@@ -1355,12 +1461,12 @@ async function save(){
   await fetch('/wifi/save',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body});
   setTimeout(()=>location.href='/',1500);
 }
-async function forget(){
+window.forget = async () => {
   await fetch('/wifi/forget');
   alert('Forgotten. Rebooting to AP…');
   setTimeout(()=>location.reload(),1200);
 }
-load();
+window.load();
 </script>
 )HTML";
 
@@ -1441,6 +1547,8 @@ static inline bool tryConnectSTA(const String &ssid, const String &pass, uint32_
 
   if (WiFi.status() == WL_CONNECTED && WiFi.localIP() != IPAddress(0,0,0,0)) {
     gIsSta = true;
+    gLastWifiOkMs = millis();
+    gLastWifiAttemptMs = gLastWifiOkMs;
 
     Serial.println("WiFi STA connected!");
     Serial.print("IP address: ");
@@ -1546,6 +1654,15 @@ void setup() {
   server.on("/effects",  handleEffects);
   server.on("/palettes", handlePalettes);
   server.on("/events",   handleEvents);
+  server.onNotFound(handleNotFound);
+
+  // Common OS probe URLs (avoid noisy 404s)
+  server.on("/generate_204", [](){ server.send(204); });
+  server.on("/hotspot-detect.html", [](){ server.send(204); });
+  server.on("/ncsi.txt", [](){ server.send(204); });
+  server.on("/connecttest.txt", [](){ server.send(204); });
+  server.on("/wpad.dat", [](){ server.send(204); });
+  server.on("/favicon.ico", [](){ server.send(204); });
 
   server.on("/bpm",     setBPM);
   server.on("/swing",   setSwing);
@@ -1623,6 +1740,7 @@ void loop() {
 
   if (!gIsSta) dns.processNextRequest();
   server.handleClient();
+  maintainWiFi(now);
   applyEncoder();
 
   // keep WDT + WiFi/BLE happy
@@ -1739,7 +1857,7 @@ void loop() {
       // Keepalive
       if ((int32_t)(now - lastSseKeepAliveMs) >= 2000) {
         lastSseKeepAliveMs = now;
-        sseClient.print(": ping\n\n");
+        if (sseCanWrite(8)) sseClient.print(": ping\n\n");
       }
     }
   }

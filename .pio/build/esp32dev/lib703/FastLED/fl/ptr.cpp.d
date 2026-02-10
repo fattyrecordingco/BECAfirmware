@@ -1,0 +1,31 @@
+.pio/build/esp32dev/lib703/FastLED/fl/ptr.cpp.o: \
+ .pio/libdeps/esp32dev/FastLED/src/fl/ptr.cpp \
+ .pio/libdeps/esp32dev/FastLED/src/fl/ptr.h \
+ .pio/libdeps/esp32dev/FastLED/src/fl/namespace.h \
+ .pio/libdeps/esp32dev/FastLED/src/fl/scoped_ptr.h \
+ .pio/libdeps/esp32dev/FastLED/src/fl/unique_ptr.h \
+ .pio/libdeps/esp32dev/FastLED/src/fl/type_traits.h \
+ .pio/libdeps/esp32dev/FastLED/src/fl/stdint.h \
+ .pio/libdeps/esp32dev/FastLED/src/fl/move.h \
+ .pio/libdeps/esp32dev/FastLED/src/fl/int.h \
+ .pio/libdeps/esp32dev/FastLED/src/platforms/int.h \
+ .pio/libdeps/esp32dev/FastLED/src/platforms/arm/is_arm.h \
+ .pio/libdeps/esp32dev/FastLED/src/platforms/esp/int.h \
+ .pio/libdeps/esp32dev/FastLED/src/fl/utility.h \
+ .pio/libdeps/esp32dev/FastLED/src/fl/cstddef.h \
+ .pio/libdeps/esp32dev/FastLED/src/fl/initializer_list.h \
+ .pio/libdeps/esp32dev/FastLED/src/fl/scoped_array.h \
+ .pio/libdeps/esp32dev/FastLED/src/fl/allocator.h \
+ .pio/libdeps/esp32dev/FastLED/src/fl/inplacenew.h \
+ .pio/libdeps/esp32dev/FastLED/src/fl/memfill.h \
+ .pio/libdeps/esp32dev/FastLED/src/fl/unused.h \
+ .pio/libdeps/esp32dev/FastLED/src/fl/bit_cast.h \
+ .pio/libdeps/esp32dev/FastLED/src/fl/bitset.h \
+ .pio/libdeps/esp32dev/FastLED/src/fl/bitset_dynamic.h \
+ .pio/libdeps/esp32dev/FastLED/src/fl/math_macros.h \
+ .pio/libdeps/esp32dev/FastLED/src/fl/has_include.h \
+ .pio/libdeps/esp32dev/FastLED/src/fl/compiler_control.h \
+ .pio/libdeps/esp32dev/FastLED/src/fl/variant.h \
+ .pio/libdeps/esp32dev/FastLED/src/fl/deprecated.h \
+ .pio/libdeps/esp32dev/FastLED/src/fl/referent.h \
+ .pio/libdeps/esp32dev/FastLED/src/fl/ptr_impl.h

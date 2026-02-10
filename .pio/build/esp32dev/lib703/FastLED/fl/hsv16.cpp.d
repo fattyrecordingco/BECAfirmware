@@ -1,0 +1,30 @@
+.pio/build/esp32dev/lib703/FastLED/fl/hsv16.cpp.o: \
+ .pio/libdeps/esp32dev/FastLED/src/fl/hsv16.cpp \
+ .pio/libdeps/esp32dev/FastLED/src/fl/hsv16.h \
+ .pio/libdeps/esp32dev/FastLED/src/fl/stdint.h \
+ .pio/libdeps/esp32dev/FastLED/src/fl/int.h \
+ .pio/libdeps/esp32dev/FastLED/src/platforms/int.h \
+ .pio/libdeps/esp32dev/FastLED/src/platforms/arm/is_arm.h \
+ .pio/libdeps/esp32dev/FastLED/src/platforms/esp/int.h \
+ .pio/libdeps/esp32dev/FastLED/src/crgb.h \
+ .pio/libdeps/esp32dev/FastLED/src/chsv.h \
+ .pio/libdeps/esp32dev/FastLED/src/fl/hsv.h \
+ .pio/libdeps/esp32dev/FastLED/src/fl/namespace.h \
+ .pio/libdeps/esp32dev/FastLED/src/color.h \
+ .pio/libdeps/esp32dev/FastLED/src/lib8tion/types.h \
+ .pio/libdeps/esp32dev/FastLED/src/fl/force_inline.h \
+ .pio/libdeps/esp32dev/FastLED/src/fl/type_traits.h \
+ .pio/libdeps/esp32dev/FastLED/src/fl/move.h \
+ .pio/libdeps/esp32dev/FastLED/src/hsv2rgb.h \
+ .pio/libdeps/esp32dev/FastLED/src/fl/ease.h \
+ .pio/libdeps/esp32dev/FastLED/src/fastled_progmem.h \
+ .pio/libdeps/esp32dev/FastLED/src/platforms/null_progmem.h \
+ .pio/libdeps/esp32dev/FastLED/src/fl/math.h \
+ .pio/libdeps/esp32dev/FastLED/src/fl/has_include.h \
+ .pio/libdeps/esp32dev/FastLED/src/fl/clamp.h \
+ .pio/libdeps/esp32dev/FastLED/src/fl/map_range.h \
+ .pio/libdeps/esp32dev/FastLED/src/fl/math_macros.h \
+ .pio/libdeps/esp32dev/FastLED/src/fl/compiler_control.h \
+ .pio/libdeps/esp32dev/FastLED/src/fl/geometry.h \
+ .pio/libdeps/esp32dev/FastLED/src/lib8tion/intmap.h \
+ .pio/libdeps/esp32dev/FastLED/src/lib8tion/lib8static.h

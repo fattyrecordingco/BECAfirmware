@@ -102,6 +102,8 @@ Assumption: This project follows the typical Arduino web-enabled layout even if 
 - Symptom: Web UI lag or SSE flooding. Likely cause: scope updates too frequent or diff throttling disabled. Fix: verify SSE throttling and only send state diffs.
 - Symptom: random BLE disconnects when Wi-Fi is enabled. Likely cause: BLE/Wi-Fi coexistence contention. Fix: enable Wi-Fi modem sleep when BLE is active and reduce heavy Wi-Fi traffic.
 - Symptom: no plant response or stuck energy value. Likely cause: sensor wiring, wrong analog pin, or baseline/noise settings too aggressive. Fix: verify GPIO 34/35, check grounding, and adjust smoothing/noise constants.
+- Symptom: UI hostname (.local) stops resolving after a Wi-Fi drop. Likely cause: mDNS stopped after reconnect. Fix: check serial for the current IP and use it directly; firmware now restarts mDNS on reconnect, but Windows mDNS can still be flaky.
+- Symptom: intermittent Wi-Fi disconnects and UI drops. Likely cause: AP signal or power-saving contention. Fix: ensure strong signal, keep the ESP32 closer to the router, and watch serial logs for reconnect attempts.
 
 ## Roadmap
 
