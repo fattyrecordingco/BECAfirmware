@@ -76,6 +76,12 @@ Assumption: This project follows the typical Arduino web-enabled layout even if 
 - The UI displays plant energy (0..1), a MIDI note grid, and a drum selector with hit indicators.
 - SSE streams incremental state changes and throttled scope updates to avoid flooding the browser.
 
+### UI Editing
+
+- `index.html` is the editable source for the main UI.
+- Run `python3 make_index_header.py` to regenerate `index_html.h` before compiling after changes.
+- The firmware serves `INDEX_HTML` from `index_html.h`.
+
 ### BLE-MIDI Connection Notes
 
 - iPad typically discovers `BECA BLE-MIDI` directly in the MIDI Bluetooth picker.

@@ -16,6 +16,7 @@ Keep BECA stable, universally user-friendly, and easy to compile and flash in Ar
 - Always identify the ESP32 core version and confirm compatibility (target `2.0.14`).
 - If changing the BLE stack, document the exact library versions used.
 - If touching SSE or web UI, include rate limiting and state-diff strategy.
+- If editing `index.html`, always run `python3 make_index_header.py` and include the updated `index_html.h` in the final changes.
 - Provide full sketches or complete patches, not partial snippets.
 - Update troubleshooting notes when connectivity behavior changes.
 
