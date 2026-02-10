@@ -1,0 +1,17 @@
+.cache/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# VSCode
+.vscode/
+
+# secrets
+wifi.json
+secrets.h
+*.pem
+*.key
+
+# logs
+*.log
