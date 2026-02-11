@@ -1,106 +1,300 @@
+
 <!doctype html>
 <html>
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>BECA • Plant Synth</title>
+    <title>BECA - Plant Synth</title>
     <style>
       :root {
-        --bg: #010503;
-        --card: #0a0f0b;
-        --grid: #0f1f14;
-        --fg: #e9ffee;
-        --green: #00ff7a;
-        --stroke: #133820;
+        color-scheme: light;
+        --accent: #1fa86a;
+        --bg: #d2e6da;
+        --bg-soft: #e2efe7;
+        --surface: rgba(255, 255, 255, 0.36);
+        --surface-strong: rgba(255, 255, 255, 0.6);
+        --edge: rgba(90, 120, 105, 0.25);
+        --edge-strong: rgba(90, 120, 105, 0.38);
+        --text: #1b2c23;
+        --text-muted: rgba(27, 44, 35, 0.6);
+        --shadow-base: 0 18px 38px rgba(18, 30, 24, 0.15);
+        --shadow-green: 0 12px 28px rgba(31, 168, 106, 0.22);
+        --glow: 0 0 22px rgba(31, 168, 106, 0.25);
+        --radius: 22px;
+        --radius-sm: 16px;
+        --gap: 16px;
+        --grid: rgba(31, 168, 106, 0.06);
+        --key-w: clamp(16px, 3.6vw, 22px);
+        --key-h: clamp(50px, 7vw, 66px);
+        --key-panel: rgba(240, 246, 242, 0.65);
+        --key-white: rgba(252, 254, 253, 0.85);
+        --key-black: rgba(24, 34, 29, 0.85);
+        --key-border: rgba(90, 120, 105, 0.3);
       }
       * {
         box-sizing: border-box;
       }
       body {
-        margin: 14px;
-        background: var(--bg);
-        color: var(--fg);
-        font:
-          14px/1.5 system-ui,
-          Arial;
+        margin: 0 auto;
+        padding: clamp(14px, 2vw, 26px);
+        min-height: 100vh;
+        width: min(1460px, 100%);
+        color: var(--text);
+        background:
+          radial-gradient(900px 520px at 78% -10%, rgba(31, 168, 106, 0.22), transparent 62%),
+          radial-gradient(760px 540px at 12% 18%, rgba(136, 200, 170, 0.25), transparent 62%),
+          radial-gradient(520px 420px at 88% 84%, rgba(31, 168, 106, 0.18), transparent 60%),
+          linear-gradient(160deg, var(--bg) 0%, var(--bg-soft) 58%, var(--bg) 100%);
+        font-family:
+          "SF Pro Display",
+          "SF Pro Text",
+          "Avenir Next",
+          "Helvetica Neue",
+          "Segoe UI",
+          sans-serif;
+        letter-spacing: 0.01em;
+      }
+      body::before {
+        content: "";
+        position: fixed;
+        inset: -20% -20% -10% -20%;
+        background:
+          radial-gradient(40% 35% at 70% 18%, rgba(31, 168, 106, 0.14), transparent 60%),
+          radial-gradient(36% 30% at 18% 80%, rgba(31, 168, 106, 0.12), transparent 65%);
+        z-index: -2;
+      }
+      body::after {
+        content: "";
+        position: fixed;
+        inset: 0;
+        background-image:
+          linear-gradient(var(--grid) 1px, transparent 1px),
+          linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+        background-size: 28px 28px;
+        opacity: 0.3;
+        pointer-events: none;
+        z-index: -1;
+      }
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+      .topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 4px 6px 18px;
       }
       .brand {
         display: flex;
         align-items: center;
-        gap: 12px;
-        margin-bottom: 12px;
+        gap: 14px;
       }
       .brand img {
-        height: 28px;
-        filter: drop-shadow(0 0 6px rgba(0, 255, 122, 0.35));
+        height: 34px;
+        filter: drop-shadow(0 0 12px rgba(31, 168, 106, 0.28));
+      }
+      .brand .title {
+        font-size: 15px;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        color: var(--text);
+        font-weight: 700;
+      }
+      .brand .sub {
+        font-size: 12px;
+        opacity: 0.7;
+      }
+      .top-actions {
+        display: flex;
+        align-items: center;
+        gap: 10px;
       }
       .pill {
-        padding: 2px 10px;
-        border: 1px solid var(--stroke);
+        padding: 7px 14px;
+        border: 1px solid var(--edge);
         border-radius: 999px;
-        background: #041006;
+        background: rgba(255, 255, 255, 0.7);
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.16em;
+        box-shadow: 0 8px 16px rgba(31, 168, 106, 0.12);
       }
-      .row {
-        display: flex;
-        gap: 12px;
-        flex-wrap: wrap;
-      }
-      .card {
-        background: var(--card);
-        border: 1px solid var(--stroke);
-        border-radius: 14px;
-        padding: 14px;
-        flex: 1;
-        min-width: 300px;
-        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
-      }
-      .kv {
-        display: grid;
-        grid-template-columns: auto 1fr;
-        gap: 6px 10px;
-      }
-      .label {
-        opacity: 0.85;
+      .status-pill::before {
+        content: "";
+        display: inline-block;
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--accent);
+        margin-right: 8px;
+        box-shadow: 0 0 10px rgba(31, 168, 106, 0.35);
+        vertical-align: middle;
       }
       .mono {
-        font-family: ui-monospace, Menlo, Consolas, monospace;
+        font-family: "SF Mono", "JetBrains Mono", Consolas, monospace;
+        letter-spacing: 0.01em;
       }
-      .ctrl {
-        margin-top: 10px;
+      .main-grid {
+        display: grid;
+        grid-template-columns: minmax(360px, 1.35fr) minmax(320px, 1fr);
+        grid-template-areas:
+          "io io"
+          "music led";
+        gap: var(--gap);
+        align-items: stretch;
+      }
+      .panel {
+        background: var(--surface);
+        border: 1px solid var(--edge-strong);
+        border-radius: var(--radius);
+        padding: 16px;
+        box-shadow: var(--shadow-base), var(--shadow-green);
         position: relative;
+        overflow: hidden;
+        backdrop-filter: blur(26px) saturate(180%);
+      }
+      .panel::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        border-radius: inherit;
+        background: linear-gradient(135deg, rgba(255, 255, 255, 0.65), rgba(255, 255, 255, 0.18) 45%, rgba(255, 255, 255, 0) 70%);
+        pointer-events: none;
+      }
+      .panel::after {
+        content: "";
+        position: absolute;
+        inset: 7px;
+        border-radius: calc(var(--radius) - 7px);
+        border: 1px solid rgba(255, 255, 255, 0.35);
+        pointer-events: none;
+      }
+      .panel-io {
+        grid-area: io;
+      }
+      .panel-theory {
+        grid-area: music;
+      }
+      .panel-led {
+        grid-area: led;
+      }
+      .panel-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        margin-bottom: 12px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid var(--edge);
+      }
+      .panel-title {
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.2em;
+        color: var(--text);
+        font-weight: 700;
+      }
+      .panel-tag {
+        display: none;
+      }
+      .subcard {
+        background: var(--surface-strong);
+        border: 1px solid var(--edge);
+        border-radius: var(--radius-sm);
+        padding: 12px;
+        box-shadow: 0 10px 18px rgba(31, 168, 106, 0.12), inset 0 0 0 1px rgba(255, 255, 255, 0.45);
+      }
+      .module,
+      .module-azure,
+      .module-lilac,
+      .module-olive,
+      .module-butter,
+      .module-salmon,
+      .module-rose,
+      .module-cyan,
+      .module-mint {
+        background: var(--surface-strong);
+        border-color: var(--edge);
+        color: var(--text);
+        box-shadow: 0 10px 18px rgba(31, 168, 106, 0.12), inset 0 0 0 1px rgba(255, 255, 255, 0.45);
+      }
+      .stack {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+      .info-stack {
+        display: grid;
+        grid-template-rows: auto 1fr;
+        gap: 12px;
+      }
+      .info-stack .subcard:last-child {
+        min-height: 260px;
+      }
+      .io-grid {
+        display: grid;
+        grid-template-columns: minmax(320px, 1.25fr) minmax(260px, 0.85fr);
+        gap: 12px;
+        align-items: stretch;
+      }
+      .theory-grid,
+      .led-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 12px;
+      }
+      .grid2 {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+      .label {
+        font-size: 12px;
+        letter-spacing: 0.06em;
+        opacity: 0.82;
+        font-weight: 600;
       }
       .hdr {
         display: flex;
         justify-content: space-between;
         align-items: center;
+        gap: 8px;
       }
       .val {
         font-variant-numeric: tabular-nums;
-        font-family: ui-monospace, Menlo, Consolas;
+        font-family: "SF Mono", "JetBrains Mono", Consolas, monospace;
+      }
+      .ctrl {
+        margin-top: 12px;
       }
       .btn,
       select,
       input[type="range"],
       input[type="checkbox"] {
+        background: rgba(255, 255, 255, 0.6);
+        color: var(--text);
+        border: 1px solid var(--edge-strong);
+        border-radius: 12px;
+        padding: 10px 12px;
+        font-family: inherit;
+        font-size: 13px;
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.45);
+      }
+      select {
         width: 100%;
-        background: #050b06;
-        color: var(--fg);
-        border: 1px solid var(--stroke);
-        border-radius: 10px;
-        padding: 8px;
-      }
-      .btn {
-        cursor: pointer;
-        transition: all 0.15s;
-        text-align: center;
-      }
-      .btn:hover {
-        background: #022;
-        box-shadow: 0 0 14px var(--green);
-        transform: translateY(-1px);
+        appearance: none;
+        background-image:
+          linear-gradient(45deg, transparent 50%, var(--text) 50%),
+          linear-gradient(135deg, var(--text) 50%, transparent 50%);
+        background-position: calc(100% - 18px) 50%, calc(100% - 12px) 50%;
+        background-size: 6px 6px, 6px 6px;
+        background-repeat: no-repeat;
       }
       input[type="range"] {
-        height: 32px;
+        width: 100%;
+        height: 34px;
         -webkit-appearance: none;
         appearance: none;
         padding: 0;
@@ -108,7 +302,7 @@
       }
       input[type="range"]::-webkit-slider-runnable-track {
         height: 6px;
-        background: linear-gradient(90deg, #0d2617, #173824);
+        background: linear-gradient(90deg, rgba(31, 168, 106, 0.3), rgba(31, 168, 106, 0.18));
         border-radius: 999px;
       }
       input[type="range"]::-webkit-slider-thumb {
@@ -118,77 +312,113 @@
         width: 18px;
         height: 18px;
         border-radius: 50%;
-        background: var(--green);
-        border: 1px solid #1cff96;
-        box-shadow: 0 0 12px rgba(0, 255, 122, 0.65);
+        background: var(--accent);
+        border: 1px solid rgba(255, 255, 255, 0.75);
+        box-shadow: 0 0 10px rgba(31, 168, 106, 0.35);
+      }
+      input[type="checkbox"] {
+        width: 18px;
+        height: 18px;
+        padding: 0;
+      }
+      .btn {
+        cursor: pointer;
+        transition: all 0.18s ease;
+        text-align: center;
+      }
+      .btn:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 10px 20px rgba(31, 168, 106, 0.16);
+      }
+      .btn.ghost {
+        padding: 8px 14px;
+        border-radius: 999px;
+      }
+      .btn.accent {
+        border-color: var(--accent-strong);
+      }
+      .icon-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 16px;
+        height: 16px;
+      }
+      .icon svg {
+        width: 100%;
+        height: 100%;
+      }
+      .kv {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 6px 12px;
+        font-size: 12px;
+      }
+      .kv .label {
+        font-size: 10px;
+        opacity: 0.6;
+        letter-spacing: 0.08em;
       }
       .kbd {
         display: flex;
         gap: 2px;
         margin-top: 8px;
-        user-select: none;
+        padding: 10px;
+        border-radius: 14px;
+        border: 1px solid var(--edge-strong);
+        background: var(--key-panel);
+        justify-content: center;
+        min-height: calc(var(--key-h) + 16px);
       }
       .key {
-        width: 22px;
-        height: 62px;
-        border: 1px solid var(--stroke);
-        background: #0b120d;
+        width: var(--key-w);
+        height: var(--key-h);
+        border: 1px solid var(--key-border);
+        background: var(--key-white);
         border-radius: 6px;
         cursor: pointer;
         transition: all 0.15s;
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.5);
       }
       .key.white {
-        background: #0a120a;
+        background: var(--key-white);
       }
       .key.black {
-        background: #051006;
-        height: 42px;
-        margin-left: -11px;
-        margin-right: -11px;
+        background: var(--key-black);
+        height: calc(var(--key-h) * 0.62);
+        margin-left: calc(var(--key-w) * -0.48);
+        margin-right: calc(var(--key-w) * -0.48);
         z-index: 2;
-        width: 20px;
-        border-color: #15351f;
+        width: calc(var(--key-w) * 0.88);
+        border-color: var(--key-border);
       }
       .key.sel {
-        outline: 2px solid var(--green);
-        box-shadow: 0 0 16px rgba(0, 255, 122, 0.55);
+        outline: 2px solid var(--accent);
+        box-shadow: 0 0 12px rgba(31, 168, 106, 0.35);
       }
-
-      #osc {
-        width: 100%;
-        height: 160px;
-        border-radius: 10px;
-        border: 1px solid var(--stroke);
-        background: radial-gradient(
-          150% 120% at 50% 50%,
-          #041107 0%,
-          #030907 60%,
-          #020604 100%
-        );
-      }
+      #osc,
       #notegrid {
         width: 100%;
+        border-radius: 12px;
+        border: 1px solid var(--edge-strong);
+        background: radial-gradient(150% 120% at 50% 50%, rgba(241, 247, 243, 0.95) 0%, rgba(230, 238, 233, 0.9) 60%, rgba(222, 231, 225, 0.92) 100%);
+      }
+      #osc {
+        height: 160px;
+      }
+      #notegrid {
         height: 130px;
-        margin-top: 10px;
-        border-radius: 10px;
-        border: 1px solid var(--stroke);
-        background: radial-gradient(
-          150% 120% at 50% 50%,
-          #041107 0%,
-          #030907 60%,
-          #020604 100%
-        );
+        margin-top: 8px;
       }
       .small {
-        font-size: 12px;
-        opacity: 0.9;
+        font-size: 11px;
+        opacity: 0.75;
       }
-      .grid2 {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 10px;
-      }
-
       /* ---- Drum UI ---- */
       #drumWrap {
         margin-top: 12px;
@@ -217,279 +447,478 @@
       .dSel input {
         width: 18px;
         height: 18px;
-        accent-color: var(--green);
+        accent-color: var(--accent);
       }
       .dBox {
         height: 56px;
         border-radius: 14px;
-        border: 2px solid rgba(233, 255, 238, 0.55);
-        background: rgba(0, 0, 0, 0.18);
-        box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25);
+        border: 2px solid rgba(31, 168, 106, 0.38);
+        background: rgba(255, 255, 255, 0.45);
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.4), 0 6px 12px rgba(31, 168, 106, 0.12);
         transition: all 0.08s;
       }
       .dBox.hit {
-        border-color: rgba(0, 255, 122, 0.95);
-        box-shadow:
-          0 0 18px rgba(0, 255, 122, 0.55),
-          inset 0 0 0 1px rgba(0, 255, 122, 0.35);
-        background: rgba(0, 255, 122, 0.14);
+        border-color: rgba(31, 168, 106, 0.75);
+        box-shadow: 0 0 16px rgba(31, 168, 106, 0.25), inset 0 0 0 1px rgba(31, 168, 106, 0.35);
+        background: rgba(31, 168, 106, 0.16);
       }
       .dLab {
         text-align: center;
-        font-size: 12px;
-        opacity: 0.9;
+        font-size: 11px;
+        opacity: 0.75;
         margin-top: -4px;
-        font-family: ui-monospace, Menlo, Consolas, monospace;
+        font-family: "SF Mono", "JetBrains Mono", Consolas, monospace;
+        white-space: pre-line;
+      }
+      .utility-bar {
+        margin-top: 16px;
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 12px;
+        align-items: center;
+      }
+      .toggle {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 12px;
+        border: 1px solid var(--edge-strong);
+        border-radius: 16px;
+        background: var(--surface-strong);
+        min-width: 180px;
+        box-shadow: 0 8px 16px rgba(31, 168, 106, 0.12);
+      }
+      .toggle input {
+        display: none;
+      }
+      .switch {
+        width: 44px;
+        height: 24px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.5);
+        border: 1px solid rgba(31, 168, 106, 0.45);
+        position: relative;
+        transition: all 0.2s ease;
+        flex-shrink: 0;
+      }
+      .switch::after {
+        content: "";
+        position: absolute;
+        width: 18px;
+        height: 18px;
+        left: 2px;
+        top: 2px;
+        border-radius: 50%;
+        background: #f7faf8;
+        transition: all 0.2s ease;
+        box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.08);
+      }
+      .toggle input:checked + .switch {
+        background: rgba(31, 168, 106, 0.22);
+        border-color: rgba(31, 168, 106, 0.6);
+      }
+      .toggle input:checked + .switch::after {
+        left: 24px;
+        background: var(--accent);
+      }
+      .toggle-label {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.16em;
+        opacity: 0.85;
+      }
+      .toggle-val {
+        margin-left: auto;
+        font-size: 11px;
+        opacity: 0.8;
+      }
+      .utility-bar .btn,
+      .utility-bar .toggle {
+        width: 100%;
+      }
+      body.ui-muted main {
+        opacity: 0.55;
+        filter: grayscale(0.2);
+        pointer-events: none;
+      }
+      body.ui-muted .utility-bar {
+        pointer-events: auto;
+      }
+      body.ui-muted .utility-bar .toggle:not(.mute-toggle),
+      body.ui-muted #rnd {
+        opacity: 0.4;
+        pointer-events: none;
+      }
+      body.ui-muted #status {
+        border-color: rgba(31, 168, 106, 0.4);
+        color: #8b5a35;
+      }
+      @media (max-width: 1200px) {
+        .main-grid {
+          grid-template-columns: 1fr;
+          grid-template-areas:
+            "io"
+            "music"
+            "led";
+        }
+      }
+      @media (max-width: 900px) {
+        .io-grid {
+          grid-template-columns: 1fr;
+        }
+        .topbar {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+        .top-actions {
+          width: 100%;
+          justify-content: space-between;
+        }
+      }
+      @media (max-width: 640px) {
+        .brand .title {
+          font-size: 14px;
+          letter-spacing: 0.14em;
+        }
+        .panel {
+          padding: 14px;
+        }
+        .grid2 {
+          grid-template-columns: 1fr;
+        }
+        .kbd {
+          justify-content: flex-start;
+          overflow-x: auto;
+        }
       }
     </style>
   </head>
   <body>
-    <div class="brand">
-      <img src="/logo" alt="BECA" />
-      <div class="mono">
-        <span
-          style="color: var(--green); font-weight: 800; letter-spacing: 0.06em"
-          >BECA</span
-        >
-        • Plant Synth
-      </div>
-      <div class="small">by Fatty Recording Co.</div>
-      <div id="status" class="pill mono" style="margin-left: auto">
-        connecting…
-      </div>
-    </div>
-
-    <div class="row">
-      <div class="card">
-        <div class="hdr">
-          <div class="label">Oscilloscope (plant energy)</div>
-          <div class="small mono">SSE stream</div>
-        </div>
-        <canvas id="osc" width="900" height="160"></canvas>
-
-        <div class="hdr" style="margin-top: 10px">
-          <div class="label">MIDI Note Grid (C1..C8)</div>
-          <div class="small mono" id="gridLab">—</div>
-        </div>
-        <canvas id="notegrid" width="900" height="130"></canvas>
-
-        <!-- Drum UI (only shown in Drum Machine mode) -->
-        <div id="drumWrap" class="hidden">
-          <div class="drumTitle">
-            <div class="label">Drum Kit (8 parts)</div>
-            <div class="small mono" id="drumLab">—</div>
-          </div>
-
-          <!-- selectors row -->
-          <div class="drumGrid" id="drumSelRow"></div>
-          <!-- hit boxes row -->
-          <div class="drumGrid" id="drumHitRow" style="margin-top: 8px"></div>
-          <!-- labels -->
-          <div class="drumGrid" id="drumNameRow" style="margin-top: 6px"></div>
+    <header class="topbar">
+      <div class="brand">
+        <img src="/logo" alt="BECA" />
+        <div>
+          <div class="title">BECA Plant Synth</div>
+          <div class="sub">Fatty Recording Co.</div>
         </div>
       </div>
-
-      <div class="card">
-        <div class="kv mono">
-          <div class="label">BLE:</div>
-          <div id="ble">—</div>
-          <div class="label">Clock:</div>
-          <div id="clock">—</div>
-          <div class="label">Mode:</div>
-          <div id="modeLab">—</div>
-          <div class="label">Scale:</div>
-          <div id="scaleLab">—</div>
-          <div class="label">Root:</div>
-          <div id="rootLab">—</div>
-          <div class="label">BPM:</div>
-          <div id="bpmLab">—</div>
-          <div class="label">Swing:</div>
-          <div id="swingLab">—</div>
-          <div class="label">Brightness:</div>
-          <div id="brightLab">—</div>
-          <div class="label">Sensitivity:</div>
-          <div id="sensLab">—</div>
-          <div class="label">Effect:</div>
-          <div id="fxLab">—</div>
-          <div class="label">Palette:</div>
-          <div id="palLab">—</div>
-          <div class="label">Oct Range:</div>
-          <div id="octLab">—</div>
-          <div class="label">Time Sig:</div>
-          <div id="tsLab">—</div>
-          <div class="label">Last:</div>
-          <div id="lastLab">—</div>
-          <div class="label">Vel:</div>
-          <div id="velLab">—</div>
-        </div>
+      <div class="top-actions">
+        <a class="btn ghost icon-btn" href="/setup" aria-label="Settings">
+          <span class="icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="3.2" />
+              <path d="M19.4 15a1.6 1.6 0 0 0 .32 1.76l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.6 1.6 0 0 0-1.76-.32 1.6 1.6 0 0 0-1 1.46V22a2 2 0 0 1-4 0v-.1a1.6 1.6 0 0 0-1-1.46 1.6 1.6 0 0 0-1.76.32l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.6 1.6 0 0 0 4.6 15a1.6 1.6 0 0 0-1.46-1H3a2 2 0 0 1 0-4h.1a1.6 1.6 0 0 0 1.46-1 1.6 1.6 0 0 0-.32-1.76l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.6 1.6 0 0 0 8.4 4.6a1.6 1.6 0 0 0 1-1.46V3a2 2 0 0 1 4 0v.1a1.6 1.6 0 0 0 1 1.46 1.6 1.6 0 0 0 1.76-.32l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.6 1.6 0 0 0 19.4 9a1.6 1.6 0 0 0 1.46 1H21a2 2 0 0 1 0 4h-.1a1.6 1.6 0 0 0-1.46 1Z" />
+            </svg>
+          </span>
+          <span>Settings</span>
+        </a>
+        <div id="status" class="pill mono status-pill">connecting...</div>
       </div>
-    </div>
+    </header>
 
-    <div class="row" style="margin-top: 10px">
-      <div class="card">
-        <div class="grid2">
-          <div>
-            <div class="label">Mode</div>
-            <select id="mode">
-              <option value="0">Notes</option>
-              <option value="1">Arpeggiator</option>
-              <option value="2">Chords</option>
-              <option value="3">Drum Machine</option>
-            </select>
-          </div>
-          <div>
-            <div class="label">Clock</div>
-            <select id="clockSel">
-              <option value="1">Plant</option>
-              <option value="0">Internal</option>
-            </select>
-          </div>
+    <main class="main-grid">
+      <section class="panel panel-io">
+        <div class="panel-head">
+          <div class="panel-title">Input / Output</div>
+          
         </div>
-
-        <div class="label" style="margin-top: 10px">Scale</div>
-        <select id="scale">
-          <option value="0">Major</option>
-          <option value="1">Minor</option>
-          <option value="2">Dorian</option>
-          <option value="3">Lydian</option>
-          <option value="4">Mixolydian</option>
-          <option value="5">Pent Minor</option>
-          <option value="6">Pent Major</option>
-          <option value="7">Harm Minor</option>
-          <option value="8">Phrygian</option>
-          <option value="9">Whole Tone</option>
-          <option value="10">Maj7</option>
-          <option value="11">Min7</option>
-          <option value="12">Dom7</option>
-          <option value="13">Sus2</option>
-          <option value="14">Sus4</option>
-        </select>
-
-        <div class="label" style="margin-top: 10px">Root (piano)</div>
-        <div id="piano" class="kbd"></div>
-      </div>
-
-      <div class="card">
-        <div class="ctrl">
-          <div class="hdr">
-            <div class="label">BPM</div>
-            <div class="val mono" id="bpmVal">—</div>
-          </div>
-          <input id="bpmRange" type="range" min="20" max="240" step="5" />
-        </div>
-        <div class="ctrl">
-          <div class="hdr">
-            <div class="label">Swing %</div>
-            <div class="val mono" id="swingVal">—</div>
-          </div>
-          <input id="swingRange" type="range" min="0" max="60" step="1" />
-        </div>
-        <div class="ctrl">
-          <div class="hdr">
-            <div class="label">Brightness</div>
-            <div class="val mono" id="brightVal">—</div>
-          </div>
-          <input id="brightRange" type="range" min="10" max="255" step="1" />
-        </div>
-        <div class="ctrl">
-          <div class="hdr">
-            <div class="label">Sensitivity</div>
-            <div class="val mono" id="sensVal">—</div>
-          </div>
-          <input
-            id="sensRange"
-            type="range"
-            min="0.00"
-            max="0.50"
-            step="0.05"
-          />
-        </div>
-        <div class="grid2">
-          <div class="ctrl">
-            <div class="hdr">
-              <div class="label">Low Oct</div>
-              <div class="val mono" id="loVal">—</div>
+        <div class="io-grid">
+          <div class="stack info-stack">
+            <div class="subcard module module-azure">
+              <div class="hdr">
+                <div class="label">Plant</div>
+              </div>
+              <canvas id="osc" width="900" height="160"></canvas>
             </div>
-            <input id="loct" type="range" min="0" max="9" step="1" />
-          </div>
-          <div class="ctrl">
-            <div class="hdr">
-              <div class="label">High Oct</div>
-              <div class="val mono" id="hiVal">—</div>
-            </div>
-            <input id="hoct" type="range" min="0" max="9" step="1" />
-          </div>
-        </div>
-        <div class="ctrl">
-          <div class="hdr">
-            <div class="label">Time Signature</div>
-            <div class="val mono" id="tsVal">—</div>
-          </div>
-          <select id="tsSel">
-            <option value="1-1">1/1</option>
-            <option value="2-2">2/2</option>
-            <option value="2-4">2/4</option>
-            <option value="3-4">3/4</option>
-            <option value="4-4" selected>4/4</option>
-            <option value="5-4">5/4</option>
-            <option value="7-4">7/4</option>
-            <option value="6-8">6/8</option>
-            <option value="9-8">9/8</option>
-            <option value="12-8">12/8</option>
-            <option value="4-8">4/8</option>
-            <option value="4-16">4/16</option>
-            <option value="8-32">8/32</option>
-          </select>
-        </div>
-      </div>
 
-      <div class="card">
-        <div class="ctrl">
-          <div class="hdr">
-            <div class="label">Effect</div>
-            <div class="val mono" id="fxVal">—</div>
+            <div class="subcard module module-lilac">
+              <div class="hdr">
+                <div class="label">Note Grid</div>
+                <div class="small mono" id="gridLab">--</div>
+              </div>
+              <canvas id="notegrid" width="900" height="130"></canvas>
+
+              <div id="drumWrap" class="hidden">
+                <div class="drumTitle">
+                  <div class="label">Drum Kit</div>
+                  <div class="small mono" id="drumLab">--</div>
+                </div>
+                <div class="drumGrid" id="drumSelRow"></div>
+                <div class="drumGrid" id="drumHitRow" style="margin-top: 8px"></div>
+                <div class="drumGrid" id="drumNameRow" style="margin-top: 6px"></div>
+              </div>
+            </div>
           </div>
-          <select id="effect"></select>
-        </div>
-        <div class="ctrl">
-          <div class="hdr">
-            <div class="label">Palette</div>
-            <div class="val mono" id="palVal">—</div>
+
+          <div class="stack">
+            <div class="subcard module module-butter">
+              <div class="ctrl" style="margin-top: 0">
+                <div class="hdr">
+                  <div class="label">Sensitivity</div>
+                  <div class="val mono" id="sensVal">--</div>
+                </div>
+                <input
+                  id="sensRange"
+                  type="range"
+                  min="0.00"
+                  max="0.50"
+                  step="0.05"
+                />
+              </div>
+            </div>
+
+            <div class="subcard module module-olive">
+              <div class="hdr" style="margin-bottom: 8px">
+                <div class="label">Info Snapshot</div>
+              </div>
+              <div class="kv mono">
+                <div class="label">BLE:</div>
+                <div id="ble">--</div>
+                <div class="label">Clock:</div>
+                <div id="clock">--</div>
+                <div class="label">Mode:</div>
+                <div id="modeLab">--</div>
+                <div class="label">Scale:</div>
+                <div id="scaleLab">--</div>
+                <div class="label">Root:</div>
+                <div id="rootLab">--</div>
+                <div class="label">BPM:</div>
+                <div id="bpmLab">--</div>
+                <div class="label">Swing:</div>
+                <div id="swingLab">--</div>
+                <div class="label">Brightness:</div>
+                <div id="brightLab">--</div>
+                <div class="label">Sensitivity:</div>
+                <div id="sensLab">--</div>
+                <div class="label">Effect:</div>
+                <div id="fxLab">--</div>
+                <div class="label">Palette:</div>
+                <div id="palLab">--</div>
+                <div class="label">Oct Range:</div>
+                <div id="octLab">--</div>
+                <div class="label">Time Sig:</div>
+                <div id="tsLab">--</div>
+                <div class="label">Last:</div>
+                <div id="lastLab">--</div>
+                <div class="label">Velocity:</div>
+                <div id="velLab">--</div>
+              </div>
+            </div>
           </div>
-          <select id="palette"></select>
         </div>
-        <div class="ctrl">
-          <div class="hdr">
-            <div class="label">Visual Speed</div>
-            <div class="val mono" id="vsVal">—</div>
+      </section>
+
+      <section class="panel panel-theory">
+        <div class="panel-head">
+          <div class="panel-title">Music</div>
+          
+        </div>
+        <div class="theory-grid">
+          <div class="subcard module module-salmon">
+            <div class="grid2">
+              <div>
+                <div class="label">Mode</div>
+                <select id="mode">
+                  <option value="0">Notes</option>
+                  <option value="1">Arpeggiator</option>
+                  <option value="2">Chords</option>
+                  <option value="3">Drum Machine</option>
+                </select>
+              </div>
+              <div>
+                <div class="label">Clock</div>
+                <select id="clockSel">
+                  <option value="1">Plant</option>
+                  <option value="0">Internal</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="label" style="margin-top: 12px">Scale</div>
+            <select id="scale">
+              <option value="0">Major</option>
+              <option value="1">Minor</option>
+              <option value="2">Dorian</option>
+              <option value="3">Lydian</option>
+              <option value="4">Mixolydian</option>
+              <option value="5">Pent Minor</option>
+              <option value="6">Pent Major</option>
+              <option value="7">Harm Minor</option>
+              <option value="8">Phrygian</option>
+              <option value="9">Whole Tone</option>
+              <option value="10">Maj7</option>
+              <option value="11">Min7</option>
+              <option value="12">Dom7</option>
+              <option value="13">Sus2</option>
+              <option value="14">Sus4</option>
+            </select>
+
+            <div class="label" style="margin-top: 12px">Root (piano)</div>
+            <div id="piano" class="kbd"></div>
           </div>
-          <input id="visSpd" type="range" min="0" max="255" step="1" />
-        </div>
-        <div class="ctrl">
-          <div class="hdr">
-            <div class="label">Visual Intensity</div>
-            <div class="val mono" id="viVal">—</div>
+
+          <div class="subcard module module-rose">
+            <div class="ctrl" style="margin-top: 0">
+              <div class="hdr">
+                <div class="label">Tempo</div>
+                <div class="val mono" id="bpmVal">--</div>
+              </div>
+              <input id="bpmRange" type="range" min="20" max="240" step="5" />
+            </div>
+            <div class="ctrl">
+              <div class="hdr">
+                <div class="label">Swing</div>
+                <div class="val mono" id="swingVal">--</div>
+              </div>
+              <input id="swingRange" type="range" min="0" max="60" step="1" />
+            </div>
+            <div class="ctrl">
+              <div class="hdr">
+                <div class="label">Rest</div>
+                <div class="val mono" id="restVal">--</div>
+              </div>
+              <input id="rest" type="range" min="0" max="80" step="1" />
+            </div>
+            <div class="grid2">
+              <div class="ctrl">
+                <div class="hdr">
+                  <div class="label">Low Oct</div>
+                  <div class="val mono" id="loVal">--</div>
+                </div>
+                <input id="loct" type="range" min="0" max="9" step="1" />
+              </div>
+              <div class="ctrl">
+                <div class="hdr">
+                  <div class="label">High Oct</div>
+                  <div class="val mono" id="hiVal">--</div>
+                </div>
+                <input id="hoct" type="range" min="0" max="9" step="1" />
+              </div>
+            </div>
+            <div class="ctrl">
+              <div class="hdr">
+                <div class="label">Time Signature</div>
+                <div class="val mono" id="tsVal">--</div>
+              </div>
+              <select id="tsSel">
+                <option value="1-1">1/1</option>
+                <option value="2-2">2/2</option>
+                <option value="2-4">2/4</option>
+                <option value="3-4">3/4</option>
+                <option value="4-4" selected>4/4</option>
+                <option value="5-4">5/4</option>
+                <option value="7-4">7/4</option>
+                <option value="6-8">6/8</option>
+                <option value="9-8">9/8</option>
+                <option value="12-8">12/8</option>
+                <option value="4-8">4/8</option>
+                <option value="4-16">4/16</option>
+                <option value="8-32">8/32</option>
+              </select>
+            </div>
           </div>
-          <input id="visInt" type="range" min="0" max="255" step="1" />
         </div>
-        <div class="ctrl">
-          <div class="hdr">
-            <div class="label">Rest %</div>
-            <div class="val mono" id="restVal">—</div>
+      </section>
+
+      <section class="panel panel-led">
+        <div class="panel-head">
+          <div class="panel-title">LED</div>
+          
+        </div>
+        <div class="led-grid">
+          <div class="subcard module module-cyan">
+            <div class="ctrl" style="margin-top: 0">
+              <div class="hdr">
+                <div class="label">Effect</div>
+                <div class="val mono" id="fxVal">--</div>
+              </div>
+              <select id="effect"></select>
+            </div>
+            <div class="ctrl">
+              <div class="hdr">
+                <div class="label">Palette</div>
+                <div class="val mono" id="palVal">--</div>
+              </div>
+              <select id="palette"></select>
+            </div>
           </div>
-          <input id="rest" type="range" min="0" max="80" step="1" />
-        </div>
-        <div class="ctrl">
-          <div class="hdr">
-            <div class="label">Avoid repeats</div>
-            <div class="val mono" id="nrVal">—</div>
+
+          <div class="subcard module module-mint">
+            <div class="ctrl" style="margin-top: 0">
+              <div class="hdr">
+                <div class="label">Brightness</div>
+                <div class="val mono" id="brightVal">--</div>
+              </div>
+              <input id="brightRange" type="range" min="10" max="255" step="1" />
+            </div>
+            <div class="ctrl">
+              <div class="hdr">
+                <div class="label">Visual Speed</div>
+                <div class="val mono" id="vsVal">--</div>
+              </div>
+              <input id="visSpd" type="range" min="0" max="255" step="1" />
+            </div>
+            <div class="ctrl">
+              <div class="hdr">
+                <div class="label">Visual Intensity</div>
+                <div class="val mono" id="viVal">--</div>
+              </div>
+              <input id="visInt" type="range" min="0" max="255" step="1" />
+            </div>
           </div>
-          <input id="norep" type="checkbox" />
         </div>
-        <div style="display: flex; gap: 8px; margin-top: 12px">
-          <button id="rnd" class="btn">Randomize</button>
-        </div>
-      </div>
+      </section>
+    </main>
+
+    <div class="utility-bar">
+      <label class="toggle module module-olive">
+        <input id="norep" type="checkbox" />
+        <span class="switch"></span>
+        <span class="toggle-label">
+          <span class="icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 12a9 9 0 0 1 15.2-6.2" />
+              <path d="M18 3v5h-5" />
+              <path d="M21 12a9 9 0 0 1-15.2 6.2" />
+              <path d="M6 21v-5h5" />
+            </svg>
+          </span>
+          Avoid repeat
+        </span>
+        <span class="toggle-val mono" id="nrVal">--</span>
+      </label>
+
+      <button id="rnd" class="btn accent icon-btn module module-butter">
+        <span class="icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3.5" y="3.5" width="17" height="17" rx="3" />
+            <circle cx="8.5" cy="8.5" r="1.2" />
+            <circle cx="15.5" cy="15.5" r="1.2" />
+            <circle cx="15.5" cy="8.5" r="1.2" />
+            <circle cx="8.5" cy="15.5" r="1.2" />
+            <circle cx="12" cy="12" r="1.2" />
+          </svg>
+        </span>
+        Randomize
+      </button>
+
+      <label class="toggle mute-toggle module module-rose">
+        <input id="mute" type="checkbox" />
+        <span class="switch"></span>
+        <span class="toggle-label">
+          <span class="icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 3v9" />
+              <path d="M7.5 5.5a7 7 0 1 0 9 0" />
+            </svg>
+          </span>
+          Mute I/O
+        </span>
+        <span class="toggle-val mono" id="muteVal">OFF</span>
+      </label>
     </div>
 
     <script>
@@ -532,6 +961,8 @@
       const rest = $("rest");
       const norep = $("norep");
       const rnd = $("rnd");
+      const mute = $("mute");
+      const muteVal = $("muteVal");
 
       const bpmVal = $("bpmVal");
       const swingVal = $("swingVal");
@@ -552,6 +983,8 @@
       const N = 220;
 
       let plantA = new Array(N).fill(0);
+      let uiMuted = false;
+
 
       function grid() {
         const w = osc.width,
@@ -591,14 +1024,16 @@
         ctx.stroke();
       }
       function setVal(el, v) {
-        el.textContent = v;
+        if (el) el.textContent = v;
       }
 
       const debouncers = {};
       function sendNow(url) {
+        if (uiMuted) return;
         fetch(url, { cache: "no-store" }).catch(() => {});
       }
       function debouncedSend(key, url, delay = 90) {
+        if (uiMuted) return;
         if (debouncers[key]) clearTimeout(debouncers[key]);
         debouncers[key] = setTimeout(() => sendNow(url), delay);
       }
@@ -692,7 +1127,7 @@
         }
 
         ng.fillStyle = "rgba(233,255,238,.7)";
-        ng.font = "12px ui-monospace, Menlo, Consolas, monospace";
+        ng.font = "12px JetBrains Mono, Consolas, monospace";
         for (let c = 0; c < 12; c++) {
           ng.fillText(NOTE_NAMES[c], gx + c * cellW + 6, gy - 2);
         }
@@ -719,13 +1154,12 @@
         });
 
         if (!midiList.length) {
-          gridLab.textContent = "—";
+          gridLab.textContent = "--";
         } else {
           const names = midiList.slice(0, 6).map(noteName).join(" ");
-          gridLab.textContent = `${held ? "HOLD" : "hit"} • ${names}${midiList.length > 6 ? " …" : ""} • vel ${vel | 0}`;
+          gridLab.textContent = `${held ? "HOLD" : "hit"} | ${names}${midiList.length > 6 ? " ..." : ""} | vel ${vel | 0}`;
         }
       }
-
       // ---- DRUM UI ----
       const drumWrap = $("drumWrap");
       const drumLab = $("drumLab");
@@ -754,7 +1188,6 @@
         drumNameRow.innerHTML = "";
 
         for (let i = 0; i < 8; i++) {
-          // selector
           const s = document.createElement("div");
           s.className = "dSel";
           const cb = document.createElement("input");
@@ -772,13 +1205,11 @@
           drumSelRow.appendChild(s);
           drumSelChecks.push(cb);
 
-          // hit box
           const b = document.createElement("div");
           b.className = "dBox";
           drumHitRow.appendChild(b);
           drumHitBoxes.push(b);
 
-          // label
           const l = document.createElement("div");
           l.className = "dLab";
           l.textContent = DRUM_NAMES[i];
@@ -798,6 +1229,13 @@
         for (let i = 0; i < 8; i++) {
           drumHitBoxes[i].classList.toggle("hit", !!(hitMask & (1 << i)));
         }
+      }
+
+      function setUiMuted(on) {
+        uiMuted = !!on;
+        document.body.classList.toggle("ui-muted", uiMuted);
+        setVal(muteVal, uiMuted ? "ON" : "OFF");
+        if (uiMuted) status.textContent = "muted";
       }
 
       // ---- Boot UI ----
@@ -849,32 +1287,32 @@
       const es = new EventSource("/events");
 
       es.addEventListener("hello", () => {
-        status.textContent = "ok";
+        if (!uiMuted) status.textContent = "ok";
       });
 
       es.onerror = () => {
-        status.textContent = "reconnecting…";
+        if (!uiMuted) status.textContent = "reconnecting...";
       };
 
       es.addEventListener("state", (e) => {
         const j = JSON.parse(e.data);
-        status.textContent = "ok";
+        if (!uiMuted) status.textContent = "ok";
 
-        ble.textContent = j.ble ? "connected" : "—";
+        ble.textContent = j.ble ? "connected" : "--";
         clock.textContent = j.clock ? "Plant" : "Internal";
-        modeLab.textContent = MODE_NAMES[j.mode] || "—";
-        scaleLab.textContent = SCALE_NAMES[j.scale] || "—";
-        rootLab.textContent = NOTE_NAMES[j.root] || "—";
+        modeLab.textContent = MODE_NAMES[j.mode] || "--";
+        scaleLab.textContent = SCALE_NAMES[j.scale] || "--";
+        rootLab.textContent = NOTE_NAMES[j.root] || "--";
         bpmLab.textContent = j.bpm;
         swingLab.textContent = j.swing + "%";
         brightLab.textContent = j.bright;
         sensLab.textContent = (+j.sens).toFixed(2);
-        fxLab.textContent = j.fxname || "—";
-        palLab.textContent = j.palname || "—";
+        fxLab.textContent = j.fxname || "--";
+        palLab.textContent = j.palname || "--";
         octLab.textContent = "C" + j.lo + " .. C" + j.hi;
         tsLab.textContent = j.ts;
-        lastLab.textContent = j.last;
         velLab.textContent = j.vel;
+        if (lastLab) lastLab.textContent = j.last || "--";
 
         bpmRange.value = j.bpm;
         swingRange.value = j.swing;
@@ -913,20 +1351,15 @@
 
         updatePianoSel(j.root | 0);
 
-        // show/hide drum UI based on mode
         const isDrum = (j.mode | 0) === 3;
         drumWrap.classList.toggle("hidden", !isDrum);
 
-        // apply drum selection state from device
         if (typeof j.drumsel !== "undefined") applyDrumSelMask(j.drumsel | 0);
 
-        // reflect last note in grid on state updates
         const lastMidi = parseInt(j.last, 10);
         if (!Number.isNaN(lastMidi))
           drawNoteGridMulti([lastMidi], j.vel | 0, false);
       });
-
-      // scope now expects 1 value only: plant
       es.addEventListener("scope", (e) => {
         const plant = Number(e.data);
         plantA.push(plant);
@@ -935,7 +1368,6 @@
         line(plantA, "#00ff7a", 1.0);
       });
 
-      // note grid event: held|vel|n|m1,m2,m3...
       es.addEventListener("note", (e) => {
         const [heldS, velS, nS, listS] = e.data.split("|");
         const held = Number(heldS) === 1;
@@ -950,7 +1382,6 @@
         drawNoteGridMulti(list, vel, held);
       });
 
-      // drum event: hitMask|selMask
       es.addEventListener("drum", (e) => {
         const [hitS, selS] = e.data.split("|");
         const hit = (Number(hitS) || 0) & 255;
@@ -959,7 +1390,6 @@
         applyDrumHitMask(hit);
       });
 
-      // Controls
       bpmRange.oninput = (e) => {
         const v = e.target.value;
         setVal(bpmVal, v);
@@ -1039,6 +1469,8 @@
       };
 
       rnd.onclick = () => sendNow("/rand");
+
+      mute.onchange = (e) => setUiMuted(e.target.checked);
     </script>
   </body>
 </html>

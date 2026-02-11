@@ -75,6 +75,7 @@ Assumption: This project follows the typical Arduino web-enabled layout even if 
 - Once on the network, open the main UI from the device IP or mDNS name.
 - The UI displays plant energy (0..1), a MIDI note grid, and a drum selector with hit indicators.
 - SSE streams incremental state changes and throttled scope updates to avoid flooding the browser.
+- The UI includes a Mute I/O toggle that temporarily blocks outgoing control changes from the browser (UI-only mute).
 
 ### UI Editing
 
