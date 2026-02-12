@@ -53,7 +53,7 @@ extern const char SETUP_HTML[] PROGMEM;
 #define ENC_PIN_SW         15
 
 CRGB leds[LED_COUNT];
-uint8_t gBrightness = 160;
+uint8_t gBrightness = 154;
 
 // -------------------- BLE-MIDI --------------------
 volatile bool gMidiConnected = false;
@@ -128,7 +128,7 @@ float env = 0.0f;
 const float ENV_ATTACK  = 0.35f;
 const float ENV_RELEASE = 0.05f;
 
-float sens = 0.1f;
+float sens = 0.2f;
 
 // Cached features for UI (SSE)
 volatile float   gFeatDeg    = 0.0f;
@@ -155,9 +155,9 @@ static inline void activeAdd(uint8_t midi) {
 
 // -------------------- Timing / Clock --------------------
 enum ClockMode { CLOCK_INTERNAL = 0, CLOCK_PLANT = 1 };
-ClockMode gClock = CLOCK_PLANT;
+ClockMode gClock = CLOCK_INTERNAL;
 
-uint16_t bpm      = 120;
+uint16_t bpm      = 60;
 uint8_t  swingPct = 0;
 bool     humanize = true;
 
@@ -182,11 +182,11 @@ Transport T;
 
 // -------------------- Music theory --------------------
 enum Mode { MODE_NOTE = 0, MODE_ARP = 1, MODE_CHORD = 2, MODE_DRUM = 3 };
-Mode gMode = MODE_NOTE;
+Mode gMode = MODE_CHORD;
 
 uint8_t rootMidi = 60; // stored as MIDI, we expose root "semi" in UI via rootMidi%12
-uint8_t lowOct   = 1;
-uint8_t highOct  = 8;
+uint8_t lowOct   = 3;
+uint8_t highOct  = 6;
 
 const int MAJOR[]    = {0,2,4,5,7,9,11};
 const int MINOR[]    = {0,2,3,5,7,8,10};
@@ -380,7 +380,7 @@ const char* CUSTOM_NAMES[] = {
 
 const uint8_t NUM_BUILTIN = sizeof(builtinPalettes) / sizeof(builtinPalettes[0]);
 const uint8_t NUM_CUSTOM  = sizeof(customPalettes)  / sizeof(customPalettes[0]);
-uint8_t currentPaletteIndex = 0;
+uint8_t currentPaletteIndex = NUM_BUILTIN + 10;
 
 static inline CRGBPalette16 currentPalette() {
   if (currentPaletteIndex < NUM_BUILTIN) return builtinPalettes[currentPaletteIndex];
@@ -654,7 +654,7 @@ uint32_t      lastNoteMs         = 0;
 const uint16_t MIN_INTER_NOTE_MS = 100;
 
 float   restProb     = 0.12f;
-bool    avoidRepeats = true;
+bool    avoidRepeats = false;
 uint8_t lastMidiOut  = 255;
 
 volatile bool    gPlantArmed  = false;
@@ -1418,29 +1418,26 @@ static inline void maintainWiFi(uint32_t now) {
 }
 
 const char SETUP_HTML[] PROGMEM = R"HTML(
-<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>BECA • Setup</title>
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BECA - Setup</title>
 <style>
-body{font:14px system-ui;background:#010503;color:#e9ffee;margin:24px}
-.card{max-width:560px;margin:auto;background:#0a0f0b;border:1px solid #133820;border-radius:14px;padding:16px}
-h1{margin:0 0 8px}label{display:block;margin:10px 0 6px}
-input,select,button{width:100%;padding:10px;border:1px solid #133820;border-radius:10px;background:#050b06;color:#e9ffee}
-button{cursor:pointer}
-.small{opacity:.8}
-</style>
+:root{  color-scheme: light;  --accent:#008351;  --bg:#c7ddcf;  --bg-soft:#d7e7dd;  --surface:rgba(206,222,214,.22);  --surface-strong:rgba(206,222,214,.32);  --edge:rgba(70,96,83,.24);  --edge-strong:rgba(70,96,83,.38);  --text:#1b2c23;  --text-muted:rgba(27,44,35,.6);  --shadow:0 12px 26px rgba(18,30,24,.12),0 10px 22px rgba(0,131,81,.16);  --glass-noise:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160' viewBox='0 0 160 160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/><feComponentTransfer><feFuncA type='table' tableValues='0 0.08'/></feComponentTransfer></filter><rect width='160' height='160' filter='url(%23n)'/></svg>");}*{box-sizing:border-box;}body{  margin:0;  min-height:100vh;  padding:24px;  font:14px "SF Pro Text","Avenir Next","Segoe UI",sans-serif;  color:var(--text);  background:    radial-gradient(900px 520px at 78% -10%, rgba(0,131,81,.22), transparent 62%),    radial-gradient(760px 540px at 12% 18%, rgba(136,200,170,.25), transparent 62%),    radial-gradient(520px 420px at 88% 84%, rgba(0,131,81,.18), transparent 60%),    linear-gradient(160deg,var(--bg) 0%,var(--bg-soft) 58%,var(--bg) 100%);}body:before{  content:"";  position:fixed;  inset:-20% -20% -10% -20%;  background:    radial-gradient(40% 35% at 70% 18%, rgba(0,131,81,.14), transparent 60%),    radial-gradient(36% 30% at 18% 80%, rgba(0,131,81,.12), transparent 65%);  z-index:-2;}body:after{  content:"";  position:fixed;  inset:0;  background-image:    linear-gradient(rgba(0,131,81,.05) 1px, transparent 1px),    linear-gradient(90deg, rgba(0,131,81,.05) 1px, transparent 1px);  background-size:28px 28px;  opacity:.3;  pointer-events:none;  z-index:-1;}.card{  max-width:580px;  margin:0 auto;  background:var(--glass-noise),linear-gradient(155deg, rgba(255,255,255,.12), rgba(255,255,255,.03)),var(--surface-strong);  background-size:200px 200px,auto,auto;  background-repeat:repeat;  border:1px solid var(--edge-strong);  border-radius:18px;  padding:18px;  box-shadow:var(--shadow);  backdrop-filter:blur(22px) saturate(160%);}h1{  margin:0 0 6px;  font-size:16px;  letter-spacing:.18em;  text-transform:uppercase;}label{  display:block;  margin:14px 0 6px;  font-size:11px;  letter-spacing:.16em;  text-transform:uppercase;  opacity:.75;}input,select,button{  width:100%;  padding:10px 12px;  border:1px solid var(--edge-strong);  border-radius:12px;  background:linear-gradient(150deg, rgba(255,255,255,.12), rgba(255,255,255,.03)),rgba(200,216,208,.26);  color:var(--text);  font:inherit;  box-shadow:inset 0 0 0 1px rgba(255,255,255,.24);}button{cursor:pointer;}button.primary{  background:linear-gradient(150deg, rgba(0,131,81,.18), rgba(0,131,81,.08)),rgba(200,216,208,.26);  border-color:rgba(0,131,81,.5);  font-weight:600;}.small{font-size:12px;opacity:.75;}.stack{display:flex;flex-direction:column;gap:10px;margin-top:12px;}</style>
 <div class="card">
   <h1>BECA Wi-Fi Setup</h1>
   <div class="small">Pick your home Wi-Fi (saved on device).</div>
   <label>Device name (for .local)</label>
   <input id="name" placeholder="beca-xxxx">
   <label>Wi-Fi SSID</label>
-  <select id="ssid"><option>Scanning…</option></select>
+  <select id="ssid"><option>Scanning...</option></select>
   <label>Password</label>
-  <input id="pass" type="password" placeholder="••••••••">
-  <button onclick="save()">Save & Connect</button>
-  <p class="small">If it fails you’ll come back here.</p>
-  <hr>
-  <button onclick="forget()">Forget Wi-Fi</button>
+  <input id="pass" type="password" placeholder="********">
+  <div class="stack">
+    <button class="primary" onclick="save()">Save and Connect</button>
+    <button onclick="forget()">Forget Wi-Fi</button>
+  </div>
+  <p class="small">If it fails you will come back here.</p>
 </div>
 <script>
 window.load = async () => {
@@ -1463,7 +1460,7 @@ window.save = async () => {
 }
 window.forget = async () => {
   await fetch('/wifi/forget');
-  alert('Forgotten. Rebooting to AP…');
+  alert('Forgotten. Rebooting to AP...');
   setTimeout(()=>location.reload(),1200);
 }
 window.load();

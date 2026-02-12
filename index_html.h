@@ -13,28 +13,40 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
     <style>
       :root {
         color-scheme: light;
-        --accent: #1fa86a;
-        --bg: #d2e6da;
-        --bg-soft: #e2efe7;
-        --surface: rgba(255, 255, 255, 0.36);
-        --surface-strong: rgba(255, 255, 255, 0.6);
-        --edge: rgba(90, 120, 105, 0.25);
-        --edge-strong: rgba(90, 120, 105, 0.38);
+        --accent: #008351;
+        --bg: #c7ddcf;
+        --bg-soft: #d7e7dd;
+        --surface: rgba(206, 222, 214, 0.22);
+        --surface-strong: rgba(206, 222, 214, 0.32);
+        --surface-soft: rgba(200, 216, 208, 0.26);
+        --surface-sunk: rgba(192, 208, 201, 0.22);
+        --edge: rgba(70, 96, 83, 0.24);
+        --edge-strong: rgba(70, 96, 83, 0.38);
         --text: #1b2c23;
-        --text-muted: rgba(27, 44, 35, 0.6);
-        --shadow-base: 0 18px 38px rgba(18, 30, 24, 0.15);
-        --shadow-green: 0 12px 28px rgba(31, 168, 106, 0.22);
-        --glow: 0 0 22px rgba(31, 168, 106, 0.25);
+        --text-muted: rgba(27, 44, 35, 0.58);
+        --shadow-base: 0 12px 26px rgba(18, 30, 24, 0.12);
+        --shadow-green: 0 10px 22px rgba(0, 131, 81, 0.16);
+        --glow: 0 0 18px rgba(0, 131, 81, 0.2);
         --radius: 22px;
         --radius-sm: 16px;
         --gap: 16px;
-        --grid: rgba(31, 168, 106, 0.06);
+        --grid: rgba(0, 131, 81, 0.05);
+        --glass-highlight: linear-gradient(
+          135deg,
+          rgba(255, 255, 255, 0.14),
+          rgba(255, 255, 255, 0.04) 55%,
+          rgba(255, 255, 255, 0) 78%
+        );
+        --glass-border: rgba(255, 255, 255, 0.2);
+        --glass-noise: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160' viewBox='0 0 160 160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/><feComponentTransfer><feFuncA type='table' tableValues='0 0.08'/></feComponentTransfer></filter><rect width='160' height='160' filter='url(%23n)'/></svg>");
         --key-w: clamp(16px, 3.6vw, 22px);
         --key-h: clamp(50px, 7vw, 66px);
-        --key-panel: rgba(240, 246, 242, 0.65);
-        --key-white: rgba(252, 254, 253, 0.85);
-        --key-black: rgba(24, 34, 29, 0.85);
-        --key-border: rgba(90, 120, 105, 0.3);
+        --key-panel: var(--surface-sunk);
+        --key-white: rgba(243, 249, 246, 0.68);
+        --key-black: rgba(0, 131, 81, 0.72);
+        --key-border: rgba(0, 131, 81, 0.45);
+        --logo-filter: brightness(0) saturate(100%) invert(28%) sepia(62%) saturate(1220%)
+          hue-rotate(113deg) brightness(90%) contrast(96%);
       }
       * {
         box-sizing: border-box;
@@ -46,9 +58,9 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
         width: min(1460px, 100%);
         color: var(--text);
         background:
-          radial-gradient(900px 520px at 78% -10%, rgba(31, 168, 106, 0.22), transparent 62%),
+          radial-gradient(900px 520px at 78% -10%, rgba(0, 131, 81, 0.22), transparent 62%),
           radial-gradient(760px 540px at 12% 18%, rgba(136, 200, 170, 0.25), transparent 62%),
-          radial-gradient(520px 420px at 88% 84%, rgba(31, 168, 106, 0.18), transparent 60%),
+          radial-gradient(520px 420px at 88% 84%, rgba(0, 131, 81, 0.18), transparent 60%),
           linear-gradient(160deg, var(--bg) 0%, var(--bg-soft) 58%, var(--bg) 100%);
         font-family:
           "SF Pro Display",
@@ -64,8 +76,8 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
         position: fixed;
         inset: -20% -20% -10% -20%;
         background:
-          radial-gradient(40% 35% at 70% 18%, rgba(31, 168, 106, 0.14), transparent 60%),
-          radial-gradient(36% 30% at 18% 80%, rgba(31, 168, 106, 0.12), transparent 65%);
+          radial-gradient(40% 35% at 70% 18%, rgba(0, 131, 81, 0.14), transparent 60%),
+          radial-gradient(36% 30% at 18% 80%, rgba(0, 131, 81, 0.12), transparent 65%);
         z-index: -2;
       }
       body::after {
@@ -98,7 +110,7 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
       }
       .brand img {
         height: 34px;
-        filter: drop-shadow(0 0 12px rgba(31, 168, 106, 0.28));
+        filter: var(--logo-filter) drop-shadow(0 0 10px rgba(0, 131, 81, 0.22));
       }
       .brand .title {
         font-size: 15px;
@@ -120,11 +132,14 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
         padding: 7px 14px;
         border: 1px solid var(--edge);
         border-radius: 999px;
-        background: rgba(255, 255, 255, 0.7);
+        background:
+          linear-gradient(150deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.03)),
+          var(--surface-soft);
         font-size: 11px;
         text-transform: uppercase;
         letter-spacing: 0.16em;
-        box-shadow: 0 8px 16px rgba(31, 168, 106, 0.12);
+        box-shadow: 0 6px 12px rgba(0, 131, 81, 0.1);
+        backdrop-filter: blur(16px) saturate(160%);
       }
       .status-pill::before {
         content: "";
@@ -134,7 +149,7 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
         border-radius: 50%;
         background: var(--accent);
         margin-right: 8px;
-        box-shadow: 0 0 10px rgba(31, 168, 106, 0.35);
+        box-shadow: 0 0 10px rgba(0, 131, 81, 0.35);
         vertical-align: middle;
       }
       .mono {
@@ -152,20 +167,24 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
       }
       .panel {
         background: var(--surface);
+        background-image: var(--glass-noise);
+        background-size: 220px 220px;
+        background-repeat: repeat;
+        background-blend-mode: soft-light;
         border: 1px solid var(--edge-strong);
         border-radius: var(--radius);
         padding: 16px;
         box-shadow: var(--shadow-base), var(--shadow-green);
         position: relative;
         overflow: hidden;
-        backdrop-filter: blur(26px) saturate(180%);
+        backdrop-filter: blur(24px) saturate(170%);
       }
       .panel::before {
         content: "";
         position: absolute;
         inset: 0;
         border-radius: inherit;
-        background: linear-gradient(135deg, rgba(255, 255, 255, 0.65), rgba(255, 255, 255, 0.18) 45%, rgba(255, 255, 255, 0) 70%);
+        background: var(--glass-highlight);
         pointer-events: none;
       }
       .panel::after {
@@ -173,7 +192,7 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
         position: absolute;
         inset: 7px;
         border-radius: calc(var(--radius) - 7px);
-        border: 1px solid rgba(255, 255, 255, 0.35);
+        border: 1px solid var(--glass-border);
         pointer-events: none;
       }
       .panel-io {
@@ -205,11 +224,18 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
         display: none;
       }
       .subcard {
-        background: var(--surface-strong);
+        background:
+          var(--glass-noise),
+          linear-gradient(155deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.03)),
+          var(--surface-strong);
+        background-size: 200px 200px, auto, auto;
+        background-repeat: repeat;
+        background-blend-mode: soft-light, normal, normal;
         border: 1px solid var(--edge);
         border-radius: var(--radius-sm);
         padding: 12px;
-        box-shadow: 0 10px 18px rgba(31, 168, 106, 0.12), inset 0 0 0 1px rgba(255, 255, 255, 0.45);
+        box-shadow: 0 8px 14px rgba(0, 131, 81, 0.1), inset 0 0 0 1px rgba(255, 255, 255, 0.28);
+        backdrop-filter: blur(18px) saturate(160%);
       }
       .module,
       .module-azure,
@@ -220,10 +246,8 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
       .module-rose,
       .module-cyan,
       .module-mint {
-        background: var(--surface-strong);
         border-color: var(--edge);
         color: var(--text);
-        box-shadow: 0 10px 18px rgba(31, 168, 106, 0.12), inset 0 0 0 1px rgba(255, 255, 255, 0.45);
       }
       .stack {
         display: flex;
@@ -236,7 +260,7 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
         gap: 12px;
       }
       .info-stack .subcard:last-child {
-        min-height: 260px;
+        min-height: 230px;
       }
       .io-grid {
         display: grid;
@@ -278,14 +302,17 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
       select,
       input[type="range"],
       input[type="checkbox"] {
-        background: rgba(255, 255, 255, 0.6);
+        background:
+          linear-gradient(150deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.03)),
+          var(--surface-soft);
         color: var(--text);
         border: 1px solid var(--edge-strong);
         border-radius: 12px;
         padding: 10px 12px;
         font-family: inherit;
         font-size: 13px;
-        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.45);
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.28);
+        backdrop-filter: blur(16px) saturate(160%);
       }
       select {
         width: 100%;
@@ -297,6 +324,115 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
         background-size: 6px 6px, 6px 6px;
         background-repeat: no-repeat;
       }
+      .select-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(10, 18, 14, 0.16);
+        backdrop-filter: blur(16px) saturate(120%);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.15s ease;
+        z-index: 90;
+      }
+      .select-backdrop.active {
+        opacity: 1;
+        pointer-events: auto;
+      }
+      body.select-open header,
+      body.select-open main,
+      body.select-open .utility-bar {
+        filter: blur(2px) saturate(0.95);
+      }
+      .select-wrap {
+        position: relative;
+      }
+      .select-native {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        opacity: 0;
+        pointer-events: none;
+      }
+      .select-btn {
+        width: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 10px 12px;
+        border: 1px solid var(--edge-strong);
+        border-radius: 12px;
+        background:
+          linear-gradient(150deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.03)),
+          var(--surface-soft);
+        color: var(--text);
+        font-family: inherit;
+        font-size: 13px;
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.28);
+        cursor: pointer;
+        backdrop-filter: blur(16px) saturate(160%);
+      }
+      .select-btn::after {
+        content: "";
+        width: 0;
+        height: 0;
+        border-left: 5px solid transparent;
+        border-right: 5px solid transparent;
+        border-top: 6px solid var(--text);
+      }
+      .select-wrap.open .select-btn {
+        border-color: rgba(0, 131, 81, 0.45);
+        box-shadow: 0 0 0 2px rgba(0, 131, 81, 0.16);
+      }
+      .select-list {
+        position: fixed;
+        max-height: 260px;
+        overflow: auto;
+        padding: 6px;
+        border-radius: 12px;
+        border: 1px solid var(--edge-strong);
+        background:
+          var(--glass-noise),
+          linear-gradient(155deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.03)),
+          var(--surface-strong);
+        background-size: 200px 200px, auto, auto;
+        background-repeat: repeat;
+        box-shadow: 0 12px 24px rgba(0, 131, 81, 0.12);
+        backdrop-filter: blur(18px) saturate(160%);
+        z-index: 100;
+        display: none;
+      }
+      .select-list.open {
+        display: block;
+      }
+      .select-option {
+        padding: 8px 10px;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 13px;
+        color: var(--text);
+      }
+      .select-option:hover {
+        background: rgba(0, 131, 81, 0.12);
+      }
+      .select-option.selected {
+        background: rgba(0, 131, 81, 0.18);
+        font-weight: 600;
+      }
+      select:focus {
+        outline: none;
+        border-color: rgba(0, 131, 81, 0.45);
+        box-shadow: 0 0 0 2px rgba(0, 131, 81, 0.16);
+      }
+      select option,
+      select optgroup {
+        background: rgba(210, 226, 218, 0.98);
+        color: var(--text);
+      }
+      select option:checked {
+        background: rgba(0, 131, 81, 0.18);
+        color: var(--text);
+      }
       input[type="range"] {
         width: 100%;
         height: 34px;
@@ -307,7 +443,7 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
       }
       input[type="range"]::-webkit-slider-runnable-track {
         height: 6px;
-        background: linear-gradient(90deg, rgba(31, 168, 106, 0.3), rgba(31, 168, 106, 0.18));
+        background: linear-gradient(90deg, rgba(0, 131, 81, 0.3), rgba(0, 131, 81, 0.18));
         border-radius: 999px;
       }
       input[type="range"]::-webkit-slider-thumb {
@@ -319,7 +455,7 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
         border-radius: 50%;
         background: var(--accent);
         border: 1px solid rgba(255, 255, 255, 0.75);
-        box-shadow: 0 0 10px rgba(31, 168, 106, 0.35);
+        box-shadow: 0 0 10px rgba(0, 131, 81, 0.35);
       }
       input[type="checkbox"] {
         width: 18px;
@@ -333,7 +469,13 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
       }
       .btn:hover {
         transform: translateY(-1px);
-        box-shadow: 0 10px 20px rgba(31, 168, 106, 0.16);
+        box-shadow: 0 8px 16px rgba(0, 131, 81, 0.14);
+      }
+      .btn.trigger:active,
+      .btn.trigger.pressed {
+        transform: translateY(0);
+        box-shadow: inset 0 3px 10px rgba(12, 22, 17, 0.25);
+        filter: brightness(0.92);
       }
       .btn.ghost {
         padding: 8px 14px;
@@ -376,9 +518,17 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
         padding: 10px;
         border-radius: 14px;
         border: 1px solid var(--edge-strong);
-        background: var(--key-panel);
+        background:
+          var(--glass-noise),
+          linear-gradient(160deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.03)),
+          var(--key-panel);
+        background-size: 190px 190px, auto, auto;
+        background-repeat: repeat;
+        background-blend-mode: soft-light, normal, normal;
         justify-content: center;
         min-height: calc(var(--key-h) + 16px);
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.24), 0 6px 12px rgba(0, 131, 81, 0.08);
+        backdrop-filter: blur(16px) saturate(160%);
       }
       .key {
         width: var(--key-w);
@@ -388,7 +538,7 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
         border-radius: 6px;
         cursor: pointer;
         transition: all 0.15s;
-        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.5);
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35);
       }
       .key.white {
         background: var(--key-white);
@@ -404,21 +554,30 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
       }
       .key.sel {
         outline: 2px solid var(--accent);
-        box-shadow: 0 0 12px rgba(31, 168, 106, 0.35);
+        box-shadow: 0 0 12px rgba(0, 131, 81, 0.35);
       }
       #osc,
       #notegrid {
         width: 100%;
         border-radius: 12px;
         border: 1px solid var(--edge-strong);
-        background: radial-gradient(150% 120% at 50% 50%, rgba(241, 247, 243, 0.95) 0%, rgba(230, 238, 233, 0.9) 60%, rgba(222, 231, 225, 0.92) 100%);
+        background:
+          var(--glass-noise),
+          linear-gradient(160deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.03)),
+          radial-gradient(120% 120% at 12% 18%, rgba(0, 131, 81, 0.08), transparent 62%),
+          var(--surface-sunk);
+        background-size: 200px 200px, auto, auto, auto;
+        background-repeat: repeat;
+        background-blend-mode: soft-light, normal, normal, normal;
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.22), inset 0 10px 18px rgba(15, 26, 20, 0.12);
+        backdrop-filter: blur(16px) saturate(160%);
       }
       #osc {
         height: 160px;
       }
       #notegrid {
-        height: 130px;
-        margin-top: 8px;
+        height: 120px;
+        margin-top: 6px;
       }
       .small {
         font-size: 11px;
@@ -428,8 +587,11 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
       #drumWrap {
         margin-top: 12px;
       }
-      #drumWrap.hidden {
-        display: none;
+      .hidden {
+        display: none !important;
+      }
+      #drumWrap.tight {
+        margin-top: 0;
       }
       .drumTitle {
         display: flex;
@@ -457,15 +619,17 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
       .dBox {
         height: 56px;
         border-radius: 14px;
-        border: 2px solid rgba(31, 168, 106, 0.38);
-        background: rgba(255, 255, 255, 0.45);
-        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.4), 0 6px 12px rgba(31, 168, 106, 0.12);
+        border: 2px solid rgba(0, 131, 81, 0.38);
+        background:
+          linear-gradient(150deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.05)),
+          var(--surface-soft);
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.24), 0 5px 10px rgba(0, 131, 81, 0.1);
         transition: all 0.08s;
       }
       .dBox.hit {
-        border-color: rgba(31, 168, 106, 0.75);
-        box-shadow: 0 0 16px rgba(31, 168, 106, 0.25), inset 0 0 0 1px rgba(31, 168, 106, 0.35);
-        background: rgba(31, 168, 106, 0.16);
+        border-color: rgba(0, 131, 81, 0.75);
+        box-shadow: 0 0 14px rgba(0, 131, 81, 0.22), inset 0 0 0 1px rgba(0, 131, 81, 0.3);
+        background: rgba(0, 131, 81, 0.16);
       }
       .dLab {
         text-align: center;
@@ -489,9 +653,12 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
         padding: 10px 12px;
         border: 1px solid var(--edge-strong);
         border-radius: 16px;
-        background: var(--surface-strong);
+        background:
+          linear-gradient(155deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.06)),
+          var(--surface-strong);
         min-width: 180px;
-        box-shadow: 0 8px 16px rgba(31, 168, 106, 0.12);
+        box-shadow: 0 6px 12px rgba(0, 131, 81, 0.1);
+        backdrop-filter: blur(16px) saturate(160%);
       }
       .toggle input {
         display: none;
@@ -500,8 +667,8 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
         width: 44px;
         height: 24px;
         border-radius: 999px;
-        background: rgba(255, 255, 255, 0.5);
-        border: 1px solid rgba(31, 168, 106, 0.45);
+        background: rgba(222, 235, 228, 0.6);
+        border: 1px solid rgba(0, 131, 81, 0.45);
         position: relative;
         transition: all 0.2s ease;
         flex-shrink: 0;
@@ -514,13 +681,13 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
         left: 2px;
         top: 2px;
         border-radius: 50%;
-        background: #f7faf8;
+        background: rgba(242, 248, 245, 0.85);
         transition: all 0.2s ease;
-        box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.08);
+        box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08);
       }
       .toggle input:checked + .switch {
-        background: rgba(31, 168, 106, 0.22);
-        border-color: rgba(31, 168, 106, 0.6);
+        background: rgba(0, 131, 81, 0.22);
+        border-color: rgba(0, 131, 81, 0.6);
       }
       .toggle input:checked + .switch::after {
         left: 24px;
@@ -558,7 +725,7 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
         pointer-events: none;
       }
       body.ui-muted #status {
-        border-color: rgba(31, 168, 106, 0.4);
+        border-color: rgba(0, 131, 81, 0.4);
         color: #8b5a35;
       }
       @media (max-width: 1200px) {
@@ -640,11 +807,13 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
             </div>
 
             <div class="subcard module module-lilac">
-              <div class="hdr">
-                <div class="label">Note Grid</div>
-                <div class="small mono" id="gridLab">--</div>
+              <div id="noteWrap">
+                <div class="hdr">
+                  <div class="label">Note Grid</div>
+                  <div class="small mono" id="gridLab">--</div>
+                </div>
+                <canvas id="notegrid" width="900" height="130"></canvas>
               </div>
-              <canvas id="notegrid" width="900" height="130"></canvas>
 
               <div id="drumWrap" class="hidden">
                 <div class="drumTitle">
@@ -896,7 +1065,7 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
         <span class="toggle-val mono" id="nrVal">--</span>
       </label>
 
-      <button id="rnd" class="btn accent icon-btn module module-butter">
+      <button id="rnd" class="btn accent icon-btn module module-butter trigger">
         <span class="icon" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
             <rect x="3.5" y="3.5" width="17" height="17" rx="3" />
@@ -986,18 +1155,73 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
       const osc = $("osc");
       const ctx = osc.getContext("2d");
       const N = 220;
+      const GRID_BG = "rgba(205, 222, 214, 0.22)";
+      const GRID_LINE = "rgba(0, 131, 81, 0.12)";
+      const GRID_TEXT = "rgba(27, 44, 35, 0.7)";
+      const NOTE_RGB = "0,131,81";
+      const SCOPE_LINE = "rgba(0, 131, 81, 0.9)";
 
       let plantA = new Array(N).fill(0);
       let uiMuted = false;
+      let isDrumMode = false;
+      let lastNoteState = { list: [], vel: 96, held: false };
+      let oscW = 0;
+      let oscH = 0;
+      let noteW = 0;
+      let noteH = 0;
+      let resizeTimer = null;
+
+      const DPR = Math.min(window.devicePixelRatio || 1, 2);
+
+      function resizeCanvas(canvas, ctxRef) {
+        const rect = canvas.getBoundingClientRect();
+        if (rect.width < 2 || rect.height < 2) return false;
+        const w = Math.round(rect.width * DPR);
+        const h = Math.round(rect.height * DPR);
+        if (canvas.width !== w || canvas.height !== h) {
+          canvas.width = w;
+          canvas.height = h;
+        }
+        ctxRef.setTransform(DPR, 0, 0, DPR, 0, 0);
+        return { w: rect.width, h: rect.height };
+      }
+
+      function resizeOsc() {
+        const size = resizeCanvas(osc, ctx);
+        if (!size) return false;
+        oscW = size.w;
+        oscH = size.h;
+        return true;
+      }
+
+      function resizeNoteGrid() {
+        const size = resizeCanvas(noteGrid, ng);
+        if (!size) return false;
+        noteW = size.w;
+        noteH = size.h;
+        return true;
+      }
+
+      function resizeAll() {
+        const oscChanged = resizeOsc();
+        const noteChanged = resizeNoteGrid();
+        if (oscChanged && plantA.length) {
+          grid();
+          line(plantA, SCOPE_LINE, 1.0);
+        }
+        if (noteChanged && !isDrumMode) {
+          drawNoteGridMulti(lastNoteState.list, lastNoteState.vel, lastNoteState.held);
+        }
+      }
 
 
       function grid() {
-        const w = osc.width,
-          h = osc.height;
+        const w = oscW || osc.clientWidth,
+          h = oscH || osc.clientHeight;
         ctx.clearRect(0, 0, w, h);
-        ctx.fillStyle = "#041107";
+        ctx.fillStyle = GRID_BG;
         ctx.fillRect(0, 0, w, h);
-        ctx.strokeStyle = "#0e2116";
+        ctx.strokeStyle = GRID_LINE;
         ctx.lineWidth = 1;
         for (let i = 0; i <= 8; i++) {
           const y = i * (h / 8);
@@ -1015,8 +1239,8 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
         }
       }
       function line(arr, col, maxv) {
-        const w = osc.width,
-          h = osc.height;
+        const w = oscW || osc.clientWidth,
+          h = oscH || osc.clientHeight;
         ctx.strokeStyle = col;
         ctx.lineWidth = 2;
         ctx.beginPath();
@@ -1041,6 +1265,24 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
         if (uiMuted) return;
         if (debouncers[key]) clearTimeout(debouncers[key]);
         debouncers[key] = setTimeout(() => sendNow(url), delay);
+      }
+
+      const lastState = {};
+      function setTextIfChanged(el, v, key) {
+        if (lastState[key] === v) return;
+        lastState[key] = v;
+        if (el) el.textContent = v;
+      }
+      function setValueIfChanged(el, v, key) {
+        if (lastState[key] === v) return;
+        lastState[key] = v;
+        if (el) el.value = v;
+      }
+      function setCheckedIfChanged(el, v, key) {
+        const val = !!v;
+        if (lastState[key] === val) return;
+        lastState[key] = val;
+        if (el) el.checked = val;
       }
 
       const MODE_NAMES = ["Notes", "Arpeggiator", "Chords", "Drum Machine"];
@@ -1083,8 +1325,160 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
         );
       }
 
+      let selectPortal = null;
+      let selectBackdrop = null;
+      let activeSelect = null;
+      let activeSelectBtn = null;
+
+      function syncCustomSelect(sel) {
+        const wrap = sel.closest(".select-wrap");
+        if (!wrap) return;
+        const label = wrap.querySelector(".select-text");
+        const text = sel.options[sel.selectedIndex]
+          ? sel.options[sel.selectedIndex].text
+          : "";
+        if (label) label.textContent = text;
+        if (activeSelect === sel && selectPortal) {
+          selectPortal
+            .querySelectorAll(".select-option")
+            .forEach((opt) =>
+              opt.classList.toggle("selected", opt.dataset.value === sel.value),
+            );
+        }
+      }
+
+      function ensureSelectPortal() {
+        if (selectPortal) return;
+        selectPortal = document.createElement("div");
+        selectPortal.className = "select-list";
+        document.body.appendChild(selectPortal);
+
+        selectBackdrop = document.createElement("div");
+        selectBackdrop.className = "select-backdrop";
+        document.body.appendChild(selectBackdrop);
+        selectBackdrop.addEventListener("click", closeSelectPortal);
+
+        window.addEventListener("resize", positionSelectPortal);
+        window.addEventListener("scroll", positionSelectPortal, true);
+      }
+
+      function buildPortalOptions(sel) {
+        if (!selectPortal) return;
+        selectPortal.innerHTML = "";
+        [...sel.options].forEach((opt) => {
+          const row = document.createElement("div");
+          row.className = "select-option";
+          row.dataset.value = opt.value;
+          row.textContent = opt.text;
+          if (opt.disabled) row.style.opacity = "0.5";
+          if (opt.selected) row.classList.add("selected");
+          row.addEventListener("click", () => {
+            sel.value = opt.value;
+            sel.dispatchEvent(new Event("change", { bubbles: true }));
+            closeSelectPortal();
+          });
+          selectPortal.appendChild(row);
+        });
+      }
+
+      function openSelectPortal(sel, btn) {
+        ensureSelectPortal();
+        activeSelect = sel;
+        activeSelectBtn = btn;
+        buildPortalOptions(sel);
+        positionSelectPortal();
+        selectPortal.classList.add("open");
+        selectBackdrop.classList.add("active");
+        document.body.classList.add("select-open");
+        const wrap = sel.closest(".select-wrap");
+        if (wrap) wrap.classList.add("open");
+      }
+
+      function closeSelectPortal() {
+        if (!selectPortal) return;
+        selectPortal.classList.remove("open");
+        selectBackdrop.classList.remove("active");
+        document.body.classList.remove("select-open");
+        if (activeSelect) {
+          const wrap = activeSelect.closest(".select-wrap");
+          if (wrap) wrap.classList.remove("open");
+        }
+        activeSelect = null;
+        activeSelectBtn = null;
+      }
+
+      function positionSelectPortal() {
+        if (!selectPortal || !activeSelectBtn) return;
+        const rect = activeSelectBtn.getBoundingClientRect();
+        const left = Math.max(12, rect.left);
+        const width = Math.min(rect.width, window.innerWidth - 24);
+        const top = rect.bottom + 8;
+        const maxHeight = Math.max(160, window.innerHeight - top - 16);
+        selectPortal.style.left = left + "px";
+        selectPortal.style.top = top + "px";
+        selectPortal.style.width = width + "px";
+        selectPortal.style.maxHeight = maxHeight + "px";
+      }
+
+      function buildCustomSelect(sel) {
+        const existing = sel.closest(".select-wrap");
+        let wrap = existing;
+        let btn;
+        let label;
+
+        if (!wrap) {
+          wrap = document.createElement("div");
+          wrap.className = "select-wrap";
+
+          btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "select-btn";
+          label = document.createElement("span");
+          label.className = "select-text";
+          btn.appendChild(label);
+
+          sel.parentNode.insertBefore(wrap, sel);
+          wrap.appendChild(btn);
+          wrap.appendChild(sel);
+          sel.classList.add("select-native");
+
+          btn.addEventListener("click", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (activeSelect === sel) {
+              closeSelectPortal();
+            } else {
+              openSelectPortal(sel, btn);
+            }
+          });
+
+          sel.addEventListener("change", () => syncCustomSelect(sel));
+        } else {
+          btn = wrap.querySelector(".select-btn");
+          label = wrap.querySelector(".select-text");
+          if (btn && !label) {
+            label = document.createElement("span");
+            label.className = "select-text";
+            btn.appendChild(label);
+          }
+        }
+
+        syncCustomSelect(sel);
+      }
+
+      function initCustomSelects() {
+        document.querySelectorAll("select").forEach((sel) => buildCustomSelect(sel));
+        document.addEventListener("click", () => {
+          closeSelectPortal();
+        });
+        document.addEventListener("keydown", (e) => {
+          if (e.key === "Escape") closeSelectPortal();
+        });
+      }
+
       // ---- MIDI NOTE GRID ----
       const gridLab = $("gridLab");
+      const noteWrap = $("noteWrap");
       const noteGrid = $("notegrid");
       const ng = noteGrid.getContext("2d");
 
@@ -1098,11 +1492,12 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
       }
 
       function drawNoteGridMulti(midiList, vel, held) {
-        const w = noteGrid.width,
-          h = noteGrid.height;
+        const w = noteW || noteGrid.clientWidth,
+          h = noteH || noteGrid.clientHeight;
+        if (w < 2 || h < 2) return;
         ng.clearRect(0, 0, w, h);
 
-        ng.fillStyle = "#041107";
+        ng.fillStyle = GRID_BG;
         ng.fillRect(0, 0, w, h);
 
         const pad = 10;
@@ -1114,7 +1509,7 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
         const cellW = gw / GRID_COLS;
         const cellH = gh / GRID_ROWS;
 
-        ng.strokeStyle = "#0e2116";
+        ng.strokeStyle = GRID_LINE;
         ng.lineWidth = 1;
         for (let r = 0; r <= GRID_ROWS; r++) {
           const y = gy + r * cellH;
@@ -1131,7 +1526,7 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
           ng.stroke();
         }
 
-        ng.fillStyle = "rgba(233,255,238,.7)";
+        ng.fillStyle = GRID_TEXT;
         ng.font = "12px JetBrains Mono, Consolas, monospace";
         for (let c = 0; c < 12; c++) {
           ng.fillText(NOTE_NAMES[c], gx + c * cellW + 6, gy - 2);
@@ -1150,10 +1545,10 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
           const x = gx + semi * cellW;
           const y = gy + (GRID_ROWS - 1 - oct) * cellH;
 
-          ng.fillStyle = `rgba(0,255,122,${0.14 * a + 0.45 * a * v})`;
+          ng.fillStyle = `rgba(${NOTE_RGB},${0.16 * a + 0.45 * a * v})`;
           ng.fillRect(x + 1, y + 1, cellW - 2, cellH - 2);
 
-          ng.strokeStyle = `rgba(0,255,122,${0.6 * a})`;
+          ng.strokeStyle = `rgba(${NOTE_RGB},${0.6 * a})`;
           ng.lineWidth = 2;
           ng.strokeRect(x + 2, y + 2, cellW - 4, cellH - 4);
         });
@@ -1183,6 +1578,8 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
         "crash",
       ];
       let drumSelMask = 0xff;
+      let lastDrumSelMask = null;
+      let lastDrumHitMask = null;
 
       const drumSelChecks = [];
       const drumHitBoxes = [];
@@ -1223,7 +1620,10 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
       }
 
       function applyDrumSelMask(mask) {
-        drumSelMask = mask & 255;
+        const next = mask & 255;
+        if (lastDrumSelMask === next) return;
+        lastDrumSelMask = next;
+        drumSelMask = next;
         for (let i = 0; i < 8; i++) {
           drumSelChecks[i].checked = !!(drumSelMask & (1 << i));
         }
@@ -1231,9 +1631,43 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
       }
 
       function applyDrumHitMask(hitMask) {
+        const next = hitMask & 255;
+        if (lastDrumHitMask === next) return;
+        lastDrumHitMask = next;
         for (let i = 0; i < 8; i++) {
-          drumHitBoxes[i].classList.toggle("hit", !!(hitMask & (1 << i)));
+          drumHitBoxes[i].classList.toggle("hit", !!(next & (1 << i)));
         }
+      }
+
+      let scopeRaf = null;
+      let noteRaf = null;
+      let pendingNote = null;
+
+      function scheduleScopeDraw() {
+        if (scopeRaf) return;
+        scopeRaf = requestAnimationFrame(() => {
+          scopeRaf = null;
+          if (!oscW || !oscH) resizeOsc();
+          if (oscW && oscH) {
+            grid();
+            line(plantA, SCOPE_LINE, 1.0);
+          }
+        });
+      }
+
+      function scheduleNoteDraw(list, vel, held) {
+        if (isDrumMode) return;
+        pendingNote = { list, vel, held };
+        if (noteRaf) return;
+        noteRaf = requestAnimationFrame(() => {
+          noteRaf = null;
+          if (isDrumMode) return;
+          if (!noteW || !noteH) resizeNoteGrid();
+          if (pendingNote) {
+            lastNoteState = pendingNote;
+            drawNoteGridMulti(pendingNote.list, pendingNote.vel, pendingNote.held);
+          }
+        });
       }
 
       function setUiMuted(on) {
@@ -1280,12 +1714,19 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
           }
 
           buildDrumUI();
+          resizeAll();
 
           grid();
           drawNoteGridMulti([], 96, false);
         } catch (e) {
           status.textContent = "ui error";
         }
+        initCustomSelects();
+        window.addEventListener("resize", () => {
+          clearTimeout(resizeTimer);
+          resizeTimer = setTimeout(resizeAll, 120);
+        });
+        setTimeout(resizeAll, 200);
       })();
 
       // SSE stream
@@ -1303,74 +1744,104 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
         const j = JSON.parse(e.data);
         if (!uiMuted) status.textContent = "ok";
 
-        ble.textContent = j.ble ? "connected" : "--";
-        clock.textContent = j.clock ? "Plant" : "Internal";
-        modeLab.textContent = MODE_NAMES[j.mode] || "--";
-        scaleLab.textContent = SCALE_NAMES[j.scale] || "--";
-        rootLab.textContent = NOTE_NAMES[j.root] || "--";
-        bpmLab.textContent = j.bpm;
-        swingLab.textContent = j.swing + "%";
-        brightLab.textContent = j.bright;
-        sensLab.textContent = (+j.sens).toFixed(2);
-        fxLab.textContent = j.fxname || "--";
-        palLab.textContent = j.palname || "--";
-        octLab.textContent = "C" + j.lo + " .. C" + j.hi;
-        tsLab.textContent = j.ts;
-        velLab.textContent = j.vel;
-        if (lastLab) lastLab.textContent = j.last || "--";
+        const bleVal = j.ble ? "connected" : "--";
+        const clockVal = j.clock ? "Plant" : "Internal";
+        const modeName = MODE_NAMES[j.mode] || "--";
+        const scaleName = SCALE_NAMES[j.scale] || "--";
+        const rootName = NOTE_NAMES[j.root] || "--";
+        const sensStr = (+j.sens).toFixed(2);
+        const fxName = j.fxname || "--";
+        const palName = j.palname || "--";
+        const octStr = "C" + j.lo + " .. C" + j.hi;
+        const tsStr = j.ts;
+        const lastStr = j.last || "--";
 
-        bpmRange.value = j.bpm;
-        swingRange.value = j.swing;
-        brightRange.value = j.bright;
-        sensRange.value = j.sens;
-        loct.value = j.lo;
-        hoct.value = j.hi;
+        setTextIfChanged(ble, bleVal, "ble");
+        setTextIfChanged(clock, clockVal, "clock");
+        setTextIfChanged(modeLab, modeName, "modeLab");
+        setTextIfChanged(scaleLab, scaleName, "scaleLab");
+        setTextIfChanged(rootLab, rootName, "rootLab");
+        setTextIfChanged(bpmLab, j.bpm, "bpmLab");
+        setTextIfChanged(swingLab, j.swing + "%", "swingLab");
+        setTextIfChanged(brightLab, j.bright, "brightLab");
+        setTextIfChanged(sensLab, sensStr, "sensLab");
+        setTextIfChanged(fxLab, fxName, "fxLab");
+        setTextIfChanged(palLab, palName, "palLab");
+        setTextIfChanged(octLab, octStr, "octLab");
+        setTextIfChanged(tsLab, tsStr, "tsLab");
+        setTextIfChanged(velLab, j.vel, "velLab");
+        if (lastLab) setTextIfChanged(lastLab, lastStr, "lastLab");
 
-        mode.value = j.mode;
-        clockSel.value = j.clock;
-        scale.value = j.scale;
-        tsSel.value = j.ts.replace("/", "-");
+        setValueIfChanged(bpmRange, j.bpm, "bpmRange");
+        setValueIfChanged(swingRange, j.swing, "swingRange");
+        setValueIfChanged(brightRange, j.bright, "brightRange");
+        setValueIfChanged(sensRange, j.sens, "sensRange");
+        setValueIfChanged(loct, j.lo, "loct");
+        setValueIfChanged(hoct, j.hi, "hoct");
 
-        effect.value = j.fx;
-        palette.value = j.pal;
+        setValueIfChanged(mode, j.mode, "mode");
+        setValueIfChanged(clockSel, j.clock, "clockSel");
+        setValueIfChanged(scale, j.scale, "scale");
+        setValueIfChanged(tsSel, tsStr.replace("/", "-"), "tsSel");
 
-        visSpd.value = j.vs;
-        visInt.value = j.vi;
+        setValueIfChanged(effect, j.fx, "effect");
+        setValueIfChanged(palette, j.pal, "palette");
 
-        rest.value = Math.round(j.rest * 100);
-        norep.checked = !!j.nr;
+        setValueIfChanged(visSpd, j.vs, "visSpd");
+        setValueIfChanged(visInt, j.vi, "visInt");
 
-        setVal(bpmVal, j.bpm);
-        setVal(swingVal, j.swing + "%");
-        setVal(brightVal, j.bright);
-        setVal(sensVal, (+j.sens).toFixed(2));
-        setVal(loVal, "C" + j.lo);
-        setVal(hiVal, "C" + j.hi);
-        setVal(fxVal, fxLab.textContent);
-        setVal(palVal, palLab.textContent);
-        setVal(vsVal, j.vs);
-        setVal(viVal, j.vi);
-        setVal(restVal, Math.round(j.rest * 100) + "%");
-        setVal(nrVal, j.nr ? "ON" : "OFF");
-        setVal(tsVal, j.ts);
+        setValueIfChanged(rest, Math.round(j.rest * 100), "rest");
+        setCheckedIfChanged(norep, !!j.nr, "norep");
 
-        updatePianoSel(j.root | 0);
+        setTextIfChanged(bpmVal, j.bpm, "bpmVal");
+        setTextIfChanged(swingVal, j.swing + "%", "swingVal");
+        setTextIfChanged(brightVal, j.bright, "brightVal");
+        setTextIfChanged(sensVal, sensStr, "sensVal");
+        setTextIfChanged(loVal, "C" + j.lo, "loVal");
+        setTextIfChanged(hiVal, "C" + j.hi, "hiVal");
+        setTextIfChanged(fxVal, fxName, "fxVal");
+        setTextIfChanged(palVal, palName, "palVal");
+        setTextIfChanged(vsVal, j.vs, "vsVal");
+        setTextIfChanged(viVal, j.vi, "viVal");
+        setTextIfChanged(restVal, Math.round(j.rest * 100) + "%", "restVal");
+        setTextIfChanged(nrVal, j.nr ? "ON" : "OFF", "nrVal");
+        setTextIfChanged(tsVal, tsStr, "tsVal");
 
-        const isDrum = (j.mode | 0) === 3;
-        drumWrap.classList.toggle("hidden", !isDrum);
+        if (lastState.root !== j.root) {
+          lastState.root = j.root;
+          updatePianoSel(j.root | 0);
+        }
+        syncCustomSelect(mode);
+        syncCustomSelect(clockSel);
+        syncCustomSelect(scale);
+        syncCustomSelect(tsSel);
+        syncCustomSelect(effect);
+        syncCustomSelect(palette);
+
+        const nextDrum = (j.mode | 0) === 3;
+        if (isDrumMode !== nextDrum) {
+          isDrumMode = nextDrum;
+          drumWrap.classList.toggle("hidden", !isDrumMode);
+          noteWrap.classList.toggle("hidden", isDrumMode);
+          drumWrap.classList.toggle("tight", isDrumMode);
+        }
 
         if (typeof j.drumsel !== "undefined") applyDrumSelMask(j.drumsel | 0);
 
         const lastMidi = parseInt(j.last, 10);
-        if (!Number.isNaN(lastMidi))
-          drawNoteGridMulti([lastMidi], j.vel | 0, false);
+        if (!Number.isNaN(lastMidi) && !isDrumMode) {
+          if (lastState.lastMidi !== lastMidi || lastState.lastVel !== j.vel) {
+            lastState.lastMidi = lastMidi;
+            lastState.lastVel = j.vel;
+            scheduleNoteDraw([lastMidi], j.vel | 0, false);
+          }
+        }
       });
       es.addEventListener("scope", (e) => {
         const plant = Number(e.data);
         plantA.push(plant);
         plantA.shift();
-        grid();
-        line(plantA, "#00ff7a", 1.0);
+        scheduleScopeDraw();
       });
 
       es.addEventListener("note", (e) => {
@@ -1384,7 +1855,7 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
                 .map((x) => Number(x))
                 .filter((x) => !Number.isNaN(x))
             : [];
-        drawNoteGridMulti(list, vel, held);
+        scheduleNoteDraw(list, vel, held);
       });
 
       es.addEventListener("drum", (e) => {
@@ -1473,11 +1944,16 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
         debouncedSend("ts", "/ts?v=" + v, 30);
       };
 
-      rnd.onclick = () => sendNow("/rand");
+      rnd.onclick = () => {
+        rnd.classList.add("pressed");
+        setTimeout(() => rnd.classList.remove("pressed"), 140);
+        sendNow("/rand");
+      };
 
       mute.onchange = (e) => setUiMuted(e.target.checked);
     </script>
   </body>
 </html>
+
 
 )BECA_UI_HTML";

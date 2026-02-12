@@ -96,6 +96,21 @@ Assumption: This project follows the typical Arduino web-enabled layout even if 
 - Sensitivity, noise floor, and smoothing: typically configured with constants such as EMA alpha, baseline tracking, or noise tracking. Adjust carefully and validate stability.
 - Persistent settings: Wi-Fi credentials are stored via `Preferences` in NVS. Assumption: most musical parameters are runtime-only unless explicitly saved.
 
+## Default Boot Settings
+
+- Clock: Internal
+- Mode: Chords
+- Scale: Major
+- Root: C
+- BPM: 60
+- Swing: 0%
+- Brightness: 154
+- Sensitivity: 0.20
+- Effect: Gradient Flow
+- Palette: Mojito
+- Octave range: C3 .. C6
+- Avoid repeats: Off
+
 ## Troubleshooting
 
 - Symptom: `NimBLEDevice.h` missing. Likely cause: NimBLE library removed or incompatible version. Fix: install NimBLE and use a known-good version (example: `1.4.3`) with ESP32 core `2.0.14`.
