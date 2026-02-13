@@ -128,9 +128,69 @@ struct NoteOff {
 };
 NoteOff offQ[16];
 
+struct UiHeldNote {
+  uint8_t  note;
+  uint32_t tOff;
+  bool     on;
+};
+UiHeldNote uiNoteQ[24];
+
+static inline void uiQueueHeldNote(uint8_t note, uint16_t durMs) {
+  uint32_t until = millis() + durMs;
+  for (auto &q : uiNoteQ) {
+    if (q.on && q.note == note) {
+      if ((int32_t)(until - q.tOff) > 0) q.tOff = until;
+      return;
+    }
+  }
+  for (auto &q : uiNoteQ) {
+    if (!q.on) {
+      q.note = note;
+      q.tOff = until;
+      q.on = true;
+      return;
+    }
+  }
+  uint8_t oldest = 0;
+  for (uint8_t i = 1; i < (uint8_t)(sizeof(uiNoteQ) / sizeof(uiNoteQ[0])); ++i) {
+    if ((int32_t)(uiNoteQ[i].tOff - uiNoteQ[oldest].tOff) < 0) oldest = i;
+  }
+  uiNoteQ[oldest].note = note;
+  uiNoteQ[oldest].tOff = until;
+  uiNoteQ[oldest].on = true;
+}
+
+static inline uint8_t uiCollectHeldNotes(uint8_t* out, uint8_t maxOut) {
+  uint32_t now = millis();
+  uint8_t count = 0;
+  for (auto &q : uiNoteQ) {
+    if (!q.on) continue;
+    if ((int32_t)(now - q.tOff) >= 0) {
+      q.on = false;
+      continue;
+    }
+    bool exists = false;
+    for (uint8_t i = 0; i < count; ++i) {
+      if (out[i] == q.note) { exists = true; break; }
+    }
+    if (!exists && count < maxOut) out[count++] = q.note;
+  }
+  for (uint8_t i = 0; i + 1 < count; ++i) {
+    for (uint8_t j = i + 1; j < count; ++j) {
+      if (out[j] < out[i]) {
+        uint8_t t = out[i];
+        out[i] = out[j];
+        out[j] = t;
+      }
+    }
+  }
+  return count;
+}
+
 static inline void allNotesOff() {
   allNotesOffCurrentTransport();
   for (auto &q : offQ) q.on = false;
+  for (auto &q : uiNoteQ) q.on = false;
 }
 
 static inline void setMidiOutMode(uint8_t mode) {
@@ -314,7 +374,7 @@ volatile uint8_t drumSelMask = 0xFF;
 // drum hit visual hold
 uint32_t gDrumHoldUntil[DP_COUNT] = {0};
 
-static inline void drumMarkHit(uint8_t part, uint16_t holdMs=110){
+static inline void drumMarkHit(uint8_t part, uint16_t holdMs=220){
   if (part >= DP_COUNT) return;
   uint32_t until = millis() + holdMs;
   if (until > gDrumHoldUntil[part]) gDrumHoldUntil[part] = until;
@@ -348,13 +408,13 @@ static inline uint8_t clampToC1B8(uint8_t midi) {
   return midi;
 }
 
-static inline uint32_t hashActiveNotes(uint8_t held, uint8_t vel) {
+static inline uint32_t hashActiveNotes(const uint8_t* notes, uint8_t count, uint8_t held, uint8_t vel) {
   uint32_t h = 2166136261u;
   h = (h ^ held) * 16777619u;
   h = (h ^ vel ) * 16777619u;
-  h = (h ^ gActiveCount) * 16777619u;
-  for (uint8_t i = 0; i < gActiveCount; i++) {
-    h = (h ^ gActiveNotes[i]) * 16777619u;
+  h = (h ^ count) * 16777619u;
+  for (uint8_t i = 0; i < count; i++) {
+    h = (h ^ notes[i]) * 16777619u;
   }
   return h;
 }
@@ -367,11 +427,14 @@ static inline void triggerVisual(uint8_t note, uint8_t vel) {
 
 // sendMelodic extends hold window (used by MIDI grid)
 static inline void sendMelodic(uint8_t note, uint8_t vel = 96, uint8_t ch = 1, uint16_t gateMs = 120) {
-  if (!midiOutReady()) return;
   if (humanize) gateMs = (uint16_t)constrain((int)gateMs + (int)random(-12, 12), 50, 600);
+  uiQueueHeldNote(note, gateMs);
 
-  midiSendNoteOn(note, vel, ch);
-  queueNoteOff(note, ch, gateMs);
+  const bool canSend = midiOutReady();
+  if (canSend) {
+    midiSendNoteOn(note, vel, ch);
+    queueNoteOff(note, ch, gateMs);
+  }
   triggerVisual(note, vel);
   activeAdd(note);
 
@@ -382,19 +445,20 @@ static inline void sendMelodic(uint8_t note, uint8_t vel = 96, uint8_t ch = 1, u
 
 // drums also light drum-grid + extend hold window (for feel)
 static inline void sendDrum(uint8_t note, uint8_t vel = 110, uint16_t gateMs = 60) {
-  if (!midiOutReady()) return;
-
   int8_t part = drumPartFromNote(note);
   if (part >= 0) {
     // respect selection mask
     if (((uint8_t)drumSelMask & (1u << (uint8_t)part)) == 0) return;
   }
 
-  midiSendNoteOn(note, vel, DRUM_CH);
-  queueNoteOff(note, DRUM_CH, gateMs);
+  const bool canSend = midiOutReady();
+  if (canSend) {
+    midiSendNoteOn(note, vel, DRUM_CH);
+    queueNoteOff(note, DRUM_CH, gateMs);
+  }
   triggerVisual(note, vel);
 
-  if (part >= 0) drumMarkHit((uint8_t)part, 110);
+  if (part >= 0) drumMarkHit((uint8_t)part, 220);
 
   uint32_t now = millis();
   uint32_t until = now + gateMs;
@@ -1100,7 +1164,9 @@ static inline void sseSend(const char* event, const char* data) {
   const bool critical =
     (strcmp(event, "hello") == 0) ||
     (strcmp(event, "state") == 0) ||
-    (strcmp(event, "scope") == 0);
+    (strcmp(event, "scope") == 0) ||
+    (strcmp(event, "note") == 0) ||
+    (strcmp(event, "drum") == 0);
 
   if (!critical) {
     size_t need = 8 + strlen(event) + 7 + strlen(data) + 2;
@@ -2061,10 +2127,12 @@ void loop() {
       if ((int32_t)(now - lastSseNoteMs) >= (int32_t)SSE_NOTE_MS) {
         lastSseNoteMs = now;
 
-        const uint8_t held = ((int32_t)(millis() - gHoldUntilMs) < 0) ? 1 : 0;
+        uint8_t uiNotes[MAX_ACTIVE_NOTES];
+        const uint8_t uiCount = uiCollectHeldNotes(uiNotes, MAX_ACTIVE_NOTES);
+        const uint8_t held = (uiCount > 0) ? 1 : 0;
         const uint8_t vel  = (uint8_t)lastVel;
 
-        uint32_t h = hashActiveNotes(held, vel);
+        uint32_t h = hashActiveNotes(uiNotes, uiCount, held, vel);
         if (h != lastNoteHash) {
           lastNoteHash = h;
 
@@ -2073,12 +2141,12 @@ void loop() {
           n += snprintf(buf + n, sizeof(buf) - n, "%u|%u|%u|",
                         (unsigned)held,
                         (unsigned)vel,
-                        (unsigned)gActiveCount);
+                        (unsigned)uiCount);
 
-          for (uint8_t i = 0; i < gActiveCount; i++) {
+          for (uint8_t i = 0; i < uiCount; i++) {
             n += snprintf(buf + n, sizeof(buf) - n, "%u%s",
-                          (unsigned)gActiveNotes[i],
-                          (i + 1 < gActiveCount) ? "," : "");
+                          (unsigned)uiNotes[i],
+                          (i + 1 < uiCount) ? "," : "");
             if (n >= (int)sizeof(buf) - 8) break;
           }
           sseSend("note", buf);

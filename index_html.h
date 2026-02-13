@@ -1184,6 +1184,8 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
       let plantA = new Array(N).fill(0);
       let uiMuted = false;
       let isDrumMode = false;
+      let currentMode = 2;
+      let lastNoteEventMs = 0;
       let lastNoteState = { list: [], vel: 96, held: false };
       let oscW = 0;
       let oscH = 0;
@@ -1511,6 +1513,46 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
         return NOTE_NAMES[semi] + oct;
       }
 
+      function chordNameFromNotes(midiList) {
+        if (!Array.isArray(midiList) || midiList.length < 3) return "";
+
+        const semis = [...new Set(
+          midiList.map((m) => ((m | 0) % 12 + 12) % 12)
+        )].sort((a, b) => a - b);
+
+        if (semis.length < 3) return "";
+
+        const bass = (((Math.min(...midiList) | 0) % 12) + 12) % 12;
+        const roots = [bass, ...semis.filter((s) => s !== bass)];
+
+        const qualityFor = (ints) => {
+          const k = ints.join(",");
+          if (k === "0,4,7,11") return "Maj7";
+          if (k === "0,4,7,10") return "7";
+          if (k === "0,3,7,10") return "m7";
+          if (k === "0,3,7,11") return "mMaj7";
+          if (k === "0,3,6,10") return "m7b5";
+          if (k === "0,3,6,9") return "dim7";
+          if (k === "0,4,8,10") return "aug7";
+          if (k === "0,4,8") return "aug";
+          if (k === "0,3,6") return "dim";
+          if (k === "0,3,7") return "m";
+          if (k === "0,4,7") return "Maj";
+          if (k === "0,2,7") return "sus2";
+          if (k === "0,5,7") return "sus4";
+          return "";
+        };
+
+        for (const root of roots) {
+          const ints = [...new Set(
+            semis.map((s) => (s - root + 12) % 12)
+          )].sort((a, b) => a - b);
+          const q = qualityFor(ints);
+          if (q) return NOTE_NAMES[root] + q;
+        }
+        return NOTE_NAMES[bass] + " chord";
+      }
+
       function drawNoteGridMulti(midiList, vel, held) {
         const w = noteW || noteGrid.clientWidth,
           h = noteH || noteGrid.clientHeight;
@@ -1577,7 +1619,9 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
           gridLab.textContent = "--";
         } else {
           const names = midiList.slice(0, 6).map(noteName).join(" ");
-          gridLab.textContent = `${held ? "HOLD" : "hit"} | ${names}${midiList.length > 6 ? " ..." : ""} | vel ${vel | 0}`;
+          const chordName = currentMode === 2 ? chordNameFromNotes(midiList) : "";
+          const title = chordName ? `${chordName} | ` : "";
+          gridLab.textContent = `${held ? "HOLD" : "hit"} | ${title}${names}${midiList.length > 6 ? " ..." : ""} | vel ${vel | 0}`;
         }
       }
       // ---- DRUM UI ----
@@ -1763,6 +1807,7 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
       es.addEventListener("state", (e) => {
         const j = JSON.parse(e.data);
         if (!uiMuted) status.textContent = "ok";
+        currentMode = (j.mode | 0);
 
         const midiSerial = (j.midimode | 0) === 1;
         const bleVal = midiSerial ? "serial bridge" : (j.ble ? "connected" : "--");
@@ -1852,7 +1897,14 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
         if (typeof j.drumsel !== "undefined") applyDrumSelMask(j.drumsel | 0);
 
         const lastMidi = parseInt(j.last, 10);
-        if (!Number.isNaN(lastMidi) && !isDrumMode) {
+        const recentlyHadNoteEvent = (Date.now() - lastNoteEventMs) < 500;
+        const keepChordFromNoteEvent =
+          currentMode === 2 &&
+          Array.isArray(lastNoteState.list) &&
+          lastNoteState.list.length > 1 &&
+          (Date.now() - lastNoteEventMs) < 1200;
+
+        if (!Number.isNaN(lastMidi) && !isDrumMode && currentMode !== 2 && !keepChordFromNoteEvent && !recentlyHadNoteEvent) {
           if (lastState.lastMidi !== lastMidi || lastState.lastVel !== j.vel) {
             lastState.lastMidi = lastMidi;
             lastState.lastVel = j.vel;
@@ -1868,6 +1920,7 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
       });
 
       es.addEventListener("note", (e) => {
+        lastNoteEventMs = Date.now();
         const [heldS, velS, nS, listS] = e.data.split("|");
         const held = Number(heldS) === 1;
         const vel = Number(velS) || 96;
