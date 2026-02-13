@@ -719,7 +719,7 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
       body.ui-muted .utility-bar {
         pointer-events: auto;
       }
-      body.ui-muted .utility-bar .toggle:not(.mute-toggle),
+      body.ui-muted .utility-bar .toggle:not(.mute-toggle):not(.transport-toggle),
       body.ui-muted #rnd {
         opacity: 0.4;
         pointer-events: none;
@@ -849,7 +849,7 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
                 <div class="label">Info Snapshot</div>
               </div>
               <div class="kv mono">
-                <div class="label">BLE:</div>
+                <div class="label">MIDI:</div>
                 <div id="ble">--</div>
                 <div class="label">Clock:</div>
                 <div id="clock">--</div>
@@ -1079,6 +1079,24 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
         Randomize
       </button>
 
+      <label class="toggle transport-toggle module module-cyan">
+        <input id="midiMode" type="checkbox" />
+        <span class="switch"></span>
+        <span class="toggle-label">
+          <span class="icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M8 7h8" />
+              <path d="M8 12h8" />
+              <path d="M8 17h8" />
+              <rect x="3" y="4" width="4" height="16" rx="1.5" />
+              <rect x="17" y="4" width="4" height="16" rx="1.5" />
+            </svg>
+          </span>
+          MIDI Link
+        </span>
+        <span class="toggle-val mono" id="midiModeVal">BLE</span>
+      </label>
+
       <label class="toggle mute-toggle module module-rose">
         <input id="mute" type="checkbox" />
         <span class="switch"></span>
@@ -1135,6 +1153,8 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
       const rest = $("rest");
       const norep = $("norep");
       const rnd = $("rnd");
+      const midiMode = $("midiMode");
+      const midiModeVal = $("midiModeVal");
       const mute = $("mute");
       const muteVal = $("muteVal");
 
@@ -1257,14 +1277,14 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
       }
 
       const debouncers = {};
-      function sendNow(url) {
-        if (uiMuted) return;
+      function sendNow(url, allowWhenMuted = false) {
+        if (uiMuted && !allowWhenMuted) return;
         fetch(url, { cache: "no-store" }).catch(() => {});
       }
-      function debouncedSend(key, url, delay = 90) {
-        if (uiMuted) return;
+      function debouncedSend(key, url, delay = 90, allowWhenMuted = false) {
+        if (uiMuted && !allowWhenMuted) return;
         if (debouncers[key]) clearTimeout(debouncers[key]);
-        debouncers[key] = setTimeout(() => sendNow(url), delay);
+        debouncers[key] = setTimeout(() => sendNow(url, allowWhenMuted), delay);
       }
 
       const lastState = {};
@@ -1744,7 +1764,8 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
         const j = JSON.parse(e.data);
         if (!uiMuted) status.textContent = "ok";
 
-        const bleVal = j.ble ? "connected" : "--";
+        const midiSerial = (j.midimode | 0) === 1;
+        const bleVal = midiSerial ? "serial bridge" : (j.ble ? "connected" : "--");
         const clockVal = j.clock ? "Plant" : "Internal";
         const modeName = MODE_NAMES[j.mode] || "--";
         const scaleName = SCALE_NAMES[j.scale] || "--";
@@ -1792,6 +1813,7 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
 
         setValueIfChanged(rest, Math.round(j.rest * 100), "rest");
         setCheckedIfChanged(norep, !!j.nr, "norep");
+        setCheckedIfChanged(midiMode, midiSerial, "midiMode");
 
         setTextIfChanged(bpmVal, j.bpm, "bpmVal");
         setTextIfChanged(swingVal, j.swing + "%", "swingVal");
@@ -1805,6 +1827,7 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
         setTextIfChanged(viVal, j.vi, "viVal");
         setTextIfChanged(restVal, Math.round(j.rest * 100) + "%", "restVal");
         setTextIfChanged(nrVal, j.nr ? "ON" : "OFF", "nrVal");
+        setTextIfChanged(midiModeVal, midiSerial ? "SERIAL" : "BLE", "midiModeVal");
         setTextIfChanged(tsVal, tsStr, "tsVal");
 
         if (lastState.root !== j.root) {
@@ -1948,6 +1971,12 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
         rnd.classList.add("pressed");
         setTimeout(() => rnd.classList.remove("pressed"), 140);
         sendNow("/rand");
+      };
+
+      midiMode.onchange = (e) => {
+        const v = e.target.checked ? 1 : 0;
+        setVal(midiModeVal, v ? "SERIAL" : "BLE");
+        debouncedSend("midimode", "/midimode?v=" + v, 30, true);
       };
 
       mute.onchange = (e) => setUiMuted(e.target.checked);

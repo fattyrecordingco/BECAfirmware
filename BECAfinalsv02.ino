@@ -1,5 +1,5 @@
 /******************************************************
- * BECA — Plant-Played MIDI Synth + BLE + Visualizer
+ * BECA - Plant-Played MIDI Synth (BLE + Serial) + Visualizer
  * ESP32-PICO-V3 (Arduino "ESP32 Dev Module")
  *
  * Stability + UI smoothness version:
@@ -9,7 +9,7 @@
  *
  * VIS UPDATE:
  * - Oscilloscope shows ONLY plant input (energy 0..1)
- * - MIDI note grid under scope (12 semis × 8 rows)
+ * - MIDI note grid under scope (12 semis x 8 rows)
  * - NEW (this edit): Drum Machine UI:
  *     - Drum selectors (8 parts)
  *     - Drum hit indicators (8 parts)
@@ -57,10 +57,53 @@ uint8_t gBrightness = 154;
 
 // -------------------- BLE-MIDI --------------------
 volatile bool gMidiConnected = false;
+enum MidiOutMode : uint8_t { MIDI_OUT_BLE = 0, MIDI_OUT_SERIAL = 1 };
+volatile uint8_t gMidiOutMode = MIDI_OUT_BLE;
+const uint32_t SERIAL_MIDI_BAUD = 115200;
+const uint32_t SERIAL_MIDI_BEACON_MS = 2000;
+uint32_t gLastSerialBeaconMs = 0;
 
 // --- BLE advertising keepalive ---
 uint32_t gLastBleKickMs = 0;
 const uint32_t BLE_KICK_INTERVAL_MS = 2500; // kick advertise every 2.5s when not connected
+
+static inline bool midiOutIsSerial() { return gMidiOutMode == MIDI_OUT_SERIAL; }
+static inline bool midiOutReady()    { return midiOutIsSerial() || gMidiConnected; }
+
+static inline void serialMidiSend3(uint8_t st, uint8_t d1, uint8_t d2) {
+  char line[24];
+  int n = snprintf(line, sizeof(line), "@M %02X %02X %02X\n", st, d1 & 0x7F, d2 & 0x7F);
+  if (n > 0) Serial.write((const uint8_t*)line, (size_t)n);
+}
+
+static inline void midiSendNoteOn(uint8_t note, uint8_t vel, uint8_t ch) {
+  uint8_t status = 0x90 | ((ch - 1) & 0x0F);
+  if (midiOutIsSerial()) serialMidiSend3(status, note, vel);
+  else if (gMidiConnected) MIDI.sendNoteOn(note, vel, ch);
+}
+
+static inline void midiSendNoteOff(uint8_t note, uint8_t vel, uint8_t ch) {
+  uint8_t status = 0x80 | ((ch - 1) & 0x0F);
+  if (midiOutIsSerial()) serialMidiSend3(status, note, vel);
+  else if (gMidiConnected) MIDI.sendNoteOff(note, vel, ch);
+}
+
+static inline void midiSendControlChange(uint8_t cc, uint8_t val, uint8_t ch) {
+  uint8_t status = 0xB0 | ((ch - 1) & 0x0F);
+  if (midiOutIsSerial()) serialMidiSend3(status, cc, val);
+  else if (gMidiConnected) MIDI.sendControlChange(cc, val, ch);
+}
+
+static inline void allNotesOffBothTransports() {
+  for (uint8_t ch = 1; ch <= 16; ++ch) {
+    MIDI.sendControlChange(123, 0, ch);
+    serialMidiSend3((uint8_t)(0xB0 | ((ch - 1) & 0x0F)), 123, 0);
+  }
+}
+
+static inline void allNotesOffCurrentTransport() {
+  for (uint8_t ch = 1; ch <= 16; ++ch) midiSendControlChange(123, 0, ch);
+}
 
 static inline void bleKickAdvertising() {
   // Only kick when not connected; avoids messing with active sessions
@@ -86,8 +129,23 @@ struct NoteOff {
 NoteOff offQ[16];
 
 static inline void allNotesOff() {
-  for (uint8_t ch = 1; ch <= 16; ++ch) MIDI.sendControlChange(123, 0, ch);
+  allNotesOffCurrentTransport();
   for (auto &q : offQ) q.on = false;
+}
+
+static inline void setMidiOutMode(uint8_t mode) {
+  uint8_t next = (uint8_t)constrain((int)mode, 0, 1);
+  if (next == gMidiOutMode) return;
+  allNotesOffBothTransports();
+  for (auto &q : offQ) q.on = false;
+  gMidiOutMode = next;
+  if (midiOutIsSerial()) {
+    gLastSerialBeaconMs = 0;
+    Serial.println("@I MIDIMODE SERIAL");
+  } else {
+    Serial.println("@I MIDIMODE BLE");
+    bleKickAdvertising();
+  }
 }
 
 static inline void onBleMidiConnect()    { gMidiConnected = true; }
@@ -110,7 +168,7 @@ static inline void serviceNoteOffs() {
   uint32_t now = millis();
   for (auto &q : offQ) {
     if (q.on && (int32_t)(now - q.tOff) >= 0) {
-      MIDI.sendNoteOff(q.note, 0, q.ch);
+      midiSendNoteOff(q.note, 0, q.ch);
       q.on = false;
     }
   }
@@ -309,10 +367,10 @@ static inline void triggerVisual(uint8_t note, uint8_t vel) {
 
 // sendMelodic extends hold window (used by MIDI grid)
 static inline void sendMelodic(uint8_t note, uint8_t vel = 96, uint8_t ch = 1, uint16_t gateMs = 120) {
-  if (!gMidiConnected) return;
+  if (!midiOutReady()) return;
   if (humanize) gateMs = (uint16_t)constrain((int)gateMs + (int)random(-12, 12), 50, 600);
 
-  MIDI.sendNoteOn(note, vel, ch);
+  midiSendNoteOn(note, vel, ch);
   queueNoteOff(note, ch, gateMs);
   triggerVisual(note, vel);
   activeAdd(note);
@@ -324,7 +382,7 @@ static inline void sendMelodic(uint8_t note, uint8_t vel = 96, uint8_t ch = 1, u
 
 // drums also light drum-grid + extend hold window (for feel)
 static inline void sendDrum(uint8_t note, uint8_t vel = 110, uint16_t gateMs = 60) {
-  if (!gMidiConnected) return;
+  if (!midiOutReady()) return;
 
   int8_t part = drumPartFromNote(note);
   if (part >= 0) {
@@ -332,7 +390,7 @@ static inline void sendDrum(uint8_t note, uint8_t vel = 110, uint16_t gateMs = 6
     if (((uint8_t)drumSelMask & (1u << (uint8_t)part)) == 0) return;
   }
 
-  MIDI.sendNoteOn(note, vel, DRUM_CH);
+  midiSendNoteOn(note, vel, DRUM_CH);
   queueNoteOff(note, DRUM_CH, gateMs);
   triggerVisual(note, vel);
 
@@ -611,6 +669,7 @@ static inline void applyEncoder() {
 }
 
 // Forward declarations for WiFi event handler
+extern Preferences prefs;
 extern String gDeviceName;
 extern String gStaSsid, gStaPass;
 extern bool   gIsSta;
@@ -618,12 +677,15 @@ extern uint32_t gLastWifiOkMs;
 extern uint32_t gLastWifiAttemptMs;
 extern uint8_t  gWifiFailCount;
 extern bool     gMdnsStarted;
+extern volatile int32_t gLastStaDisconnectReason;
 static inline void startMDNS();
+static inline bool setupPortalActive();
 
 static void WiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
   switch (event) {
     case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
       Serial.printf("STA_DISCONNECTED reason=%d\n", info.wifi_sta_disconnected.reason);
+      gLastStaDisconnectReason = info.wifi_sta_disconnected.reason;
       if (gWifiFailCount < 255) gWifiFailCount++;
       gLastWifiAttemptMs = 0;
       MDNS.end();
@@ -999,6 +1061,7 @@ uint32_t stateVersion = 0;
 // these mirror the last pushed state; if unchanged, we don't send
 struct LastState {
   uint8_t  ble;
+  uint8_t  midimode;
   uint8_t  clock;
   uint8_t  mode;
   uint8_t  scale;
@@ -1081,6 +1144,7 @@ static inline bool stateChanged() {
   uint8_t root = (uint8_t)(rootMidi % 12);
 
   if (LS.ble   != ble) return true;
+  if (LS.midimode != (uint8_t)gMidiOutMode) return true;
   if (LS.clock != (uint8_t)gClock) return true;
   if (LS.mode  != (uint8_t)gMode) return true;
   if (LS.scale != (uint8_t)gScale) return true;
@@ -1108,6 +1172,7 @@ static inline bool stateChanged() {
 
 static inline void captureState() {
   LS.ble   = gMidiConnected ? 1 : 0;
+  LS.midimode = (uint8_t)gMidiOutMode;
   LS.clock = (uint8_t)gClock;
   LS.mode  = (uint8_t)gMode;
   LS.scale = (uint8_t)gScale;
@@ -1139,10 +1204,11 @@ static inline void pushStateIfChanged(bool force=false) {
   captureState();
   stateVersion++;
 
-  char buf[620];
+  char buf[660];
   snprintf(buf, sizeof(buf),
     "{\"ver\":%u,"
     "\"ble\":%u,"
+    "\"midimode\":%u,"
     "\"clock\":%u,"
     "\"mode\":%u,"
     "\"scale\":%u,"
@@ -1167,6 +1233,7 @@ static inline void pushStateIfChanged(bool force=false) {
     "\"drumsel\":%u}",
     stateVersion,
     LS.ble,
+    LS.midimode,
     LS.clock,
     LS.mode,
     LS.scale,
@@ -1204,6 +1271,11 @@ static inline void handleLogo() {
 }
 
 static inline void handlePage() {
+  if (setupPortalActive()) {
+    server.sendHeader("Location", "/setup", true);
+    server.send(302, "text/plain", "");
+    return;
+  }
   sendNoCacheHeaders();
   server.send_P(200, "text/html", INDEX_HTML);
 }
@@ -1290,6 +1362,17 @@ static inline void setVisSpd()  { if (server.hasArg("v")) visSpeed = (uint8_t)co
 static inline void setVisInt()  { if (server.hasArg("v")) visIntensity = (uint8_t)constrain(server.arg("v").toInt(), 0, 255); pushStateIfChanged(true); server.send(200,"text/plain","OK"); }
 static inline void setRest()    { if (server.hasArg("v")) restProb = clampf(server.arg("v").toFloat(), 0.0f, 0.8f); pushStateIfChanged(true); server.send(200,"text/plain","OK"); }
 static inline void setNoRep()   { if (server.hasArg("v")) avoidRepeats = (server.arg("v").toInt() != 0); pushStateIfChanged(true); server.send(200,"text/plain","OK"); }
+static inline void setMidiMode() {
+  if (server.hasArg("v")) {
+    uint8_t nextMode = (uint8_t)constrain(server.arg("v").toInt(), 0, 1);
+    setMidiOutMode(nextMode);
+    prefs.begin("beca", false);
+    prefs.putUChar("midimode", gMidiOutMode);
+    prefs.end();
+    pushStateIfChanged(true);
+  }
+  server.send(200, "text/plain", "OK");
+}
 
 static inline void setTS() {
   if (server.hasArg("v")) {
@@ -1357,10 +1440,42 @@ uint32_t gLastWifiAttemptMs = 0;
 uint32_t gLastWifiResetMs = 0;
 uint8_t  gWifiFailCount = 0;
 bool     gMdnsStarted = false;
+volatile int32_t gLastStaDisconnectReason = 0;
+String gWifiLastError;
+String gWifiLastHint;
 const uint32_t WIFI_CHECK_MS = 1000;
 const uint32_t WIFI_RECONNECT_MS = 5000;
 const uint32_t WIFI_RESET_MS = 30000;
 const uint32_t WIFI_RESET_COOLDOWN_MS = 60000;
+
+static inline bool setupPortalActive() {
+  wifi_mode_t mode = WiFi.getMode();
+  return mode == WIFI_MODE_AP || mode == WIFI_MODE_APSTA;
+}
+
+static inline String wifiFailureMessage(int32_t reason) {
+  switch (reason) {
+    case WIFI_REASON_AUTH_FAIL:
+    case WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT:
+    case WIFI_REASON_HANDSHAKE_TIMEOUT:
+      gWifiLastHint = "Password may be wrong. Please re-check and try again.";
+      return "Could not sign in to that Wi-Fi network.";
+    case WIFI_REASON_NO_AP_FOUND:
+    case WIFI_REASON_BEACON_TIMEOUT:
+      gWifiLastHint = "ESP32 only supports 2.4GHz Wi-Fi. Try 2.4GHz or a mobile hotspot.";
+      return "Wi-Fi network not found.";
+    case WIFI_REASON_ASSOC_FAIL:
+    case WIFI_REASON_ASSOC_TOOMANY:
+      gWifiLastHint = "Router rejected the connection. Try again or reboot the router/hotspot.";
+      return "Router refused connection.";
+    case WIFI_REASON_CONNECTION_FAIL:
+      gWifiLastHint = "Signal may be weak. Move BECA closer to the router.";
+      return "Connection dropped before setup finished.";
+    default:
+      gWifiLastHint = "Try a 2.4GHz Wi-Fi or mobile hotspot near BECA.";
+      return "Could not connect to Wi-Fi.";
+  }
+}
 
 static inline String shortChipId() {
   uint8_t mac[6]; WiFi.macAddress(mac);
@@ -1417,51 +1532,94 @@ static inline void maintainWiFi(uint32_t now) {
   }
 }
 
+static inline void sendCaptiveRedirect(const String &target = "/setup") {
+  if (setupPortalActive()) {
+    String loc = "http://" + gApIP.toString() + target;
+    server.sendHeader("Location", loc, true);
+    server.send(302, "text/plain", "");
+  } else {
+    server.send(204);
+  }
+}
+
 const char SETUP_HTML[] PROGMEM = R"HTML(
 <!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>BECA - Setup</title>
 <style>
-:root{  color-scheme: light;  --accent:#008351;  --bg:#c7ddcf;  --bg-soft:#d7e7dd;  --surface:rgba(206,222,214,.22);  --surface-strong:rgba(206,222,214,.32);  --edge:rgba(70,96,83,.24);  --edge-strong:rgba(70,96,83,.38);  --text:#1b2c23;  --text-muted:rgba(27,44,35,.6);  --shadow:0 12px 26px rgba(18,30,24,.12),0 10px 22px rgba(0,131,81,.16);  --glass-noise:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160' viewBox='0 0 160 160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/><feComponentTransfer><feFuncA type='table' tableValues='0 0.08'/></feComponentTransfer></filter><rect width='160' height='160' filter='url(%23n)'/></svg>");}*{box-sizing:border-box;}body{  margin:0;  min-height:100vh;  padding:24px;  font:14px "SF Pro Text","Avenir Next","Segoe UI",sans-serif;  color:var(--text);  background:    radial-gradient(900px 520px at 78% -10%, rgba(0,131,81,.22), transparent 62%),    radial-gradient(760px 540px at 12% 18%, rgba(136,200,170,.25), transparent 62%),    radial-gradient(520px 420px at 88% 84%, rgba(0,131,81,.18), transparent 60%),    linear-gradient(160deg,var(--bg) 0%,var(--bg-soft) 58%,var(--bg) 100%);}body:before{  content:"";  position:fixed;  inset:-20% -20% -10% -20%;  background:    radial-gradient(40% 35% at 70% 18%, rgba(0,131,81,.14), transparent 60%),    radial-gradient(36% 30% at 18% 80%, rgba(0,131,81,.12), transparent 65%);  z-index:-2;}body:after{  content:"";  position:fixed;  inset:0;  background-image:    linear-gradient(rgba(0,131,81,.05) 1px, transparent 1px),    linear-gradient(90deg, rgba(0,131,81,.05) 1px, transparent 1px);  background-size:28px 28px;  opacity:.3;  pointer-events:none;  z-index:-1;}.card{  max-width:580px;  margin:0 auto;  background:var(--glass-noise),linear-gradient(155deg, rgba(255,255,255,.12), rgba(255,255,255,.03)),var(--surface-strong);  background-size:200px 200px,auto,auto;  background-repeat:repeat;  border:1px solid var(--edge-strong);  border-radius:18px;  padding:18px;  box-shadow:var(--shadow);  backdrop-filter:blur(22px) saturate(160%);}h1{  margin:0 0 6px;  font-size:16px;  letter-spacing:.18em;  text-transform:uppercase;}label{  display:block;  margin:14px 0 6px;  font-size:11px;  letter-spacing:.16em;  text-transform:uppercase;  opacity:.75;}input,select,button{  width:100%;  padding:10px 12px;  border:1px solid var(--edge-strong);  border-radius:12px;  background:linear-gradient(150deg, rgba(255,255,255,.12), rgba(255,255,255,.03)),rgba(200,216,208,.26);  color:var(--text);  font:inherit;  box-shadow:inset 0 0 0 1px rgba(255,255,255,.24);}button{cursor:pointer;}button.primary{  background:linear-gradient(150deg, rgba(0,131,81,.18), rgba(0,131,81,.08)),rgba(200,216,208,.26);  border-color:rgba(0,131,81,.5);  font-weight:600;}.small{font-size:12px;opacity:.75;}.stack{display:flex;flex-direction:column;gap:10px;margin-top:12px;}</style>
+:root{  color-scheme: light;  --accent:#008351;  --bg:#c7ddcf;  --bg-soft:#d7e7dd;  --surface:rgba(206,222,214,.22);  --surface-strong:rgba(206,222,214,.32);  --edge:rgba(70,96,83,.24);  --edge-strong:rgba(70,96,83,.38);  --text:#1b2c23;  --text-muted:rgba(27,44,35,.6);  --shadow:0 12px 26px rgba(18,30,24,.12),0 10px 22px rgba(0,131,81,.16);  --glass-noise:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160' viewBox='0 0 160 160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/><feComponentTransfer><feFuncA type='table' tableValues='0 0.08'/></feComponentTransfer></filter><rect width='160' height='160' filter='url(%23n)'/></svg>");}*{box-sizing:border-box;}body{  margin:0;  min-height:100vh;  padding:24px;  font:14px "SF Pro Text","Avenir Next","Segoe UI",sans-serif;  color:var(--text);  background:    radial-gradient(900px 520px at 78% -10%, rgba(0,131,81,.22), transparent 62%),    radial-gradient(760px 540px at 12% 18%, rgba(136,200,170,.25), transparent 62%),    radial-gradient(520px 420px at 88% 84%, rgba(0,131,81,.18), transparent 60%),    linear-gradient(160deg,var(--bg) 0%,var(--bg-soft) 58%,var(--bg) 100%);}body:before{  content:"";  position:fixed;  inset:-20% -20% -10% -20%;  background:    radial-gradient(40% 35% at 70% 18%, rgba(0,131,81,.14), transparent 60%),    radial-gradient(36% 30% at 18% 80%, rgba(0,131,81,.12), transparent 65%);  z-index:-2;}body:after{  content:"";  position:fixed;  inset:0;  background-image:    linear-gradient(rgba(0,131,81,.05) 1px, transparent 1px),    linear-gradient(90deg, rgba(0,131,81,.05) 1px, transparent 1px);  background-size:28px 28px;  opacity:.3;  pointer-events:none;  z-index:-1;}.card{  max-width:580px;  margin:0 auto;  background:var(--glass-noise),linear-gradient(155deg, rgba(255,255,255,.12), rgba(255,255,255,.03)),var(--surface-strong);  background-size:200px 200px,auto,auto;  background-repeat:repeat;  border:1px solid var(--edge-strong);  border-radius:18px;  padding:18px;  box-shadow:var(--shadow);  backdrop-filter:blur(22px) saturate(160%);}h1{  margin:0 0 6px;  font-size:16px;  letter-spacing:.18em;  text-transform:uppercase;}label{  display:block;  margin:14px 0 6px;  font-size:11px;  letter-spacing:.16em;  text-transform:uppercase;  opacity:.75;}input,select,button{  width:100%;  padding:10px 12px;  border:1px solid var(--edge-strong);  border-radius:12px;  background:linear-gradient(150deg, rgba(255,255,255,.12), rgba(255,255,255,.03)),rgba(200,216,208,.26);  color:var(--text);  font:inherit;  box-shadow:inset 0 0 0 1px rgba(255,255,255,.24);}button{cursor:pointer;}button.primary{  background:linear-gradient(150deg, rgba(0,131,81,.18), rgba(0,131,81,.08)),rgba(200,216,208,.26);  border-color:rgba(0,131,81,.5);  font-weight:600;}.small{font-size:12px;opacity:.75;}.stack{display:flex;flex-direction:column;gap:10px;margin-top:12px;}.status{margin-top:12px;padding:10px 12px;border-radius:12px;border:1px solid rgba(70,96,83,.32);background:rgba(206,222,214,.3);display:none;}.status.show{display:block;}.status.ok{border-color:rgba(0,131,81,.52);background:rgba(0,131,81,.10);}.status.err{border-color:rgba(176,67,67,.48);background:rgba(176,67,67,.10);}.status .hint{display:block;margin-top:5px;opacity:.78;}.row{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:end;}.btn-mini{width:auto;padding:10px 12px;font-size:12px;}</style>
 <div class="card">
   <h1>BECA Wi-Fi Setup</h1>
-  <div class="small">Pick your home Wi-Fi (saved on device).</div>
+  <div class="small">Pick your home Wi-Fi (2.4GHz). This page opens automatically while BECA is in setup mode.</div>
   <label>Device name (for .local)</label>
   <input id="name" placeholder="beca-xxxx">
   <label>Wi-Fi SSID</label>
-  <select id="ssid"><option>Scanning...</option></select>
+  <div class="row">
+    <select id="ssid"><option>Scanning...</option></select>
+    <button class="btn-mini" onclick="scan()">Rescan</button>
+  </div>
   <label>Password</label>
   <input id="pass" type="password" placeholder="********">
   <div class="stack">
     <button class="primary" onclick="save()">Save and Connect</button>
     <button onclick="forget()">Forget Wi-Fi</button>
   </div>
-  <p class="small">If it fails you will come back here.</p>
+  <div id="netStatus" class="status"></div>
+  <p class="small">If setup fails, BECA stays in setup mode so you can retry.</p>
 </div>
 <script>
-window.load = async () => {
+const statusEl = document.getElementById('netStatus');
+function showStatus(type, msg, hint = '') {
+  statusEl.className = 'status show ' + (type || 'info');
+  statusEl.innerHTML = '<strong>' + msg + '</strong>' + (hint ? '<span class="hint">' + hint + '</span>' : '');
+}
+window.scan = async () => {
   try{
     const s = await (await fetch('/wifi/scan')).json();
-    const info = await (await fetch('/api/info')).json();
     const sel = document.getElementById('ssid'); sel.innerHTML='';
     (s.list||[]).forEach(n=>{ const o=document.createElement('option'); o.textContent=n; sel.appendChild(o); });
+  }catch(e){ showStatus('err', 'Could not scan Wi-Fi right now.', 'Try again in a few seconds.'); }
+}
+window.load = async () => {
+  await scan();
+  try{
+    const info = await (await fetch('/api/info')).json();
+    const sel = document.getElementById('ssid');
     if(info.name) document.getElementById('name').value = info.name;
     if(info.ssid){ [...sel.options].forEach(o=>{ if(o.textContent===info.ssid) o.selected=true; }); }
+    if(info.wifi_error) showStatus('err', info.wifi_error, info.wifi_hint || '');
   }catch(e){}
 }
 window.save = async () => {
+  const ssid = document.getElementById('ssid').value || '';
+  if (!ssid) {
+    showStatus('err', 'Please choose a Wi-Fi network first.');
+    return;
+  }
+  showStatus('info', 'Connecting...', 'This can take up to 15 seconds.');
   const body = new URLSearchParams();
   body.set('name', document.getElementById('name').value);
-  body.set('ssid', document.getElementById('ssid').value);
+  body.set('ssid', ssid);
   body.set('pass', document.getElementById('pass').value);
-  await fetch('/wifi/save',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body});
-  setTimeout(()=>location.href='/',1500);
+  try{
+    const r = await fetch('/wifi/save',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body});
+    const j = await r.json();
+    if (j.ok) {
+      showStatus('ok', j.msg || 'Connected successfully.', j.hint || 'BECA is rebooting now.');
+      setTimeout(()=>fetch('/reboot').catch(()=>{}), 900);
+      setTimeout(()=>location.href='/', 3200);
+      return;
+    }
+    showStatus('err', j.msg || 'Could not connect to Wi-Fi.', j.hint || '');
+  }catch(e){
+    showStatus('err', 'Could not complete Wi-Fi setup.', 'Please retry. If needed, use a 2.4GHz hotspot.');
+  }
 }
 window.forget = async () => {
   await fetch('/wifi/forget');
-  alert('Forgotten. Rebooting to AP...');
-  setTimeout(()=>location.reload(),1200);
+  showStatus('ok', 'Saved Wi-Fi removed.', 'BECA is rebooting into setup mode.');
+  setTimeout(()=>location.reload(),1500);
 }
 window.load();
 </script>
@@ -1482,26 +1640,91 @@ static inline void handleWifiScan() {
 static inline void handleApiInfo() {
   sendNoCacheHeaders();
   String json = "{";
-  json += "\"mode\":\"";   json += (gIsSta ? "sta" : "ap"); json += "\",";
+  json += "\"mode\":\"";   json += (setupPortalActive() ? "ap" : "sta"); json += "\",";
   json += "\"ip\":\"";     json += (gIsSta ? WiFi.localIP().toString() : gApIP.toString()); json += "\",";
   json += "\"name\":\"";   json += gDeviceName; json += "\",";
-  json += "\"ssid\":\"";   json += gStaSsid;    json += "\"";
+  json += "\"ssid\":\"";   json += gStaSsid;    json += "\",";
+  json += "\"wifi_error\":\""; json += gWifiLastError; json += "\",";
+  json += "\"wifi_hint\":\"";  json += gWifiLastHint;  json += "\",";
+  json += "\"midimode\":"; json += (int)gMidiOutMode; json += ",";
+  json += "\"ble_connected\":"; json += (gMidiConnected ? 1 : 0);
   json += "}";
   server.send(200, "application/json", json);
 }
 
+static inline bool testStaFromPortal(const String &ssid, const String &pass, String &msg, String &hint, uint32_t timeoutMs = 15000) {
+  gLastStaDisconnectReason = 0;
+  WiFi.mode(WIFI_AP_STA);
+  WiFi.setHostname(gDeviceName.c_str());
+  WiFi.begin(ssid.c_str(), pass.c_str());
+
+  uint32_t t0 = millis();
+  while ((WiFi.status() != WL_CONNECTED || WiFi.localIP() == IPAddress(0,0,0,0)) &&
+         (millis() - t0) < timeoutMs) {
+    delay(250);
+    delay(0);
+  }
+
+  if (WiFi.status() == WL_CONNECTED && WiFi.localIP() != IPAddress(0,0,0,0)) {
+    msg = "Connected to Wi-Fi successfully.";
+    hint = "BECA will reboot and rejoin your Wi-Fi network.";
+    WiFi.disconnect(false, true);
+    return true;
+  }
+
+  if (WiFi.status() == WL_CONNECTED && WiFi.localIP() == IPAddress(0,0,0,0)) {
+    gWifiLastHint = "Router did not assign an IP address (DHCP). Try rebooting router/hotspot.";
+    msg = "Wi-Fi connected, but no network address was assigned.";
+    hint = gWifiLastHint;
+  } else {
+    msg = wifiFailureMessage(gLastStaDisconnectReason);
+    hint = gWifiLastHint;
+  }
+
+  WiFi.disconnect(false, true);
+  return false;
+}
+
 static inline void handleWifiSave() {
-  if (server.hasArg("name")) gDeviceName = server.arg("name");
-  if (server.hasArg("ssid")) gStaSsid    = server.arg("ssid");
-  if (server.hasArg("pass")) gStaPass    = server.arg("pass");
+  String nextName = server.hasArg("name") ? server.arg("name") : gDeviceName;
+  String nextSsid = server.hasArg("ssid") ? server.arg("ssid") : "";
+  String nextPass = server.hasArg("pass") ? server.arg("pass") : "";
+  nextName.trim();
+  nextSsid.trim();
+  if (nextName.length() == 0) nextName = "beca-" + shortChipId();
+
+  sendNoCacheHeaders();
+  if (nextSsid.length() == 0) {
+    server.send(400, "application/json",
+      "{\"ok\":0,\"msg\":\"Please choose a Wi-Fi network first.\",\"hint\":\"Pick a 2.4GHz Wi-Fi and retry.\"}");
+    return;
+  }
+
+  gDeviceName = nextName;
+  String msg, hint;
+  bool ok = testStaFromPortal(nextSsid, nextPass, msg, hint);
+  if (ok) {
+    gStaSsid = nextSsid;
+    gStaPass = nextPass;
+    gWifiLastError = "";
+    gWifiLastHint = "";
+    prefs.begin("beca", false);
+    prefs.putString("name", gDeviceName);
+    prefs.putString("ssid", gStaSsid);
+    prefs.putString("pass", gStaPass);
+    prefs.end();
+    server.send(200, "application/json",
+      "{\"ok\":1,\"msg\":\"Connected to Wi-Fi successfully.\",\"hint\":\"BECA will reboot now and join your Wi-Fi.\"}");
+    return;
+  }
+
+  gWifiLastError = msg;
+  gWifiLastHint = hint;
   prefs.begin("beca", false);
   prefs.putString("name", gDeviceName);
-  prefs.putString("ssid", gStaSsid);
-  prefs.putString("pass", gStaPass);
   prefs.end();
-  server.send(200, "text/plain", "OK");
-  delay(80);
-  ESP.restart();
+  String errJson = "{\"ok\":0,\"msg\":\"" + msg + "\",\"hint\":\"" + hint + "\"}";
+  server.send(200, "application/json", errJson);
 }
 
 static inline void handleWifiForget() {
@@ -1509,13 +1732,17 @@ static inline void handleWifiForget() {
   prefs.remove("ssid");
   prefs.remove("pass");
   prefs.end();
+  gStaSsid = "";
+  gStaPass = "";
+  gWifiLastError = "No Wi-Fi saved yet.";
+  gWifiLastHint = "Pick a 2.4GHz Wi-Fi network to continue.";
   server.send(200, "text/plain", "OK");
   delay(80);
   ESP.restart();
 }
 
 static inline void handleReboot() {
-  server.send(200, "text/plain", "Rebooting…");
+  server.send(200, "text/plain", "Rebooting...");
   delay(80);
   ESP.restart();
 }
@@ -1531,6 +1758,7 @@ static inline bool tryConnectSTA(const String &ssid, const String &pass, uint32_
   WiFi.setHostname(gDeviceName.c_str());
 
   Serial.printf("Connecting STA to \"%s\" ...\n", ssid.c_str());
+  gLastStaDisconnectReason = 0;
   WiFi.begin(ssid.c_str(), pass.c_str());
 
   uint32_t t0 = millis();
@@ -1546,6 +1774,8 @@ static inline bool tryConnectSTA(const String &ssid, const String &pass, uint32_
     gIsSta = true;
     gLastWifiOkMs = millis();
     gLastWifiAttemptMs = gLastWifiOkMs;
+    gWifiLastError = "";
+    gWifiLastHint = "";
 
     Serial.println("WiFi STA connected!");
     Serial.print("IP address: ");
@@ -1561,12 +1791,23 @@ static inline bool tryConnectSTA(const String &ssid, const String &pass, uint32_
   }
 
   Serial.println("WiFi STA failed (no DHCP or not connected). Falling back to AP.");
+  if (WiFi.status() == WL_CONNECTED && WiFi.localIP() == IPAddress(0,0,0,0)) {
+    gWifiLastError = "Wi-Fi connected, but no network address was assigned.";
+    gWifiLastHint = "Router DHCP may be busy. Try rebooting router/hotspot.";
+  } else {
+    gWifiLastError = wifiFailureMessage(gLastStaDisconnectReason);
+  }
   WiFi.disconnect(true, true);
   gIsSta = false;
   return false;
 }
 
 static inline void startAPPortal() {
+  gIsSta = false;
+  if (gStaSsid.length() == 0 && gWifiLastError.length() == 0) {
+    gWifiLastError = "No Wi-Fi saved yet.";
+    gWifiLastHint = "Pick a 2.4GHz Wi-Fi network and tap Save and Connect.";
+  }
   WiFi.softAPsetHostname(gDeviceName.c_str());
   String apName = "BECA-" + shortChipId();
 
@@ -1598,7 +1839,7 @@ uint32_t gWarmupEndMs = 0;
 
 // -------------------- setup() --------------------
 void setup() {
-  Serial.begin(115200);
+  Serial.begin(SERIAL_MIDI_BAUD);
   delay(1000);
   Serial.println();
   Serial.println("=== BECA booting ===");
@@ -1632,6 +1873,7 @@ void setup() {
   gDeviceName = prefs.getString("name", "");
   gStaSsid    = prefs.getString("ssid", "");
   gStaPass    = prefs.getString("pass", "");
+  gMidiOutMode = (uint8_t)constrain((int)prefs.getUChar("midimode", 0), 0, 1);
   prefs.end();
   if (gDeviceName.length() == 0) gDeviceName = "beca-" + shortChipId();
 
@@ -1651,15 +1893,16 @@ void setup() {
   server.on("/effects",  handleEffects);
   server.on("/palettes", handlePalettes);
   server.on("/events",   handleEvents);
-  server.onNotFound(handleNotFound);
 
-  // Common OS probe URLs (avoid noisy 404s)
-  server.on("/generate_204", [](){ server.send(204); });
-  server.on("/hotspot-detect.html", [](){ server.send(204); });
-  server.on("/ncsi.txt", [](){ server.send(204); });
-  server.on("/connecttest.txt", [](){ server.send(204); });
-  server.on("/wpad.dat", [](){ server.send(204); });
-  server.on("/favicon.ico", [](){ server.send(204); });
+  // Captive portal detection URLs
+  server.on("/generate_204",      [](){ sendCaptiveRedirect("/setup"); });
+  server.on("/gen_204",           [](){ sendCaptiveRedirect("/setup"); });
+  server.on("/hotspot-detect.html", [](){ sendCaptiveRedirect("/setup"); });
+  server.on("/ncsi.txt",          [](){ sendCaptiveRedirect("/setup"); });
+  server.on("/connecttest.txt",   [](){ sendCaptiveRedirect("/setup"); });
+  server.on("/success.txt",       [](){ sendCaptiveRedirect("/setup"); });
+  server.on("/wpad.dat",          [](){ sendCaptiveRedirect("/setup"); });
+  server.on("/favicon.ico",       [](){ sendCaptiveRedirect("/setup"); });
 
   server.on("/bpm",     setBPM);
   server.on("/swing",   setSwing);
@@ -1677,6 +1920,7 @@ void setup() {
   server.on("/visint",  setVisInt);
   server.on("/rest",    setRest);
   server.on("/norep",   setNoRep);
+  server.on("/midimode", setMidiMode);
   server.on("/ts",      setTS);
   server.on("/rand",    randomize);
 
@@ -1691,17 +1935,14 @@ void setup() {
   server.on("/reboot",      handleReboot);
 
   server.onNotFound([](){
-    String uri = server.uri();
-    if (uri == "/generate_204" || uri == "/gen_204" || uri == "/favicon.ico") {
-      server.sendHeader("Location", "/setup", true);
-      server.send(302, "text/plain", "");
+    if (setupPortalActive()) {
+      sendCaptiveRedirect("/setup");
     } else {
       server.sendHeader("Location", "/", true);
       server.send(302, "text/plain", "");
     }
   });
 
-  server.begin();
   server.begin();
   Serial.println("Web server started");
 
@@ -1723,6 +1964,9 @@ void setup() {
   Serial.println("  /");
   Serial.println("  /setup");
   Serial.println("  /api/info");
+  Serial.print("MIDI output mode: ");
+  Serial.println(midiOutIsSerial() ? "Serial bridge" : "BLE-MIDI");
+  if (midiOutIsSerial()) Serial.println("@I MIDIMODE SERIAL READY");
   startMDNS();
 
   for (auto &q : offQ) q.on = false;
@@ -1735,7 +1979,7 @@ void setup() {
 void loop() {
   uint32_t now = millis();
 
-  if (!gIsSta) dns.processNextRequest();
+  if (setupPortalActive()) dns.processNextRequest();
   server.handleClient();
   maintainWiFi(now);
   applyEncoder();
@@ -1779,10 +2023,15 @@ void loop() {
     renderLEDs();
   }
 
-    // BLE advertising keepalive (helps Windows rediscover after odd disconnects)
-  if (!gMidiConnected && (millis() - gLastBleKickMs) > BLE_KICK_INTERVAL_MS) {
+  // BLE advertising keepalive (helps Windows rediscover after odd disconnects)
+  if (!midiOutIsSerial() && !gMidiConnected && (millis() - gLastBleKickMs) > BLE_KICK_INTERVAL_MS) {
     gLastBleKickMs = millis();
     bleKickAdvertising();
+  }
+
+  if (midiOutIsSerial() && (millis() - gLastSerialBeaconMs) > SERIAL_MIDI_BEACON_MS) {
+    gLastSerialBeaconMs = millis();
+    Serial.println("@I MIDIMODE SERIAL READY");
   }
 
 
@@ -1862,3 +2111,5 @@ void loop() {
   serviceNoteOffs();
   MIDI.read();
 }
+
+
