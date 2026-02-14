@@ -222,7 +222,7 @@ static inline const char* outputModeName(uint8_t mode) {
 
 static inline bool startAuxAudio() {
   if (gSynth.running()) return true;
-  const bool ok = gSynth.start(I2S_BCK_PIN, I2S_WS_PIN, I2S_DATA_PIN, 44100, 64);
+  const bool ok = gSynth.start(I2S_BCK_PIN, I2S_WS_PIN, I2S_DATA_PIN, 44100, 128);
   if (ok) {
     gSynth.fadeIn(24);
     Serial.println("@I I2S START OK");

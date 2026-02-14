@@ -1591,7 +1591,7 @@
       function postSynthPatch(patch, key = "synth", delay = 80) {
         if (debouncers[key]) clearTimeout(debouncers[key]);
         debouncers[key] = setTimeout(() => {
-          postForm("/api/synth", patch).then(loadSynthState).catch(() => {});
+          postForm("/api/synth", patch).catch(() => {});
         }, delay);
       }
 

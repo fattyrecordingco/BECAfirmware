@@ -404,7 +404,8 @@ bool SynthEngine::start(int pinBck, int pinWs, int pinData, uint32_t sampleRate,
 
   running_ = true;
   taskAlive_ = true;
-  BaseType_t ok = xTaskCreatePinnedToCore(taskTrampoline, "beca_audio", 6144, this, 2, &audioTaskHandle_, 1);
+  // Keep audio task at same priority as loop task so web/Wi-Fi servicing is not starved.
+  BaseType_t ok = xTaskCreatePinnedToCore(taskTrampoline, "beca_audio", 6144, this, 1, &audioTaskHandle_, 1);
   if (ok != pdPASS) {
     running_ = false;
     taskAlive_ = false;
@@ -701,36 +702,47 @@ void SynthEngine::renderBlock(const SynthParams& p) {
   const uint32_t delaySamples = static_cast<uint32_t>(
       constrain(static_cast<int>((p.delayMs * static_cast<float>(sampleRate_)) / 1000.0f), 1, static_cast<int>(kMaxDelaySamples - 1)));
 
+  Voice* activeList[kMaxVoices];
+  float incA[kMaxVoices];
+  float incB[kMaxVoices];
+  uint8_t activeTarget = 0;
+  for (uint8_t vIdx = 0; vIdx < kMaxVoices; ++vIdx) {
+    Voice& v = voices_[vIdx];
+    if (!v.active) continue;
+    if (activeTarget >= p.maxVoices) {
+      v.env.noteOff();
+      continue;
+    }
+
+    const float noteHz = dsp::midiToHz(v.note);
+    const float lowNoteScale = dsp::clampf((static_cast<float>(v.note) - 24.0f) / 60.0f, 0.35f, 1.0f);
+    const float detune = p.detuneCents * lowNoteScale;
+    const float detuneRatio = powf(2.0f, detune / 1200.0f);
+
+    activeList[activeTarget] = &v;
+    incA[activeTarget] = noteHz / static_cast<float>(sampleRate_);
+    incB[activeTarget] = (noteHz * detuneRatio) / static_cast<float>(sampleRate_);
+    activeTarget++;
+  }
+
   for (uint16_t i = 0; i < blockSize_; ++i) {
     float synthSum = 0.0f;
-    uint8_t activeVoices = 0;
+    uint8_t activeVoicesNow = 0;
 
-    for (uint8_t vIdx = 0; vIdx < kMaxVoices; ++vIdx) {
-      Voice& v = voices_[vIdx];
+    for (uint8_t vi = 0; vi < activeTarget; ++vi) {
+      Voice& v = *activeList[vi];
       if (!v.active) continue;
-
       const float env = v.env.process();
       if (!v.env.active() && env <= 0.00001f) {
         v.active = false;
         continue;
       }
+      activeVoicesNow++;
 
-      if (activeVoices >= p.maxVoices) {
-        v.env.noteOff();
-        continue;
-      }
-      activeVoices++;
-
-      const float noteHz = dsp::midiToHz(v.note);
-      const float lowNoteScale = dsp::clampf((static_cast<float>(v.note) - 24.0f) / 60.0f, 0.35f, 1.0f);
-      const float detune = p.detuneCents * lowNoteScale;
-      const float detuneRatio = powf(2.0f, detune / 1200.0f);
-
-      v.phaseA += noteHz / static_cast<float>(sampleRate_);
-      if (v.phaseA >= 1.0f) v.phaseA -= floorf(v.phaseA);
-
-      v.phaseB += (noteHz * detuneRatio) / static_cast<float>(sampleRate_);
-      if (v.phaseB >= 1.0f) v.phaseB -= floorf(v.phaseB);
+      v.phaseA += incA[vi];
+      if (v.phaseA >= 1.0f) v.phaseA -= 1.0f;
+      v.phaseB += incB[vi];
+      if (v.phaseB >= 1.0f) v.phaseB -= 1.0f;
 
       const float a = osc(p.waveA, v.phaseA);
       const float b = osc(p.waveB, v.phaseB);
@@ -738,7 +750,7 @@ void SynthEngine::renderBlock(const SynthParams& p) {
       synthSum += s;
     }
 
-    const float polyGain = activeVoices > 0 ? (0.25f / sqrtf(static_cast<float>(activeVoices))) : 0.0f;
+    const float polyGain = activeVoicesNow > 0 ? (0.25f / sqrtf(static_cast<float>(activeVoicesNow))) : 0.0f;
     float mono = synthSum * polyGain * p.gainTrim;
 
     const float driveGain = 1.0f + p.distDrive * 5.5f;
@@ -824,6 +836,7 @@ void SynthEngine::audioTask() {
       underruns_++;
       portEXIT_CRITICAL(&eventMux_);
     }
+    taskYIELD();
   }
 
   taskAlive_ = false;

@@ -1596,7 +1596,7 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
       function postSynthPatch(patch, key = "synth", delay = 80) {
         if (debouncers[key]) clearTimeout(debouncers[key]);
         debouncers[key] = setTimeout(() => {
-          postForm("/api/synth", patch).then(loadSynthState).catch(() => {});
+          postForm("/api/synth", patch).catch(() => {});
         }, delay);
       }
 
