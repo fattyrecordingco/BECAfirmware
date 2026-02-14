@@ -31,6 +31,10 @@ SynthEngine::SynthEngine()
       delayPos_(0),
       revMemL_(0.0f),
       revMemR_(0.0f),
+      lastFilterType_(SYNTH_FILTER_LOWPASS),
+      lastCutoffHz_(0.0f),
+      lastResonance_(0.0f),
+      filterDirty_(true),
       underruns_(0),
       fadeTarget_(1.0f),
       fadeValue_(1.0f),
@@ -102,22 +106,23 @@ void SynthEngine::presetDefaults(uint8_t index, SynthParams& out) {
     case 1:  // Glass Reed Lead
       out.waveA = 2;
       out.waveB = 3;
-      out.oscMix = 0.33f;
+      out.oscMix = 0.28f;
       out.mono = 1;
       out.maxVoices = 1;
-      out.attack = 0.014f;
-      out.decay = 0.38f;
-      out.sustain = 0.58f;
-      out.release = 0.34f;
-      out.cutoffHz = 6800.0f;
-      out.resonance = 1.3f;
-      out.reverb = 0.20f;
-      out.delayMs = 190.0f;
-      out.delayFeedback = 0.26f;
-      out.delayMix = 0.16f;
-      out.distDrive = 0.10f;
-      out.master = 0.58f;
-      out.detuneCents = 2.2f;
+      out.attack = 0.018f;
+      out.decay = 0.44f;
+      out.sustain = 0.52f;
+      out.release = 0.42f;
+      out.cutoffHz = 4200.0f;
+      out.resonance = 1.05f;
+      out.reverb = 0.16f;
+      out.delayMs = 150.0f;
+      out.delayFeedback = 0.18f;
+      out.delayMix = 0.10f;
+      out.distDrive = 0.04f;
+      out.master = 0.54f;
+      out.detuneCents = 1.2f;
+      out.gainTrim = 0.88f;
       break;
     case 2:  // Verdant Pad
       out.waveA = 2;
@@ -142,36 +147,39 @@ void SynthEngine::presetDefaults(uint8_t index, SynthParams& out) {
     case 3:  // Forest Choir
       out.waveA = 3;
       out.waveB = 2;
-      out.oscMix = 0.61f;
-      out.attack = 0.62f;
-      out.decay = 0.95f;
-      out.sustain = 0.73f;
-      out.release = 2.20f;
-      out.cutoffHz = 3100.0f;
-      out.resonance = 0.85f;
-      out.reverb = 0.46f;
-      out.delayMs = 380.0f;
-      out.delayFeedback = 0.28f;
-      out.delayMix = 0.18f;
-      out.master = 0.55f;
-      out.detuneCents = 4.0f;
+      out.oscMix = 0.52f;
+      out.attack = 0.74f;
+      out.decay = 1.08f;
+      out.sustain = 0.66f;
+      out.release = 1.85f;
+      out.cutoffHz = 2200.0f;
+      out.resonance = 0.72f;
+      out.reverb = 0.34f;
+      out.delayMs = 300.0f;
+      out.delayFeedback = 0.20f;
+      out.delayMix = 0.12f;
+      out.master = 0.50f;
+      out.detuneCents = 1.5f;
+      out.gainTrim = 0.82f;
       break;
     case 4:  // Jivari Strings
       out.waveA = 2;
       out.waveB = 1;
-      out.oscMix = 0.38f;
-      out.attack = 0.28f;
-      out.decay = 0.84f;
-      out.sustain = 0.67f;
-      out.release = 1.60f;
-      out.cutoffHz = 4600.0f;
-      out.resonance = 1.05f;
-      out.reverb = 0.28f;
-      out.delayMs = 220.0f;
-      out.delayFeedback = 0.18f;
-      out.delayMix = 0.12f;
-      out.master = 0.56f;
-      out.detuneCents = 3.0f;
+      out.oscMix = 0.35f;
+      out.attack = 0.34f;
+      out.decay = 0.96f;
+      out.sustain = 0.62f;
+      out.release = 1.32f;
+      out.filterType = SYNTH_FILTER_BANDPASS;
+      out.cutoffHz = 108.0f;
+      out.resonance = 4.59f;
+      out.reverb = 0.22f;
+      out.delayMs = 170.0f;
+      out.delayFeedback = 0.12f;
+      out.delayMix = 0.08f;
+      out.master = 0.48f;
+      out.detuneCents = 0.9f;
+      out.gainTrim = 0.74f;
       break;
     case 5:  // Pulse Arp 1
       out.waveA = 1;
@@ -385,6 +393,7 @@ bool SynthEngine::start(int pinBck, int pinWs, int pinData, uint32_t sampleRate,
   dcR_.reset();
   filterL_.reset();
   filterR_.reset();
+  filterDirty_ = true;
 
   for (auto& v : voices_) {
     v.active = false;
@@ -460,6 +469,7 @@ void SynthEngine::setParams(const SynthParams& params) {
   activeParamSlot_ = next;
   portEXIT_CRITICAL(&paramMux_);
 
+  filterDirty_ = true;
   drum_.setKit(p.drumKit);
 }
 
@@ -679,6 +689,13 @@ void SynthEngine::handleEvent(const Event& e, const SynthParams& p) {
 }
 
 void SynthEngine::applyFilterConfig(const SynthParams& p) {
+  if (!filterDirty_ &&
+      lastFilterType_ == p.filterType &&
+      fabsf(lastCutoffHz_ - p.cutoffHz) < 0.5f &&
+      fabsf(lastResonance_ - p.resonance) < 0.01f) {
+    return;
+  }
+
   switch (p.filterType) {
     case SYNTH_FILTER_LOWPASS:
       filterL_.setLowpass(static_cast<float>(sampleRate_), p.cutoffHz, p.resonance);
@@ -694,6 +711,10 @@ void SynthEngine::applyFilterConfig(const SynthParams& p) {
       filterR_.setBandpass(static_cast<float>(sampleRate_), p.cutoffHz, p.resonance);
       break;
   }
+  lastFilterType_ = p.filterType;
+  lastCutoffHz_ = p.cutoffHz;
+  lastResonance_ = p.resonance;
+  filterDirty_ = false;
 }
 
 void SynthEngine::renderBlock(const SynthParams& p) {

@@ -21,6 +21,8 @@ class DrumEngine {
   struct Voice {
     bool active;
     float env;
+    float envTarget;
+    float attackInc;
     float decay;
     float phase;
     float freq;
@@ -32,6 +34,7 @@ class DrumEngine {
     float drive;
     float hpMem;
     float lpMem;
+    float noiseHp;
   };
 
   void setupVoice(uint8_t part, float velNorm);

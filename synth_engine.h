@@ -148,6 +148,10 @@ class SynthEngine {
   dsp::Biquad filterR_;
   dsp::DCBlocker dcL_;
   dsp::DCBlocker dcR_;
+  uint8_t lastFilterType_;
+  float lastCutoffHz_;
+  float lastResonance_;
+  bool filterDirty_;
 
   int8_t delay_[kMaxDelaySamples];
   uint32_t delayPos_;
