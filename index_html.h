@@ -2108,7 +2108,28 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
         uiMuted = !!on;
         document.body.classList.toggle("ui-muted", uiMuted);
         setVal(muteVal, uiMuted ? "ON" : "OFF");
+        if (mute) mute.checked = uiMuted;
         if (uiMuted) status.textContent = "muted";
+        else if (status.textContent === "muted") status.textContent = "ok";
+      }
+
+      async function setMuteRemote(on) {
+        const prev = uiMuted;
+        setUiMuted(!!on);
+        try {
+          const res = await postForm("/api/mute", { v: on ? 1 : 0 });
+          let j = null;
+          try { j = await res.json(); } catch (e) {}
+          if (!res.ok) {
+            setUiMuted(prev);
+            return;
+          }
+          if (j && typeof j.io_muted !== "undefined") {
+            setUiMuted((j.io_muted | 0) === 1);
+          }
+        } catch (e) {
+          setUiMuted(prev);
+        }
       }
 
       // ---- Boot UI ----
@@ -2152,6 +2173,12 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
 
           grid();
           drawNoteGridMulti([], 96, false);
+          try {
+            const m = await (await fetch("/api/mute", { cache: "no-store" })).json();
+            if (typeof m.io_muted !== "undefined") {
+              setUiMuted((m.io_muted | 0) === 1);
+            }
+          } catch (e) {}
         } catch (e) {
           status.textContent = "ui error";
         }
@@ -2176,6 +2203,9 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
 
       es.addEventListener("state", (e) => {
         const j = JSON.parse(e.data);
+        if (typeof j.io_muted !== "undefined") {
+          setUiMuted((j.io_muted | 0) === 1);
+        }
         if (!uiMuted) status.textContent = "ok";
         const outMode = typeof j.outputmode !== "undefined" ? (j.outputmode | 0) : (((j.midimode | 0) === 1) ? 1 : 0);
         const auxReadyState = typeof j.aux_ready !== "undefined" ? ((j.aux_ready | 0) === 1) : true;
@@ -2437,7 +2467,7 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
       drv.oninput = (e) => { setVal(drvVal, (+e.target.value).toFixed(2)); postSynthPatch({ drive: e.target.value }, "sdrv", 80); };
       mvol.oninput = (e) => { setVal(mvolVal, (+e.target.value).toFixed(2)); postSynthPatch({ master: e.target.value }, "smvol", 80); };
 
-      mute.onchange = (e) => setUiMuted(e.target.checked);
+      mute.onchange = (e) => setMuteRemote(e.target.checked);
     </script>
   </body>
 </html>

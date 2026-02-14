@@ -14,6 +14,8 @@ This firmware version supports:
 - New bottom-bar 3-state `Output Mode`: `BLE` | `SERIAL` | `AUX OUT`
 - New `SYNTH` panel in Web UI (shown only in `AUX OUT` mode)
 - Expanded AUX synth preset bank to 18 presets (includes mellow pads/keys/plucks)
+- New presets 10-17 retuned for cleaner headroom (less detune, less clipping risk)
+- `Mute I/O` is now firmware-enforced global mute (`/api/mute`), not just UI-local
 - Better Wi-Fi setup flow (captive redirect + plain-language connection errors)
 - Serial MIDI bridge tools in `tools/beca_link/`
 
@@ -157,6 +159,7 @@ chmod +x start_mac_linux.sh
 - Keep bridge terminal open while using Serial MIDI.
 - If using BLE mode only, bridge is not required.
 - In `AUX OUT` mode, BECA does not emit MIDI note events (BLE or Serial).
+- When `Mute I/O` is ON, BECA force-silences AUX and blocks outgoing MIDI until unmuted.
 
 ## 10) AUX OUT Wiring + Test
 

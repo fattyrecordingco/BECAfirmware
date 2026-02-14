@@ -70,6 +70,7 @@ const uint32_t SERIAL_MIDI_BEACON_MS = 2000;
 const uint32_t AUX_STARTUP_LOCK_MS = 12000;
 uint32_t gLastSerialBeaconMs = 0;
 uint32_t gAuxUnlockAtMs = 0;
+volatile bool gIoMuted = false;
 
 beca::SynthEngine gSynth;
 uint32_t gLastSynthUnderrunLogMs = 0;
@@ -81,8 +82,9 @@ const uint32_t BLE_KICK_INTERVAL_MS = 2500; // kick advertise every 2.5s when no
 static inline bool outputModeIsAux() { return gOutputMode == OUTPUT_AUX; }
 static inline bool outputModeIsBle() { return gOutputMode == OUTPUT_BLE; }
 static inline bool outputModeIsSerial() { return gOutputMode == OUTPUT_SERIAL; }
+static inline bool ioMuteActive() { return gIoMuted; }
 static inline bool midiOutIsSerial() { return outputModeIsSerial(); }
-static inline bool midiOutReady()    { return outputModeIsSerial() || (outputModeIsBle() && gMidiConnected); }
+static inline bool midiOutReady()    { return !ioMuteActive() && (outputModeIsSerial() || (outputModeIsBle() && gMidiConnected)); }
 static inline bool auxSwitchReady() { return (int32_t)(millis() - gAuxUnlockAtMs) >= 0; }
 static inline uint32_t auxSwitchWaitMs() {
   if (auxSwitchReady()) return 0;
@@ -99,21 +101,21 @@ static inline void serialMidiSend3(uint8_t st, uint8_t d1, uint8_t d2) {
 
 static inline void midiSendNoteOn(uint8_t note, uint8_t vel, uint8_t ch) {
   uint8_t status = 0x90 | ((ch - 1) & 0x0F);
-  if (outputModeIsAux()) return;
+  if (outputModeIsAux() || ioMuteActive()) return;
   if (midiOutIsSerial()) serialMidiSend3(status, note, vel);
   else if (outputModeIsBle() && gMidiConnected) MIDI.sendNoteOn(note, vel, ch);
 }
 
 static inline void midiSendNoteOff(uint8_t note, uint8_t vel, uint8_t ch) {
   uint8_t status = 0x80 | ((ch - 1) & 0x0F);
-  if (outputModeIsAux()) return;
+  if (outputModeIsAux() || ioMuteActive()) return;
   if (midiOutIsSerial()) serialMidiSend3(status, note, vel);
   else if (outputModeIsBle() && gMidiConnected) MIDI.sendNoteOff(note, vel, ch);
 }
 
 static inline void midiSendControlChange(uint8_t cc, uint8_t val, uint8_t ch) {
   uint8_t status = 0xB0 | ((ch - 1) & 0x0F);
-  if (outputModeIsAux()) return;
+  if (outputModeIsAux() || ioMuteActive()) return;
   if (midiOutIsSerial()) serialMidiSend3(status, cc, val);
   else if (outputModeIsBle() && gMidiConnected) MIDI.sendControlChange(cc, val, ch);
 }
@@ -230,6 +232,7 @@ static inline const char* outputModeName(uint8_t mode) {
 }
 
 static inline bool startAuxAudio() {
+  if (ioMuteActive()) return true;
   if (gSynth.running()) return true;
   const bool ok = gSynth.start(I2S_BCK_PIN, I2S_WS_PIN, I2S_DATA_PIN, 44100, 128);
   if (ok) {
@@ -247,6 +250,30 @@ static inline void stopAuxAudio() {
   delay(26);
   gSynth.stop();
   Serial.println("@I I2S STOP OK");
+}
+
+static inline void applyIoMute(bool muteOn) {
+  if ((bool)gIoMuted == muteOn) return;
+
+  gIoMuted = muteOn;
+  allNotesOffBothTransports();
+  gSynth.allNotesOff();
+  gSynth.allDrumsOff();
+  for (auto &q : offQ) q.on = false;
+  for (auto &q : uiNoteQ) q.on = false;
+
+  if (muteOn) {
+    stopAuxAudio();
+    Serial.println("@I IO MUTE ON");
+    return;
+  }
+
+  Serial.println("@I IO MUTE OFF");
+  if (outputModeIsAux()) {
+    enforceAuxDrumGuard();
+    gSynth.setDrumsEnabled(false);
+    startAuxAudio();
+  }
 }
 
 static inline void setOutputMode(uint8_t mode) {
@@ -273,7 +300,7 @@ static inline void setOutputMode(uint8_t mode) {
   if (outputModeIsAux()) {
     enforceAuxDrumGuard();
     gSynth.setDrumsEnabled(false);
-    startAuxAudio();
+    if (!ioMuteActive()) startAuxAudio();
     return;
   }
 
@@ -520,6 +547,7 @@ static inline void triggerVisual(uint8_t note, uint8_t vel) {
 
 // sendMelodic extends hold window (used by MIDI grid)
 static inline void sendMelodic(uint8_t note, uint8_t vel = 96, uint8_t ch = 1, uint16_t gateMs = 120) {
+  if (ioMuteActive()) return;
   if (humanize) gateMs = (uint16_t)constrain((int)gateMs + (int)random(-12, 12), 50, 600);
   uiQueueHeldNote(note, gateMs);
 
@@ -539,6 +567,7 @@ static inline void sendMelodic(uint8_t note, uint8_t vel = 96, uint8_t ch = 1, u
 
 // drums also light drum-grid + extend hold window (for feel)
 static inline void sendDrum(uint8_t note, uint8_t vel = 110, uint16_t gateMs = 60) {
+  if (ioMuteActive()) return;
   if (!drumsAllowedForCurrentOutput()) return;
   int8_t part = drumPartFromNote(note);
   if (part >= 0) {
@@ -1181,6 +1210,7 @@ static inline void transportTick() {
   activeClear();
   T.stepInBar++;
   if (T.stepInBar >= T.stepsPerBar) T.stepInBar = 0;
+  if (ioMuteActive()) return;
 
   if (gClock == CLOCK_INTERNAL) {
     switch (gMode) {
@@ -1230,6 +1260,7 @@ struct LastState {
   uint8_t  ble;
   uint8_t  midimode;
   uint8_t  outputmode;
+  uint8_t  io_muted;
   uint8_t  clock;
   uint8_t  mode;
   uint8_t  scale;
@@ -1317,6 +1348,7 @@ static inline bool stateChanged() {
   if (LS.ble   != ble) return true;
   if (LS.midimode != (uint8_t)(outputModeIsSerial() ? 1 : 0)) return true;
   if (LS.outputmode != (uint8_t)gOutputMode) return true;
+  if (LS.io_muted != (ioMuteActive() ? 1 : 0)) return true;
   if (LS.clock != (uint8_t)gClock) return true;
   if (LS.mode  != (uint8_t)gMode) return true;
   if (LS.scale != (uint8_t)gScale) return true;
@@ -1347,6 +1379,7 @@ static inline void captureState() {
   LS.ble   = gMidiConnected ? 1 : 0;
   LS.midimode = (uint8_t)(outputModeIsSerial() ? 1 : 0);
   LS.outputmode = (uint8_t)gOutputMode;
+  LS.io_muted = ioMuteActive() ? 1 : 0;
   LS.clock = (uint8_t)gClock;
   LS.mode  = (uint8_t)gMode;
   LS.scale = (uint8_t)gScale;
@@ -1386,6 +1419,7 @@ static inline void pushStateIfChanged(bool force=false) {
     "\"midimode\":%u,"
     "\"outputmode\":%u,"
     "\"outputname\":\"%s\","
+    "\"io_muted\":%u,"
     "\"clock\":%u,"
     "\"mode\":%u,"
     "\"scale\":%u,"
@@ -1415,6 +1449,7 @@ static inline void pushStateIfChanged(bool force=false) {
     LS.midimode,
     LS.outputmode,
     outputModeName(LS.outputmode),
+    LS.io_muted,
     LS.clock,
     LS.mode,
     LS.scale,
@@ -1626,6 +1661,45 @@ static inline void handleApiOutputModePost() {
   handleApiOutputModeGet();
 }
 
+static inline bool parseOnOffArg(const String& in, bool& outOn) {
+  String v = in;
+  v.trim();
+  v.toLowerCase();
+  if (v == "1" || v == "on" || v == "true")  { outOn = true; return true; }
+  if (v == "0" || v == "off" || v == "false") { outOn = false; return true; }
+  return false;
+}
+
+static inline void handleApiMuteGet() {
+  sendNoCacheHeaders();
+  char buf[128];
+  snprintf(
+    buf, sizeof(buf),
+    "{\"io_muted\":%u,\"outputmode\":%u,\"aux_running\":%u}",
+    ioMuteActive() ? 1u : 0u, (unsigned)gOutputMode, gSynth.running() ? 1u : 0u
+  );
+  server.send(200, "application/json", buf);
+}
+
+static inline void handleApiMutePost() {
+  bool nextMute = ioMuteActive();
+  bool ok = false;
+
+  if (server.hasArg("v")) ok = parseOnOffArg(server.arg("v"), nextMute);
+  else if (server.hasArg("mute")) ok = parseOnOffArg(server.arg("mute"), nextMute);
+  else if (server.hasArg("io_muted")) ok = parseOnOffArg(server.arg("io_muted"), nextMute);
+  else if (server.hasArg("plain")) ok = parseOnOffArg(server.arg("plain"), nextMute);
+
+  if (!ok) {
+    server.send(400, "application/json", "{\"ok\":0,\"err\":\"mute flag required\"}");
+    return;
+  }
+
+  applyIoMute(nextMute);
+  pushStateIfChanged(true);
+  handleApiMuteGet();
+}
+
 static inline void handleApiSynthGet() {
   beca::SynthParams p;
   gSynth.getParams(p);
@@ -1690,6 +1764,10 @@ static inline void handleApiSynthPost() {
 }
 
 static inline void handleApiSynthTest() {
+  if (ioMuteActive()) {
+    server.send(423, "application/json", "{\"ok\":0,\"err\":\"I/O muted\"}");
+    return;
+  }
   if (!outputModeIsAux()) {
     server.send(409, "application/json", "{\"ok\":0,\"err\":\"AUX mode required\"}");
     return;
@@ -1976,6 +2054,7 @@ static inline void handleApiInfo() {
   json += "\"wifi_hint\":\"";  json += gWifiLastHint;  json += "\",";
   json += "\"midimode\":"; json += (outputModeIsSerial() ? 1 : 0); json += ",";
   json += "\"outputmode\":\""; json += outputModeName(gOutputMode); json += "\",";
+  json += "\"io_muted\":"; json += (ioMuteActive() ? 1 : 0); json += ",";
   json += "\"ble_connected\":"; json += (gMidiConnected ? 1 : 0);
   json += "}";
   server.send(200, "application/json", json);
@@ -2268,6 +2347,8 @@ void setup() {
   server.on("/rand",    randomize);
   server.on("/api/outputmode", HTTP_GET,  handleApiOutputModeGet);
   server.on("/api/outputmode", HTTP_POST, handleApiOutputModePost);
+  server.on("/api/mute",       HTTP_GET,  handleApiMuteGet);
+  server.on("/api/mute",       HTTP_POST, handleApiMutePost);
   server.on("/api/synth",      HTTP_GET,  handleApiSynthGet);
   server.on("/api/synth",      HTTP_POST, handleApiSynthPost);
   server.on("/api/synth/test", HTTP_GET,  handleApiSynthTest);
@@ -2470,7 +2551,7 @@ void loop() {
   }
 
   serviceNoteOffs();
-  MIDI.read();
+  if (!ioMuteActive()) MIDI.read();
 }
 
 
