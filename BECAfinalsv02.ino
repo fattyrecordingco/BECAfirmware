@@ -36,6 +36,7 @@ BLEMIDI_CREATE_INSTANCE("BECA BLE-MIDI", MIDI);
 
 #include "logo_svg.h"
 #include "index_html.h"
+#include "synth_engine.h"
 
 extern const char SETUP_HTML[] PROGMEM;
 
@@ -52,23 +53,34 @@ extern const char SETUP_HTML[] PROGMEM;
 #define ENC_PIN_B          5
 #define ENC_PIN_SW         15
 
+// PCM5102A I2S defaults for AUX OUT
+#define I2S_BCK_PIN        26
+#define I2S_WS_PIN         27
+#define I2S_DATA_PIN       25
+
 CRGB leds[LED_COUNT];
 uint8_t gBrightness = 154;
 
 // -------------------- BLE-MIDI --------------------
 volatile bool gMidiConnected = false;
-enum MidiOutMode : uint8_t { MIDI_OUT_BLE = 0, MIDI_OUT_SERIAL = 1 };
-volatile uint8_t gMidiOutMode = MIDI_OUT_BLE;
+enum OutputMode : uint8_t { OUTPUT_BLE = 0, OUTPUT_SERIAL = 1, OUTPUT_AUX = 2 };
+volatile uint8_t gOutputMode = OUTPUT_BLE;
 const uint32_t SERIAL_MIDI_BAUD = 115200;
 const uint32_t SERIAL_MIDI_BEACON_MS = 2000;
 uint32_t gLastSerialBeaconMs = 0;
+
+beca::SynthEngine gSynth;
+uint32_t gLastSynthUnderrunLogMs = 0;
 
 // --- BLE advertising keepalive ---
 uint32_t gLastBleKickMs = 0;
 const uint32_t BLE_KICK_INTERVAL_MS = 2500; // kick advertise every 2.5s when not connected
 
-static inline bool midiOutIsSerial() { return gMidiOutMode == MIDI_OUT_SERIAL; }
-static inline bool midiOutReady()    { return midiOutIsSerial() || gMidiConnected; }
+static inline bool outputModeIsAux() { return gOutputMode == OUTPUT_AUX; }
+static inline bool outputModeIsBle() { return gOutputMode == OUTPUT_BLE; }
+static inline bool outputModeIsSerial() { return gOutputMode == OUTPUT_SERIAL; }
+static inline bool midiOutIsSerial() { return outputModeIsSerial(); }
+static inline bool midiOutReady()    { return outputModeIsSerial() || (outputModeIsBle() && gMidiConnected); }
 
 static inline void serialMidiSend3(uint8_t st, uint8_t d1, uint8_t d2) {
   char line[24];
@@ -78,20 +90,23 @@ static inline void serialMidiSend3(uint8_t st, uint8_t d1, uint8_t d2) {
 
 static inline void midiSendNoteOn(uint8_t note, uint8_t vel, uint8_t ch) {
   uint8_t status = 0x90 | ((ch - 1) & 0x0F);
+  if (outputModeIsAux()) return;
   if (midiOutIsSerial()) serialMidiSend3(status, note, vel);
-  else if (gMidiConnected) MIDI.sendNoteOn(note, vel, ch);
+  else if (outputModeIsBle() && gMidiConnected) MIDI.sendNoteOn(note, vel, ch);
 }
 
 static inline void midiSendNoteOff(uint8_t note, uint8_t vel, uint8_t ch) {
   uint8_t status = 0x80 | ((ch - 1) & 0x0F);
+  if (outputModeIsAux()) return;
   if (midiOutIsSerial()) serialMidiSend3(status, note, vel);
-  else if (gMidiConnected) MIDI.sendNoteOff(note, vel, ch);
+  else if (outputModeIsBle() && gMidiConnected) MIDI.sendNoteOff(note, vel, ch);
 }
 
 static inline void midiSendControlChange(uint8_t cc, uint8_t val, uint8_t ch) {
   uint8_t status = 0xB0 | ((ch - 1) & 0x0F);
+  if (outputModeIsAux()) return;
   if (midiOutIsSerial()) serialMidiSend3(status, cc, val);
-  else if (gMidiConnected) MIDI.sendControlChange(cc, val, ch);
+  else if (outputModeIsBle() && gMidiConnected) MIDI.sendControlChange(cc, val, ch);
 }
 
 static inline void allNotesOffBothTransports() {
@@ -102,6 +117,7 @@ static inline void allNotesOffBothTransports() {
 }
 
 static inline void allNotesOffCurrentTransport() {
+  if (outputModeIsAux()) return;
   for (uint8_t ch = 1; ch <= 16; ++ch) midiSendControlChange(123, 0, ch);
 }
 
@@ -189,17 +205,64 @@ static inline uint8_t uiCollectHeldNotes(uint8_t* out, uint8_t maxOut) {
 
 static inline void allNotesOff() {
   allNotesOffCurrentTransport();
+  gSynth.allNotesOff();
+  gSynth.allDrumsOff();
   for (auto &q : offQ) q.on = false;
   for (auto &q : uiNoteQ) q.on = false;
 }
 
-static inline void setMidiOutMode(uint8_t mode) {
-  uint8_t next = (uint8_t)constrain((int)mode, 0, 1);
-  if (next == gMidiOutMode) return;
+static inline const char* outputModeName(uint8_t mode) {
+  switch (mode) {
+    case OUTPUT_BLE: return "BLE";
+    case OUTPUT_SERIAL: return "SERIAL";
+    case OUTPUT_AUX: return "AUX";
+    default: return "BLE";
+  }
+}
+
+static inline bool startAuxAudio() {
+  if (gSynth.running()) return true;
+  const bool ok = gSynth.start(I2S_BCK_PIN, I2S_WS_PIN, I2S_DATA_PIN, 44100, 64);
+  if (ok) {
+    gSynth.fadeIn(24);
+    Serial.println("@I I2S START OK");
+  } else {
+    Serial.println("@E I2S START FAIL");
+  }
+  return ok;
+}
+
+static inline void stopAuxAudio() {
+  if (!gSynth.running()) return;
+  gSynth.fadeOut(24);
+  delay(26);
+  gSynth.stop();
+  Serial.println("@I I2S STOP OK");
+}
+
+static inline void setOutputMode(uint8_t mode) {
+  uint8_t next = (uint8_t)constrain((int)mode, 0, 2);
+  if (next == gOutputMode) return;
+
+  Serial.printf("@I OUTPUTMODE %s -> %s\n", outputModeName(gOutputMode), outputModeName(next));
   allNotesOffBothTransports();
+  gSynth.allNotesOff();
+  gSynth.allDrumsOff();
   for (auto &q : offQ) q.on = false;
-  gMidiOutMode = next;
-  if (midiOutIsSerial()) {
+  for (auto &q : uiNoteQ) q.on = false;
+
+  if (outputModeIsAux() && next != OUTPUT_AUX) {
+    stopAuxAudio();
+  }
+
+  gOutputMode = next;
+
+  if (outputModeIsAux()) {
+    startAuxAudio();
+    return;
+  }
+
+  if (outputModeIsSerial()) {
     gLastSerialBeaconMs = 0;
     Serial.println("@I MIDIMODE SERIAL");
   } else {
@@ -208,12 +271,17 @@ static inline void setMidiOutMode(uint8_t mode) {
   }
 }
 
+static inline void setMidiOutModeLegacy(uint8_t mode) {
+  const uint8_t next = (uint8_t)constrain((int)mode, 0, 1);
+  setOutputMode(next == 1 ? OUTPUT_SERIAL : OUTPUT_BLE);
+}
+
 static inline void onBleMidiConnect()    { gMidiConnected = true; }
 static inline void onBleMidiDisconnect() {
   gMidiConnected = false;
   allNotesOff();
   // Immediately resume advertising after disconnect
-  bleKickAdvertising();
+  if (outputModeIsBle()) bleKickAdvertising();
 }
 
 static inline void queueNoteOff(uint8_t note, uint8_t ch, uint16_t durMs) {
@@ -430,8 +498,9 @@ static inline void sendMelodic(uint8_t note, uint8_t vel = 96, uint8_t ch = 1, u
   if (humanize) gateMs = (uint16_t)constrain((int)gateMs + (int)random(-12, 12), 50, 600);
   uiQueueHeldNote(note, gateMs);
 
-  const bool canSend = midiOutReady();
-  if (canSend) {
+  if (outputModeIsAux()) {
+    gSynth.noteOn(note, vel, gateMs);
+  } else if (midiOutReady()) {
     midiSendNoteOn(note, vel, ch);
     queueNoteOff(note, ch, gateMs);
   }
@@ -451,8 +520,9 @@ static inline void sendDrum(uint8_t note, uint8_t vel = 110, uint16_t gateMs = 6
     if (((uint8_t)drumSelMask & (1u << (uint8_t)part)) == 0) return;
   }
 
-  const bool canSend = midiOutReady();
-  if (canSend) {
+  if (outputModeIsAux()) {
+    if (part >= 0) gSynth.drumHit((uint8_t)part, vel);
+  } else if (midiOutReady()) {
     midiSendNoteOn(note, vel, DRUM_CH);
     queueNoteOff(note, DRUM_CH, gateMs);
   }
@@ -1126,6 +1196,7 @@ uint32_t stateVersion = 0;
 struct LastState {
   uint8_t  ble;
   uint8_t  midimode;
+  uint8_t  outputmode;
   uint8_t  clock;
   uint8_t  mode;
   uint8_t  scale;
@@ -1210,7 +1281,8 @@ static inline bool stateChanged() {
   uint8_t root = (uint8_t)(rootMidi % 12);
 
   if (LS.ble   != ble) return true;
-  if (LS.midimode != (uint8_t)gMidiOutMode) return true;
+  if (LS.midimode != (uint8_t)(outputModeIsSerial() ? 1 : 0)) return true;
+  if (LS.outputmode != (uint8_t)gOutputMode) return true;
   if (LS.clock != (uint8_t)gClock) return true;
   if (LS.mode  != (uint8_t)gMode) return true;
   if (LS.scale != (uint8_t)gScale) return true;
@@ -1238,7 +1310,8 @@ static inline bool stateChanged() {
 
 static inline void captureState() {
   LS.ble   = gMidiConnected ? 1 : 0;
-  LS.midimode = (uint8_t)gMidiOutMode;
+  LS.midimode = (uint8_t)(outputModeIsSerial() ? 1 : 0);
+  LS.outputmode = (uint8_t)gOutputMode;
   LS.clock = (uint8_t)gClock;
   LS.mode  = (uint8_t)gMode;
   LS.scale = (uint8_t)gScale;
@@ -1270,11 +1343,13 @@ static inline void pushStateIfChanged(bool force=false) {
   captureState();
   stateVersion++;
 
-  char buf[660];
+  char buf[760];
   snprintf(buf, sizeof(buf),
     "{\"ver\":%u,"
     "\"ble\":%u,"
     "\"midimode\":%u,"
+    "\"outputmode\":%u,"
+    "\"outputname\":\"%s\","
     "\"clock\":%u,"
     "\"mode\":%u,"
     "\"scale\":%u,"
@@ -1300,6 +1375,8 @@ static inline void pushStateIfChanged(bool force=false) {
     stateVersion,
     LS.ble,
     LS.midimode,
+    LS.outputmode,
+    outputModeName(LS.outputmode),
     LS.clock,
     LS.mode,
     LS.scale,
@@ -1428,16 +1505,138 @@ static inline void setVisSpd()  { if (server.hasArg("v")) visSpeed = (uint8_t)co
 static inline void setVisInt()  { if (server.hasArg("v")) visIntensity = (uint8_t)constrain(server.arg("v").toInt(), 0, 255); pushStateIfChanged(true); server.send(200,"text/plain","OK"); }
 static inline void setRest()    { if (server.hasArg("v")) restProb = clampf(server.arg("v").toFloat(), 0.0f, 0.8f); pushStateIfChanged(true); server.send(200,"text/plain","OK"); }
 static inline void setNoRep()   { if (server.hasArg("v")) avoidRepeats = (server.arg("v").toInt() != 0); pushStateIfChanged(true); server.send(200,"text/plain","OK"); }
+
+static inline void saveOutputModePref() {
+  prefs.begin("beca", false);
+  prefs.putUChar("outputmode", gOutputMode);
+  prefs.putUChar("midimode", outputModeIsSerial() ? 1 : 0); // legacy key for compatibility
+  prefs.end();
+}
+
 static inline void setMidiMode() {
   if (server.hasArg("v")) {
     uint8_t nextMode = (uint8_t)constrain(server.arg("v").toInt(), 0, 1);
-    setMidiOutMode(nextMode);
-    prefs.begin("beca", false);
-    prefs.putUChar("midimode", gMidiOutMode);
-    prefs.end();
+    setMidiOutModeLegacy(nextMode);
+    saveOutputModePref();
     pushStateIfChanged(true);
   }
   server.send(200, "text/plain", "OK");
+}
+
+static inline bool parseOutputModeArg(const String& in, uint8_t& outMode) {
+  String v = in;
+  v.trim();
+  v.toUpperCase();
+  if (v == "BLE")    { outMode = OUTPUT_BLE; return true; }
+  if (v == "SERIAL") { outMode = OUTPUT_SERIAL; return true; }
+  if (v == "AUX" || v == "AUX OUT" || v == "AUX_OUT") { outMode = OUTPUT_AUX; return true; }
+  if (v.length() && isDigit(v[0])) {
+    int m = constrain(v.toInt(), 0, 2);
+    outMode = (uint8_t)m;
+    return true;
+  }
+  return false;
+}
+
+static inline void handleApiOutputModeGet() {
+  sendNoCacheHeaders();
+  char buf[96];
+  snprintf(buf, sizeof(buf), "{\"mode\":\"%s\",\"value\":%u}", outputModeName(gOutputMode), (unsigned)gOutputMode);
+  server.send(200, "application/json", buf);
+}
+
+static inline void handleApiOutputModePost() {
+  uint8_t next = gOutputMode;
+  bool ok = false;
+  if (server.hasArg("mode")) ok = parseOutputModeArg(server.arg("mode"), next);
+  else if (server.hasArg("v")) ok = parseOutputModeArg(server.arg("v"), next);
+  else if (server.hasArg("plain")) ok = parseOutputModeArg(server.arg("plain"), next);
+
+  if (!ok) {
+    server.send(400, "application/json", "{\"ok\":0,\"err\":\"mode required\"}");
+    return;
+  }
+
+  setOutputMode(next);
+  saveOutputModePref();
+  pushStateIfChanged(true);
+  handleApiOutputModeGet();
+}
+
+static inline void handleApiSynthGet() {
+  beca::SynthParams p;
+  gSynth.getParams(p);
+  char buf[512];
+  snprintf(
+    buf, sizeof(buf),
+    "{\"preset\":%u,\"preset_name\":\"%s\",\"wave_a\":%u,\"wave_b\":%u,\"osc_mix\":%.3f,"
+    "\"mono\":%u,\"voices\":%u,\"attack\":%.3f,\"decay\":%.3f,\"sustain\":%.3f,\"release\":%.3f,"
+    "\"filter\":%u,\"cutoff\":%.2f,\"resonance\":%.3f,\"reverb\":%.3f,\"delay_ms\":%.2f,"
+    "\"delay_feedback\":%.3f,\"delay_mix\":%.3f,\"drive\":%.3f,\"master\":%.3f,\"detune\":%.3f,"
+    "\"gain_trim\":%.3f,\"drumkit\":%u}",
+    (unsigned)p.preset, beca::SynthEngine::presetName(p.preset),
+    (unsigned)p.waveA, (unsigned)p.waveB, (double)p.oscMix,
+    (unsigned)p.mono, (unsigned)p.maxVoices, (double)p.attack, (double)p.decay, (double)p.sustain, (double)p.release,
+    (unsigned)p.filterType, (double)p.cutoffHz, (double)p.resonance, (double)p.reverb, (double)p.delayMs,
+    (double)p.delayFeedback, (double)p.delayMix, (double)p.distDrive, (double)p.master, (double)p.detuneCents,
+    (double)p.gainTrim, (unsigned)p.drumKit
+  );
+  sendNoCacheHeaders();
+  server.send(200, "application/json", buf);
+}
+
+static inline void handleApiSynthPost() {
+  beca::SynthParams p;
+  gSynth.getParams(p);
+
+  if (server.hasArg("preset")) {
+    const uint8_t idx = (uint8_t)constrain(server.arg("preset").toInt(), 0, (int)beca::SynthEngine::kPresetCount - 1);
+    p.preset = idx;
+    gSynth.loadPreset(idx);
+    gSynth.getParams(p);
+  }
+  if (server.hasArg("reset") && server.arg("reset").toInt() != 0) {
+    gSynth.resetPreset();
+    gSynth.getParams(p);
+  }
+
+  if (server.hasArg("wave_a")) p.waveA = (uint8_t)constrain(server.arg("wave_a").toInt(), 0, 3);
+  if (server.hasArg("wave_b")) p.waveB = (uint8_t)constrain(server.arg("wave_b").toInt(), 0, 3);
+  if (server.hasArg("osc_mix")) p.oscMix = server.arg("osc_mix").toFloat();
+  if (server.hasArg("mono")) p.mono = (server.arg("mono").toInt() != 0) ? 1 : 0;
+  if (server.hasArg("voices")) p.maxVoices = (uint8_t)constrain(server.arg("voices").toInt(), 1, 12);
+  if (server.hasArg("attack")) p.attack = server.arg("attack").toFloat();
+  if (server.hasArg("decay")) p.decay = server.arg("decay").toFloat();
+  if (server.hasArg("sustain")) p.sustain = server.arg("sustain").toFloat();
+  if (server.hasArg("release")) p.release = server.arg("release").toFloat();
+  if (server.hasArg("filter")) p.filterType = (uint8_t)constrain(server.arg("filter").toInt(), 0, 2);
+  if (server.hasArg("cutoff")) p.cutoffHz = server.arg("cutoff").toFloat();
+  if (server.hasArg("resonance")) p.resonance = server.arg("resonance").toFloat();
+  if (server.hasArg("reverb")) p.reverb = server.arg("reverb").toFloat();
+  if (server.hasArg("delay_ms")) p.delayMs = server.arg("delay_ms").toFloat();
+  if (server.hasArg("delay_feedback")) p.delayFeedback = server.arg("delay_feedback").toFloat();
+  if (server.hasArg("delay_mix")) p.delayMix = server.arg("delay_mix").toFloat();
+  if (server.hasArg("drive")) p.distDrive = server.arg("drive").toFloat();
+  if (server.hasArg("master")) p.master = server.arg("master").toFloat();
+  if (server.hasArg("detune")) p.detuneCents = server.arg("detune").toFloat();
+  if (server.hasArg("gain_trim")) p.gainTrim = server.arg("gain_trim").toFloat();
+  if (server.hasArg("drumkit")) p.drumKit = (uint8_t)constrain(server.arg("drumkit").toInt(), 0, 2);
+
+  gSynth.setParams(p);
+  handleApiSynthGet();
+}
+
+static inline void handleApiSynthTest() {
+  if (!outputModeIsAux()) {
+    server.send(409, "application/json", "{\"ok\":0,\"err\":\"AUX mode required\"}");
+    return;
+  }
+  if (!gSynth.running() && !startAuxAudio()) {
+    server.send(500, "application/json", "{\"ok\":0,\"err\":\"audio start failed\"}");
+    return;
+  }
+  const bool ok = gSynth.triggerTestChord(2000);
+  server.send(ok ? 200 : 500, "application/json", ok ? "{\"ok\":1}" : "{\"ok\":0}");
 }
 
 static inline void setTS() {
@@ -1712,7 +1911,8 @@ static inline void handleApiInfo() {
   json += "\"ssid\":\"";   json += gStaSsid;    json += "\",";
   json += "\"wifi_error\":\""; json += gWifiLastError; json += "\",";
   json += "\"wifi_hint\":\"";  json += gWifiLastHint;  json += "\",";
-  json += "\"midimode\":"; json += (int)gMidiOutMode; json += ",";
+  json += "\"midimode\":"; json += (outputModeIsSerial() ? 1 : 0); json += ",";
+  json += "\"outputmode\":\""; json += outputModeName(gOutputMode); json += "\",";
   json += "\"ble_connected\":"; json += (gMidiConnected ? 1 : 0);
   json += "}";
   server.send(200, "application/json", json);
@@ -1939,7 +2139,11 @@ void setup() {
   gDeviceName = prefs.getString("name", "");
   gStaSsid    = prefs.getString("ssid", "");
   gStaPass    = prefs.getString("pass", "");
-  gMidiOutMode = (uint8_t)constrain((int)prefs.getUChar("midimode", 0), 0, 1);
+  uint8_t storedOutput = prefs.getUChar("outputmode", 255);
+  if (storedOutput > 2) {
+    storedOutput = (uint8_t)constrain((int)prefs.getUChar("midimode", 0), 0, 1);
+  }
+  gOutputMode = (uint8_t)constrain((int)storedOutput, 0, 2);
   prefs.end();
   if (gDeviceName.length() == 0) gDeviceName = "beca-" + shortChipId();
 
@@ -1952,6 +2156,10 @@ void setup() {
 
   // Coexistence-safe
   WiFi.setSleep(true);
+
+  if (outputModeIsAux()) {
+    startAuxAudio();
+  }
 
   // Routes
   server.on("/",         handlePage);
@@ -1989,6 +2197,11 @@ void setup() {
   server.on("/midimode", setMidiMode);
   server.on("/ts",      setTS);
   server.on("/rand",    randomize);
+  server.on("/api/outputmode", HTTP_GET,  handleApiOutputModeGet);
+  server.on("/api/outputmode", HTTP_POST, handleApiOutputModePost);
+  server.on("/api/synth",      HTTP_GET,  handleApiSynthGet);
+  server.on("/api/synth",      HTTP_POST, handleApiSynthPost);
+  server.on("/api/synth/test", HTTP_GET,  handleApiSynthTest);
 
   // NEW
   server.on("/drumsel", setDrumSel);
@@ -2030,9 +2243,10 @@ void setup() {
   Serial.println("  /");
   Serial.println("  /setup");
   Serial.println("  /api/info");
-  Serial.print("MIDI output mode: ");
-  Serial.println(midiOutIsSerial() ? "Serial bridge" : "BLE-MIDI");
+  Serial.print("Output mode: ");
+  Serial.println(outputModeName(gOutputMode));
   if (midiOutIsSerial()) Serial.println("@I MIDIMODE SERIAL READY");
+  if (outputModeIsAux()) Serial.println("@I AUX OUT ACTIVE");
   startMDNS();
 
   for (auto &q : offQ) q.on = false;
@@ -2053,6 +2267,7 @@ void loop() {
   // keep WDT + WiFi/BLE happy
   delay(0);
   warmupPlantBackground();
+  gSynth.service(now);
 
   // Plant sampling
   static uint32_t lastPlantMs = 0;
@@ -2090,14 +2305,22 @@ void loop() {
   }
 
   // BLE advertising keepalive (helps Windows rediscover after odd disconnects)
-  if (!midiOutIsSerial() && !gMidiConnected && (millis() - gLastBleKickMs) > BLE_KICK_INTERVAL_MS) {
+  if (outputModeIsBle() && !gMidiConnected && (millis() - gLastBleKickMs) > BLE_KICK_INTERVAL_MS) {
     gLastBleKickMs = millis();
     bleKickAdvertising();
   }
 
-  if (midiOutIsSerial() && (millis() - gLastSerialBeaconMs) > SERIAL_MIDI_BEACON_MS) {
+  if (outputModeIsSerial() && (millis() - gLastSerialBeaconMs) > SERIAL_MIDI_BEACON_MS) {
     gLastSerialBeaconMs = millis();
     Serial.println("@I MIDIMODE SERIAL READY");
+  }
+
+  if ((int32_t)(now - gLastSynthUnderrunLogMs) >= 1000) {
+    gLastSynthUnderrunLogMs = now;
+    uint32_t u = gSynth.consumeUnderruns();
+    if (u > 0) {
+      Serial.printf("@W I2S UNDERRUN %lu\n", (unsigned long)u);
+    }
   }
 
 

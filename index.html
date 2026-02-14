@@ -156,7 +156,8 @@
         grid-template-columns: minmax(360px, 1.35fr) minmax(320px, 1fr);
         grid-template-areas:
           "io io"
-          "music led";
+          "music synth"
+          "led led";
         gap: var(--gap);
         align-items: stretch;
       }
@@ -195,6 +196,9 @@
       }
       .panel-theory {
         grid-area: music;
+      }
+      .panel-synth {
+        grid-area: synth;
       }
       .panel-led {
         grid-area: led;
@@ -264,6 +268,7 @@
         align-items: stretch;
       }
       .theory-grid,
+      .synth-grid,
       .led-grid {
         display: grid;
         grid-template-columns: 1fr;
@@ -578,6 +583,42 @@
         font-size: 11px;
         opacity: 0.75;
       }
+      .viz {
+        width: 100%;
+        height: 120px;
+        border-radius: 12px;
+        border: 1px solid var(--edge-strong);
+        background:
+          var(--glass-noise),
+          linear-gradient(160deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.02)),
+          var(--surface-sunk);
+        background-size: 180px 180px, auto, auto;
+      }
+      .mode-segment {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 6px;
+        padding: 6px;
+        border-radius: 14px;
+        border: 1px solid var(--edge-strong);
+        background:
+          linear-gradient(155deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.06)),
+          var(--surface-strong);
+      }
+      .mode-btn {
+        border-radius: 10px;
+        padding: 9px 8px;
+        font-size: 11px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        border: 1px solid transparent;
+        background: rgba(255, 255, 255, 0.08);
+      }
+      .mode-btn.active {
+        border-color: rgba(0, 131, 81, 0.58);
+        background: rgba(0, 131, 81, 0.2);
+        box-shadow: 0 0 14px rgba(0, 131, 81, 0.22);
+      }
       /* ---- Drum UI ---- */
       #drumWrap {
         margin-top: 12px;
@@ -706,6 +747,9 @@
       .utility-bar .toggle {
         width: 100%;
       }
+      .utility-bar .mode-segment {
+        width: 100%;
+      }
       body.ui-muted main {
         opacity: 0.55;
         filter: grayscale(0.2);
@@ -729,6 +773,7 @@
           grid-template-areas:
             "io"
             "music"
+            "synth"
             "led";
         }
       }
@@ -992,6 +1037,106 @@
         </div>
       </section>
 
+      <section class="panel panel-synth hidden" id="synthPanel">
+        <div class="panel-head">
+          <div class="panel-title">Synth</div>
+        </div>
+        <div class="synth-grid">
+          <div class="subcard module module-cyan">
+            <div class="label">Preset</div>
+            <select id="synthPreset">
+              <option value="0">Fatty Neon Lead</option>
+              <option value="1">Glass Reed Lead</option>
+              <option value="2">Verdant Pad</option>
+              <option value="3">Forest Choir</option>
+              <option value="4">Jivari Strings</option>
+              <option value="5">Pulse Arp 1</option>
+              <option value="6">Pulse Arp 2</option>
+              <option value="7">Rhythm Gate</option>
+              <option value="8">Thick Mono Bass</option>
+              <option value="9">Rubber Bass</option>
+              <option value="10">808 Kit</option>
+              <option value="11">Rock Kit</option>
+              <option value="12">Jazz Kit</option>
+            </select>
+            <div class="stack" style="margin-top:10px;">
+              <button id="presetReset" class="btn">Preset Reset</button>
+              <button id="synthTest" class="btn accent">Test Tone (2s)</button>
+            </div>
+          </div>
+
+          <div class="subcard module module-mint">
+            <div class="label">ADSR</div>
+            <canvas id="adsrViz" class="viz" width="420" height="120"></canvas>
+            <div class="ctrl">
+              <div class="hdr"><div class="label">Attack</div><div class="val mono" id="atkVal">0.00s</div></div>
+              <input id="atk" type="range" min="0" max="5" step="0.01" />
+            </div>
+            <div class="ctrl">
+              <div class="hdr"><div class="label">Decay</div><div class="val mono" id="decVal">0.00s</div></div>
+              <input id="dec" type="range" min="0" max="5" step="0.01" />
+            </div>
+            <div class="ctrl">
+              <div class="hdr"><div class="label">Sustain</div><div class="val mono" id="susVal">0.00</div></div>
+              <input id="sus" type="range" min="0" max="1" step="0.01" />
+            </div>
+            <div class="ctrl">
+              <div class="hdr"><div class="label">Release</div><div class="val mono" id="relVal">0.00s</div></div>
+              <input id="rel" type="range" min="0" max="10" step="0.01" />
+            </div>
+          </div>
+
+          <div class="subcard module module-azure">
+            <div class="label">Filter</div>
+            <canvas id="filterViz" class="viz" width="420" height="120"></canvas>
+            <div class="ctrl">
+              <div class="label">Type</div>
+              <select id="fltType">
+                <option value="0">Lowpass</option>
+                <option value="1">Highpass</option>
+                <option value="2">Bandpass</option>
+              </select>
+            </div>
+            <div class="ctrl">
+              <div class="hdr"><div class="label">Cutoff</div><div class="val mono" id="cutVal">1000 Hz</div></div>
+              <input id="cutoff" type="range" min="0" max="1" step="0.001" />
+            </div>
+            <div class="ctrl">
+              <div class="hdr"><div class="label">Resonance</div><div class="val mono" id="resVal">0.70</div></div>
+              <input id="res" type="range" min="0.1" max="10" step="0.01" />
+            </div>
+          </div>
+
+          <div class="subcard module module-salmon">
+            <div class="label">FX + Output</div>
+            <div class="ctrl">
+              <div class="hdr"><div class="label">Reverb</div><div class="val mono" id="revVal">0.00</div></div>
+              <input id="rev" type="range" min="0" max="1" step="0.01" />
+            </div>
+            <div class="ctrl">
+              <div class="hdr"><div class="label">Delay Time</div><div class="val mono" id="dtimeVal">0 ms</div></div>
+              <input id="dtime" type="range" min="0" max="800" step="1" />
+            </div>
+            <div class="ctrl">
+              <div class="hdr"><div class="label">Delay Feedback</div><div class="val mono" id="dfbVal">0.00</div></div>
+              <input id="dfb" type="range" min="0" max="0.95" step="0.01" />
+            </div>
+            <div class="ctrl">
+              <div class="hdr"><div class="label">Delay Mix</div><div class="val mono" id="dmixVal">0.00</div></div>
+              <input id="dmix" type="range" min="0" max="1" step="0.01" />
+            </div>
+            <div class="ctrl">
+              <div class="hdr"><div class="label">Distortion</div><div class="val mono" id="drvVal">0.00</div></div>
+              <input id="drv" type="range" min="0" max="1" step="0.01" />
+            </div>
+            <div class="ctrl">
+              <div class="hdr"><div class="label">Master</div><div class="val mono" id="mvolVal">0.00</div></div>
+              <input id="mvol" type="range" min="0" max="1" step="0.01" />
+            </div>
+          </div>
+        </div>
+      </section>
+
       <section class="panel panel-led">
         <div class="panel-head">
           <div class="panel-title">LED</div>
@@ -1074,23 +1219,11 @@
         Randomize
       </button>
 
-      <label class="toggle transport-toggle module module-cyan">
-        <input id="midiMode" type="checkbox" />
-        <span class="switch"></span>
-        <span class="toggle-label">
-          <span class="icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M8 7h8" />
-              <path d="M8 12h8" />
-              <path d="M8 17h8" />
-              <rect x="3" y="4" width="4" height="16" rx="1.5" />
-              <rect x="17" y="4" width="4" height="16" rx="1.5" />
-            </svg>
-          </span>
-          MIDI Link
-        </span>
-        <span class="toggle-val mono" id="midiModeVal">BLE</span>
-      </label>
+      <div class="mode-segment module module-cyan transport-toggle">
+        <button id="outBle" class="mode-btn active" type="button">BLE</button>
+        <button id="outSerial" class="mode-btn" type="button">SERIAL</button>
+        <button id="outAux" class="mode-btn" type="button">AUX OUT</button>
+      </div>
 
       <label class="toggle mute-toggle module module-rose">
         <input id="mute" type="checkbox" />
@@ -1148,10 +1281,26 @@
       const rest = $("rest");
       const norep = $("norep");
       const rnd = $("rnd");
-      const midiMode = $("midiMode");
-      const midiModeVal = $("midiModeVal");
+      const outBle = $("outBle");
+      const outSerial = $("outSerial");
+      const outAux = $("outAux");
       const mute = $("mute");
       const muteVal = $("muteVal");
+      const synthPanel = $("synthPanel");
+
+      const synthPreset = $("synthPreset");
+      const presetReset = $("presetReset");
+      const synthTest = $("synthTest");
+      const atk = $("atk"), dec = $("dec"), sus = $("sus"), rel = $("rel");
+      const atkVal = $("atkVal"), decVal = $("decVal"), susVal = $("susVal"), relVal = $("relVal");
+      const fltType = $("fltType"), cutoff = $("cutoff"), res = $("res");
+      const cutVal = $("cutVal"), resVal = $("resVal");
+      const rev = $("rev"), dtime = $("dtime"), dfb = $("dfb"), dmix = $("dmix"), drv = $("drv"), mvol = $("mvol");
+      const revVal = $("revVal"), dtimeVal = $("dtimeVal"), dfbVal = $("dfbVal"), dmixVal = $("dmixVal"), drvVal = $("drvVal"), mvolVal = $("mvolVal");
+      const adsrViz = $("adsrViz");
+      const filterViz = $("filterViz");
+      const adsrCtx = adsrViz.getContext("2d");
+      const filterCtx = filterViz.getContext("2d");
 
       const bpmVal = $("bpmVal");
       const swingVal = $("swingVal");
@@ -1180,8 +1329,10 @@
       let uiMuted = false;
       let isDrumMode = false;
       let currentMode = 2;
+      let currentOutputMode = 0;
       let lastNoteEventMs = 0;
       let lastNoteState = { list: [], vel: 96, held: false };
+      let synthState = {};
       let oscW = 0;
       let oscH = 0;
       let noteW = 0;
@@ -1282,6 +1433,166 @@
         if (uiMuted && !allowWhenMuted) return;
         if (debouncers[key]) clearTimeout(debouncers[key]);
         debouncers[key] = setTimeout(() => sendNow(url, allowWhenMuted), delay);
+      }
+
+      function postForm(url, obj) {
+        const body = new URLSearchParams();
+        Object.keys(obj || {}).forEach((k) => body.set(k, obj[k]));
+        return fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body,
+        });
+      }
+
+      function cutoffNormToHz(norm) {
+        return 20 * Math.pow(900, Math.max(0, Math.min(1, norm)));
+      }
+      function cutoffHzToNorm(hz) {
+        const f = Math.max(20, Math.min(18000, hz));
+        return Math.log(f / 20) / Math.log(900);
+      }
+
+      function drawAdsrViz(a, d, s, r) {
+        const w = adsrViz.clientWidth || 320;
+        const h = adsrViz.clientHeight || 120;
+        adsrViz.width = Math.floor(w * DPR);
+        adsrViz.height = Math.floor(h * DPR);
+        adsrCtx.setTransform(DPR, 0, 0, DPR, 0, 0);
+        adsrCtx.clearRect(0, 0, w, h);
+        adsrCtx.fillStyle = GRID_BG;
+        adsrCtx.fillRect(0, 0, w, h);
+        adsrCtx.strokeStyle = GRID_LINE;
+        for (let i = 1; i < 4; i++) {
+          const y = (h / 4) * i;
+          adsrCtx.beginPath();
+          adsrCtx.moveTo(0, y);
+          adsrCtx.lineTo(w, y);
+          adsrCtx.stroke();
+        }
+        const total = Math.max(0.12, a + d + r + 0.24);
+        const x0 = 10;
+        const y0 = h - 10;
+        const xA = x0 + (a / total) * (w - 20);
+        const xD = xA + (d / total) * (w - 20);
+        const xS = xD + 0.24 / total * (w - 20);
+        const xR = xS + (r / total) * (w - 20);
+        const yS = y0 - s * (h - 20);
+        adsrCtx.strokeStyle = SCOPE_LINE;
+        adsrCtx.lineWidth = 2;
+        adsrCtx.beginPath();
+        adsrCtx.moveTo(x0, y0);
+        adsrCtx.lineTo(xA, 10);
+        adsrCtx.lineTo(xD, yS);
+        adsrCtx.lineTo(xS, yS);
+        adsrCtx.lineTo(Math.min(w - 10, xR), y0);
+        adsrCtx.stroke();
+      }
+
+      function drawFilterViz(type, cutoffHz, q) {
+        const w = filterViz.clientWidth || 320;
+        const h = filterViz.clientHeight || 120;
+        filterViz.width = Math.floor(w * DPR);
+        filterViz.height = Math.floor(h * DPR);
+        filterCtx.setTransform(DPR, 0, 0, DPR, 0, 0);
+        filterCtx.clearRect(0, 0, w, h);
+        filterCtx.fillStyle = GRID_BG;
+        filterCtx.fillRect(0, 0, w, h);
+        filterCtx.strokeStyle = GRID_LINE;
+        for (let i = 1; i < 4; i++) {
+          const y = (h / 4) * i;
+          filterCtx.beginPath();
+          filterCtx.moveTo(0, y);
+          filterCtx.lineTo(w, y);
+          filterCtx.stroke();
+        }
+        const cutoffX = 10 + cutoffHzToNorm(cutoffHz) * (w - 20);
+        const width = Math.max(12, (w - 20) / (2 + q));
+        filterCtx.strokeStyle = SCOPE_LINE;
+        filterCtx.lineWidth = 2;
+        filterCtx.beginPath();
+        for (let x = 10; x <= w - 10; x++) {
+          let y = h - 12;
+          if ((type | 0) === 0) {
+            const t = 1 / (1 + Math.exp((x - cutoffX) / Math.max(6, width / 3)));
+            y = h - 12 - t * (h - 24);
+          } else if ((type | 0) === 1) {
+            const t = 1 / (1 + Math.exp((cutoffX - x) / Math.max(6, width / 3)));
+            y = h - 12 - t * (h - 24);
+          } else {
+            const d = Math.abs(x - cutoffX);
+            const t = Math.max(0, 1 - d / width);
+            y = h - 12 - Math.pow(t, 1.6) * (h - 24);
+          }
+          if (x === 10) filterCtx.moveTo(x, y);
+          else filterCtx.lineTo(x, y);
+        }
+        filterCtx.stroke();
+      }
+
+      function setOutputButtons(mode) {
+        currentOutputMode = mode | 0;
+        outBle.classList.toggle("active", currentOutputMode === 0);
+        outSerial.classList.toggle("active", currentOutputMode === 1);
+        outAux.classList.toggle("active", currentOutputMode === 2);
+        synthPanel.classList.toggle("hidden", currentOutputMode !== 2);
+      }
+
+      async function setOutputMode(mode) {
+        setOutputButtons(mode | 0);
+        await postForm("/api/outputmode", { mode });
+        if ((mode | 0) === 2) loadSynthState();
+      }
+
+      function applySynthState(s) {
+        if (!s) return;
+        synthState = s;
+        synthPreset.value = s.preset ?? 0;
+        atk.value = s.attack ?? 0;
+        dec.value = s.decay ?? 0;
+        sus.value = s.sustain ?? 0;
+        rel.value = s.release ?? 0;
+        fltType.value = s.filter ?? 0;
+        cutoff.value = cutoffHzToNorm(s.cutoff ?? 1200);
+        res.value = s.resonance ?? 0.7;
+        rev.value = s.reverb ?? 0;
+        dtime.value = s.delay_ms ?? 0;
+        dfb.value = s.delay_feedback ?? 0;
+        dmix.value = s.delay_mix ?? 0;
+        drv.value = s.drive ?? 0;
+        mvol.value = s.master ?? 0.6;
+
+        setVal(atkVal, (+atk.value).toFixed(2) + "s");
+        setVal(decVal, (+dec.value).toFixed(2) + "s");
+        setVal(susVal, (+sus.value).toFixed(2));
+        setVal(relVal, (+rel.value).toFixed(2) + "s");
+        setVal(cutVal, Math.round(cutoffNormToHz(+cutoff.value)) + " Hz");
+        setVal(resVal, (+res.value).toFixed(2));
+        setVal(revVal, (+rev.value).toFixed(2));
+        setVal(dtimeVal, Math.round(+dtime.value) + " ms");
+        setVal(dfbVal, (+dfb.value).toFixed(2));
+        setVal(dmixVal, (+dmix.value).toFixed(2));
+        setVal(drvVal, (+drv.value).toFixed(2));
+        setVal(mvolVal, (+mvol.value).toFixed(2));
+
+        drawAdsrViz(+atk.value, +dec.value, +sus.value, +rel.value);
+        drawFilterViz(+fltType.value, cutoffNormToHz(+cutoff.value), +res.value);
+        syncCustomSelect(synthPreset);
+        syncCustomSelect(fltType);
+      }
+
+      async function loadSynthState() {
+        try {
+          const j = await (await fetch("/api/synth", { cache: "no-store" })).json();
+          applySynthState(j);
+        } catch (e) {}
+      }
+
+      function postSynthPatch(patch, key = "synth", delay = 80) {
+        if (debouncers[key]) clearTimeout(debouncers[key]);
+        debouncers[key] = setTimeout(() => {
+          postForm("/api/synth", patch).then(loadSynthState).catch(() => {});
+        }, delay);
       }
 
       const lastState = {};
@@ -1804,8 +2115,9 @@
         if (!uiMuted) status.textContent = "ok";
         currentMode = (j.mode | 0);
 
-        const midiSerial = (j.midimode | 0) === 1;
-        const bleVal = midiSerial ? "serial bridge" : (j.ble ? "connected" : "--");
+        const outMode = typeof j.outputmode !== "undefined" ? (j.outputmode | 0) : (((j.midimode | 0) === 1) ? 1 : 0);
+        const midiSerial = outMode === 1;
+        const bleVal = outMode === 2 ? "aux out" : (midiSerial ? "serial bridge" : (j.ble ? "connected" : "--"));
         const clockVal = j.clock ? "Plant" : "Internal";
         const modeName = MODE_NAMES[j.mode] || "--";
         const scaleName = SCALE_NAMES[j.scale] || "--";
@@ -1853,7 +2165,6 @@
 
         setValueIfChanged(rest, Math.round(j.rest * 100), "rest");
         setCheckedIfChanged(norep, !!j.nr, "norep");
-        setCheckedIfChanged(midiMode, midiSerial, "midiMode");
 
         setTextIfChanged(bpmVal, j.bpm, "bpmVal");
         setTextIfChanged(swingVal, j.swing + "%", "swingVal");
@@ -1867,7 +2178,6 @@
         setTextIfChanged(viVal, j.vi, "viVal");
         setTextIfChanged(restVal, Math.round(j.rest * 100) + "%", "restVal");
         setTextIfChanged(nrVal, j.nr ? "ON" : "OFF", "nrVal");
-        setTextIfChanged(midiModeVal, midiSerial ? "SERIAL" : "BLE", "midiModeVal");
         setTextIfChanged(tsVal, tsStr, "tsVal");
 
         if (lastState.root !== j.root) {
@@ -1880,6 +2190,12 @@
         syncCustomSelect(tsSel);
         syncCustomSelect(effect);
         syncCustomSelect(palette);
+
+        if (currentOutputMode !== outMode) {
+          const wasAux = currentOutputMode === 2;
+          setOutputButtons(outMode);
+          if (!wasAux && outMode === 2) loadSynthState();
+        }
 
         const nextDrum = (j.mode | 0) === 3;
         if (isDrumMode !== nextDrum) {
@@ -2021,11 +2337,31 @@
         sendNow("/rand");
       };
 
-      midiMode.onchange = (e) => {
-        const v = e.target.checked ? 1 : 0;
-        setVal(midiModeVal, v ? "SERIAL" : "BLE");
-        debouncedSend("midimode", "/midimode?v=" + v, 30, true);
+      outBle.onclick = () => setOutputMode(0);
+      outSerial.onclick = () => setOutputMode(1);
+      outAux.onclick = () => setOutputMode(2);
+
+      synthPreset.onchange = (e) => {
+        postForm("/api/synth", { preset: e.target.value }).then(loadSynthState).catch(() => {});
       };
+      presetReset.onclick = () => {
+        postForm("/api/synth", { reset: 1 }).then(loadSynthState).catch(() => {});
+      };
+      synthTest.onclick = () => sendNow("/api/synth/test", true);
+
+      atk.oninput = (e) => { setVal(atkVal, (+e.target.value).toFixed(2) + "s"); drawAdsrViz(+atk.value, +dec.value, +sus.value, +rel.value); postSynthPatch({ attack: e.target.value }, "satk", 70); };
+      dec.oninput = (e) => { setVal(decVal, (+e.target.value).toFixed(2) + "s"); drawAdsrViz(+atk.value, +dec.value, +sus.value, +rel.value); postSynthPatch({ decay: e.target.value }, "sdec", 70); };
+      sus.oninput = (e) => { setVal(susVal, (+e.target.value).toFixed(2)); drawAdsrViz(+atk.value, +dec.value, +sus.value, +rel.value); postSynthPatch({ sustain: e.target.value }, "ssus", 70); };
+      rel.oninput = (e) => { setVal(relVal, (+e.target.value).toFixed(2) + "s"); drawAdsrViz(+atk.value, +dec.value, +sus.value, +rel.value); postSynthPatch({ release: e.target.value }, "srel", 70); };
+      fltType.onchange = (e) => { drawFilterViz(+e.target.value, cutoffNormToHz(+cutoff.value), +res.value); postSynthPatch({ filter: e.target.value }, "sflt", 80); };
+      cutoff.oninput = (e) => { const hz = cutoffNormToHz(+e.target.value); setVal(cutVal, Math.round(hz) + " Hz"); drawFilterViz(+fltType.value, hz, +res.value); postSynthPatch({ cutoff: hz.toFixed(2) }, "scut", 80); };
+      res.oninput = (e) => { setVal(resVal, (+e.target.value).toFixed(2)); drawFilterViz(+fltType.value, cutoffNormToHz(+cutoff.value), +e.target.value); postSynthPatch({ resonance: e.target.value }, "sres", 80); };
+      rev.oninput = (e) => { setVal(revVal, (+e.target.value).toFixed(2)); postSynthPatch({ reverb: e.target.value }, "srev", 80); };
+      dtime.oninput = (e) => { setVal(dtimeVal, Math.round(+e.target.value) + " ms"); postSynthPatch({ delay_ms: e.target.value }, "sdt", 80); };
+      dfb.oninput = (e) => { setVal(dfbVal, (+e.target.value).toFixed(2)); postSynthPatch({ delay_feedback: e.target.value }, "sdfb", 80); };
+      dmix.oninput = (e) => { setVal(dmixVal, (+e.target.value).toFixed(2)); postSynthPatch({ delay_mix: e.target.value }, "sdmix", 80); };
+      drv.oninput = (e) => { setVal(drvVal, (+e.target.value).toFixed(2)); postSynthPatch({ drive: e.target.value }, "sdrv", 80); };
+      mvol.oninput = (e) => { setVal(mvolVal, (+e.target.value).toFixed(2)); postSynthPatch({ master: e.target.value }, "smvol", 80); };
 
       mute.onchange = (e) => setUiMuted(e.target.checked);
     </script>

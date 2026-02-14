@@ -6,11 +6,13 @@ This firmware version supports:
 
 - BLE MIDI output (`BECA BLE-MIDI`)
 - Serial MIDI output (bridged to DAWs)
+- AUX OUT onboard synth + drum engine over I2S (PCM5102A)
 - Web UI control with Wi-Fi setup portal and live status
 
 ## 1) What Is New In This Patch
 
-- New bottom-bar toggle in Web UI: `MIDI Link` (`BLE` <-> `SERIAL`)
+- New bottom-bar 3-state `Output Mode`: `BLE` | `SERIAL` | `AUX OUT`
+- New `SYNTH` panel in Web UI (shown only in `AUX OUT` mode)
 - Better Wi-Fi setup flow (captive redirect + plain-language connection errors)
 - Serial MIDI bridge tools in `tools/beca_link/`
 
@@ -81,7 +83,7 @@ pio run -t upload
 
 ## 6) BLE MIDI Setup (Simple Path)
 
-1. Keep `MIDI Link` set to `BLE` in BECA UI.
+1. Keep `Output Mode` set to `BLE` in BECA UI.
 2. Open your host app/DAW BLE MIDI connection panel.
 3. Connect to `BECA BLE-MIDI`.
 4. In DAW, enable that MIDI input and arm a MIDI track.
@@ -90,9 +92,9 @@ pio run -t upload
 
 Important confirmed behavior:
 
-- Start with `MIDI Link = BLE`.
+- Start with `Output Mode = BLE`.
 - Start the bridge first.
-- Then switch `MIDI Link` to `SERIAL`.
+- Then switch `Output Mode` to `SERIAL`.
 
 This order avoids startup port/state conflicts on some systems.
 
@@ -129,7 +131,7 @@ tools\beca_link\start_windows_loopbe.bat
 After bridge is running:
 
 1. Open BECA UI.
-2. Set `MIDI Link` to `SERIAL`.
+2. Set `Output Mode` to `SERIAL`.
 3. In Ableton:
 - Preferences -> Link, Tempo, MIDI
 - Enable `Track` for the selected loopback input
@@ -137,7 +139,7 @@ After bridge is running:
 
 ## 8) Serial MIDI Setup (macOS/Linux)
 
-1. Start with `MIDI Link = BLE`.
+1. Start with `Output Mode = BLE`.
 2. Start bridge:
 ```bash
 cd tools/beca_link
@@ -153,8 +155,29 @@ chmod +x start_mac_linux.sh
 - On Windows, if bridge shows `Access is denied` for COM port, another app owns that port.
 - Keep bridge terminal open while using Serial MIDI.
 - If using BLE mode only, bridge is not required.
+- In `AUX OUT` mode, BECA does not emit MIDI note events (BLE or Serial).
 
-## 10) Troubleshooting (Self-Service)
+## 10) AUX OUT Wiring + Test
+
+PCM5102A default I2S wiring:
+
+- `BCK` -> `GPIO26`
+- `LRCK/WS` -> `GPIO27`
+- `DIN` -> `GPIO25`
+
+Audio path:
+
+- PCM5102A analog outputs -> powered speakers/headphones.
+
+Quick test flow:
+
+1. In BECA UI, set `Output Mode` to `AUX OUT`.
+2. Open `/api/synth/test` in browser (or use Synth panel test button).
+3. Confirm a short 2-second tone/chord plays.
+4. Switch to `BLE` or `SERIAL` and confirm onboard audio is silent.
+5. Confirm plant activity triggers synth/drums only in `AUX OUT`.
+
+## 11) Troubleshooting (Self-Service)
 
 ### A) Bridge terminal closes immediately
 
@@ -208,7 +231,7 @@ Fix:
 Fix checklist:
 
 1. Bridge running first.
-2. Then set BECA `MIDI Link` to `SERIAL`.
+2. Then set BECA `Output Mode` to `SERIAL`.
 3. DAW track armed and MIDI input selected.
 4. No COM lock errors in bridge terminal.
 
@@ -216,7 +239,7 @@ Fix checklist:
 
 Fix:
 
-1. Set `MIDI Link` to `BLE`.
+1. Set `Output Mode` to `BLE`.
 2. Power-cycle BECA.
 3. Reconnect from host BLE MIDI panel.
 
@@ -228,7 +251,7 @@ Use setup page messages:
 - Network not found -> use 2.4 GHz Wi-Fi
 - Connected but no IP -> router DHCP issue, reboot router/hotspot and retry
 
-## 11) Developer Notes
+## 12) Developer Notes
 
 - Main firmware: `BECAfinalsv02.ino`
 - UI source: `index.html`
@@ -238,4 +261,8 @@ Use setup page messages:
 python make_index_header.py
 ```
 - Serial bridge tools: `tools/beca_link/`
+- Faust setup helpers:
+  - `tools/faust_setup_windows.ps1`
+  - `tools/faust_setup_macos.sh`
+  - `tools/faust_setup_linux.sh`
 
