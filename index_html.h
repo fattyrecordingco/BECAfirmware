@@ -2177,17 +2177,9 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
 
       // SSE stream
       const es = new EventSource("/events");
+      let reconnectUiTimer = null;
 
-      es.addEventListener("hello", () => {
-        if (!uiMuted) status.textContent = "ok";
-      });
-
-      es.onerror = () => {
-        if (!uiMuted) status.textContent = "reconnecting...";
-      };
-
-      es.addEventListener("state", (e) => {
-        const j = JSON.parse(e.data);
+      function applyStatePacket(j) {
         if (!uiMuted) status.textContent = "ok";
         const outMode = typeof j.outputmode !== "undefined" ? (j.outputmode | 0) : (((j.midimode | 0) === 1) ? 1 : 0);
         const auxReadyState = typeof j.aux_ready !== "undefined" ? ((j.aux_ready | 0) === 1) : true;
@@ -2301,7 +2293,42 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
             scheduleNoteDraw([lastMidi], j.vel | 0, false);
           }
         }
+      }
+
+      es.onopen = () => {
+        if (reconnectUiTimer) {
+          clearTimeout(reconnectUiTimer);
+          reconnectUiTimer = null;
+        }
+        if (!uiMuted) status.textContent = "ok";
+      };
+
+      es.onerror = () => {
+        if (reconnectUiTimer) return;
+        reconnectUiTimer = setTimeout(() => {
+          reconnectUiTimer = null;
+          if (es.readyState !== EventSource.OPEN && !uiMuted) status.textContent = "reconnecting...";
+        }, 500);
+      };
+
+      es.addEventListener("hello", () => {
+        if (reconnectUiTimer) {
+          clearTimeout(reconnectUiTimer);
+          reconnectUiTimer = null;
+        }
+        if (!uiMuted) status.textContent = "ok";
       });
+
+      es.addEventListener("state", (e) => {
+        if (reconnectUiTimer) {
+          clearTimeout(reconnectUiTimer);
+          reconnectUiTimer = null;
+        }
+        try {
+          applyStatePacket(JSON.parse(e.data));
+        } catch (err) {}
+      });
+
       es.addEventListener("scope", (e) => {
         const plant = Number(e.data);
         plantA.push(plant);

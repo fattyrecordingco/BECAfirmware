@@ -876,6 +876,7 @@ extern bool     gMdnsStarted;
 extern volatile int32_t gLastStaDisconnectReason;
 static inline void startMDNS();
 static inline bool setupPortalActive();
+static inline void applyWifiStabilityProfile();
 
 static void WiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
   switch (event) {
@@ -891,6 +892,7 @@ static void WiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
       gIsSta = true;
       gLastWifiOkMs = millis();
       gWifiFailCount = 0;
+      applyWifiStabilityProfile();
       startMDNS();
       break;
     case ARDUINO_EVENT_WIFI_STA_LOST_IP:
@@ -1307,10 +1309,7 @@ static inline void sseSend(const char* event, const char* data) {
 
   const bool critical =
     (strcmp(event, "hello") == 0) ||
-    (strcmp(event, "state") == 0) ||
-    (strcmp(event, "scope") == 0) ||
-    (strcmp(event, "note") == 0) ||
-    (strcmp(event, "drum") == 0);
+    (strcmp(event, "state") == 0);
 
   if (!critical) {
     size_t need = 8 + strlen(event) + 7 + strlen(data) + 2;
@@ -1815,13 +1814,19 @@ volatile int32_t gLastStaDisconnectReason = 0;
 String gWifiLastError;
 String gWifiLastHint;
 const uint32_t WIFI_CHECK_MS = 1000;
-const uint32_t WIFI_RECONNECT_MS = 5000;
+const uint32_t WIFI_RECONNECT_MS = 2500;
 const uint32_t WIFI_RESET_MS = 30000;
 const uint32_t WIFI_RESET_COOLDOWN_MS = 60000;
 
 static inline bool setupPortalActive() {
   wifi_mode_t mode = WiFi.getMode();
   return mode == WIFI_MODE_AP || mode == WIFI_MODE_APSTA;
+}
+
+static inline void applyWifiStabilityProfile() {
+  // ESP32 + BLE coexistence on this core requires modem sleep enabled.
+  WiFi.setSleep(true);
+  esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
 }
 
 static inline String wifiFailureMessage(int32_t reason) {
@@ -1897,8 +1902,10 @@ static inline void maintainWiFi(uint32_t now) {
       WiFi.mode(WIFI_STA);
       WiFi.setHostname(gDeviceName.c_str());
       WiFi.begin(gStaSsid.c_str(), gStaPass.c_str());
+      applyWifiStabilityProfile();
     } else {
       WiFi.reconnect();
+      applyWifiStabilityProfile();
     }
   }
 }
@@ -2263,9 +2270,9 @@ static inline void startAPPortal() {
 // -------------------- Loop timing --------------------
 const uint32_t PLANT_INTERVAL_MS = 8;    // ~125 Hz
 const uint32_t LED_INTERVAL_MS   = 34;   // ~29 FPS
-const uint32_t SSE_SCOPE_MS      = 100;  // 10 fps scope (plant only)
-const uint32_t SSE_NOTE_MS       = 60;   // ~16 fps note grid
-const uint32_t SSE_DRUM_MS       = 50;   // ~20 fps drum UI
+const uint32_t SSE_SCOPE_MS      = 120;  // ~8 fps scope (plant only)
+const uint32_t SSE_NOTE_MS       = 70;   // ~14 fps note grid
+const uint32_t SSE_DRUM_MS       = 70;   // ~14 fps drum UI
 bool     gWarmupDone = false;
 uint32_t gWarmupEndMs = 0;
 
@@ -2326,9 +2333,7 @@ void setup() {
 
   WiFi.setAutoReconnect(true);
   WiFi.persistent(false);
-
-  // Coexistence-safe
-  WiFi.setSleep(true);
+  applyWifiStabilityProfile();
 
   gAuxUnlockAtMs = millis() + AUX_STARTUP_LOCK_MS;
   gSynth.setDrumsEnabled(true);
@@ -2546,7 +2551,7 @@ void loop() {
       sseConnected = false;
     } else {
       // State diff push
-      if ((int32_t)(now - lastStatePushMs) >= 120) {
+      if ((int32_t)(now - lastStatePushMs) >= 150) {
         lastStatePushMs = now;
         pushStateIfChanged(false);
       }
