@@ -13,11 +13,9 @@ This firmware version supports:
 
 - New bottom-bar 3-state `Output Mode`: `BLE` | `SERIAL` | `AUX OUT`
 - New `SYNTH` panel in Web UI (shown only in `AUX OUT` mode)
+- Expanded AUX synth preset bank to 18 presets (includes mellow pads/keys/plucks)
 - Better Wi-Fi setup flow (captive redirect + plain-language connection errors)
 - Serial MIDI bridge tools in `tools/beca_link/`
-- Expanded AUX synth preset bank to `18` tuned presets (musical textures + mellow keys/pads)
-- New runtime diagnostics endpoint: `/api/perf` (underruns, queue high-water, drops, jitter, AUX readiness)
-- Stress hardening for high tempo: bounded audio event drain per block, queue overflow accounting, reduced redundant SSE scope updates
 
 ## 2) Compatibility Baseline
 
@@ -179,7 +177,6 @@ Quick test flow:
 3. Confirm a short 2-second tone/chord plays.
 4. Switch to `BLE` or `SERIAL` and confirm onboard audio is silent.
 5. Confirm plant activity triggers synth/drums only in `AUX OUT`.
-6. Open `/api/perf` and verify `underruns_total` and queue drops stay near zero during normal play.
 
 ## 11) Troubleshooting (Self-Service)
 
@@ -254,14 +251,6 @@ Use setup page messages:
 - Wrong password -> re-enter password
 - Network not found -> use 2.4 GHz Wi-Fi
 - Connected but no IP -> router DHCP issue, reboot router/hotspot and retry
-
-### H) UI lag / missed events during stress test
-
-Use `/api/perf` while running fast BPM/time-signatures and rapid UI edits:
-
-- `event_queue_high_water` near limit and rising `event_queue_drops` -> reduce control spam rate
-- rising `underruns_total` / `i2s_write_fails` -> lower simultaneous load (UI churn + BLE reconnect loops + AUX test spam)
-- high `loop_jitter_max_us` and `transport_catchup_events` -> check Wi-Fi quality and avoid captive portal mode during performance
 
 ## 12) Developer Notes
 

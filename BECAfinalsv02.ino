@@ -73,14 +73,6 @@ uint32_t gAuxUnlockAtMs = 0;
 
 beca::SynthEngine gSynth;
 uint32_t gLastSynthUnderrunLogMs = 0;
-uint32_t gLastPerfLogMs = 0;
-uint32_t gSseDropCount = 0;
-uint32_t gSseScopeSkipCount = 0;
-uint32_t gLoopJitterMaxUs = 0;
-uint32_t gLoopJitterAvgUs = 0;
-uint32_t gLoopLongCount = 0;
-uint32_t gTransportCatchupEvents = 0;
-uint32_t gTransportCatchupMax = 0;
 
 // --- BLE advertising keepalive ---
 uint32_t gLastBleKickMs = 0;
@@ -160,10 +152,6 @@ struct NoteOff {
   bool     on;
 };
 NoteOff offQ[16];
-uint8_t gNoteOffDepth = 0;
-uint8_t gNoteOffHighWater = 0;
-uint32_t gNoteOffDropCount = 0;
-uint32_t gNoteOffSentCount = 0;
 
 struct UiHeldNote {
   uint8_t  note;
@@ -229,7 +217,6 @@ static inline void allNotesOff() {
   gSynth.allNotesOff();
   gSynth.allDrumsOff();
   for (auto &q : offQ) q.on = false;
-  gNoteOffDepth = 0;
   for (auto &q : uiNoteQ) q.on = false;
 }
 
@@ -275,7 +262,6 @@ static inline void setOutputMode(uint8_t mode) {
   gSynth.allNotesOff();
   gSynth.allDrumsOff();
   for (auto &q : offQ) q.on = false;
-  gNoteOffDepth = 0;
   for (auto &q : uiNoteQ) q.on = false;
 
   if (outputModeIsAux() && next != OUTPUT_AUX) {
@@ -318,31 +304,9 @@ static inline void onBleMidiDisconnect() {
 static inline void queueNoteOff(uint8_t note, uint8_t ch, uint16_t durMs) {
   uint32_t t = millis() + durMs;
   for (auto &q : offQ) {
-    if (q.on && q.note == note && q.ch == ch) {
-      q.tOff = t;
-      return;
-    }
+    if (!q.on) { q.note = note; q.ch = ch; q.tOff = t; q.on = true; return; }
   }
-  for (auto &q : offQ) {
-    if (!q.on) {
-      q.note = note;
-      q.ch = ch;
-      q.tOff = t;
-      q.on = true;
-      if (gNoteOffDepth < 255) gNoteOffDepth++;
-      if (gNoteOffDepth > gNoteOffHighWater) gNoteOffHighWater = gNoteOffDepth;
-      return;
-    }
-  }
-  uint8_t oldest = 0;
-  for (uint8_t i = 1; i < (uint8_t)(sizeof(offQ) / sizeof(offQ[0])); ++i) {
-    if ((int32_t)(offQ[i].tOff - offQ[oldest].tOff) < 0) oldest = i;
-  }
-  offQ[oldest].note = note;
-  offQ[oldest].ch = ch;
-  offQ[oldest].tOff = t;
-  offQ[oldest].on = true;
-  gNoteOffDropCount++;
+  // if full, drop (better than blocking)
 }
 
 static inline void serviceNoteOffs() {
@@ -351,8 +315,6 @@ static inline void serviceNoteOffs() {
     if (q.on && (int32_t)(now - q.tOff) >= 0) {
       midiSendNoteOff(q.note, 0, q.ch);
       q.on = false;
-      if (gNoteOffDepth > 0) gNoteOffDepth--;
-      gNoteOffSentCount++;
     }
   }
 }
@@ -876,7 +838,6 @@ extern bool     gMdnsStarted;
 extern volatile int32_t gLastStaDisconnectReason;
 static inline void startMDNS();
 static inline bool setupPortalActive();
-static inline void applyWifiStabilityProfile();
 
 static void WiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
   switch (event) {
@@ -892,7 +853,6 @@ static void WiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
       gIsSta = true;
       gLastWifiOkMs = millis();
       gWifiFailCount = 0;
-      applyWifiStabilityProfile();
       startMDNS();
       break;
     case ARDUINO_EVENT_WIFI_STA_LOST_IP:
@@ -1254,7 +1214,6 @@ uint32_t lastStatePushMs = 0;
 // MIDI note grid SSE throttle
 uint32_t lastSseNoteMs = 0;
 uint32_t lastNoteHash = 0;
-int16_t lastScopeMilli = -1;
 
 // Drum SSE throttle
 uint32_t lastSseDrumMs = 0;
@@ -1309,14 +1268,14 @@ static inline void sseSend(const char* event, const char* data) {
 
   const bool critical =
     (strcmp(event, "hello") == 0) ||
-    (strcmp(event, "state") == 0);
+    (strcmp(event, "state") == 0) ||
+    (strcmp(event, "scope") == 0) ||
+    (strcmp(event, "note") == 0) ||
+    (strcmp(event, "drum") == 0);
 
   if (!critical) {
     size_t need = 8 + strlen(event) + 7 + strlen(data) + 2;
-    if (!sseCanWrite(need)) {
-      gSseDropCount++;
-      return;
-    }
+    if (!sseCanWrite(need)) return;
   }
   sseClient.printf("event: %s\n", event);
   sseClient.printf("data: %s\n\n", data);
@@ -1338,7 +1297,6 @@ static inline void handleEvents() {
   lastSseKeepAliveMs = 0;
   lastSseNoteMs = 0;
   lastNoteHash = 0;
-  lastScopeMilli = -1;
   lastSseDrumMs = 0;
   lastDrumHash = 0;
 
@@ -1814,19 +1772,13 @@ volatile int32_t gLastStaDisconnectReason = 0;
 String gWifiLastError;
 String gWifiLastHint;
 const uint32_t WIFI_CHECK_MS = 1000;
-const uint32_t WIFI_RECONNECT_MS = 2500;
+const uint32_t WIFI_RECONNECT_MS = 5000;
 const uint32_t WIFI_RESET_MS = 30000;
 const uint32_t WIFI_RESET_COOLDOWN_MS = 60000;
 
 static inline bool setupPortalActive() {
   wifi_mode_t mode = WiFi.getMode();
   return mode == WIFI_MODE_AP || mode == WIFI_MODE_APSTA;
-}
-
-static inline void applyWifiStabilityProfile() {
-  // ESP32 + BLE coexistence on this core requires modem sleep enabled.
-  WiFi.setSleep(true);
-  esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
 }
 
 static inline String wifiFailureMessage(int32_t reason) {
@@ -1902,10 +1854,8 @@ static inline void maintainWiFi(uint32_t now) {
       WiFi.mode(WIFI_STA);
       WiFi.setHostname(gDeviceName.c_str());
       WiFi.begin(gStaSsid.c_str(), gStaPass.c_str());
-      applyWifiStabilityProfile();
     } else {
       WiFi.reconnect();
-      applyWifiStabilityProfile();
     }
   }
 }
@@ -2029,66 +1979,6 @@ static inline void handleApiInfo() {
   json += "\"ble_connected\":"; json += (gMidiConnected ? 1 : 0);
   json += "}";
   server.send(200, "application/json", json);
-}
-
-static inline void handleApiPerf() {
-  sendNoCacheHeaders();
-  beca::SynthEngine::PerfSnapshot perf = {};
-  gSynth.getPerfSnapshot(perf);
-
-  char buf[820];
-  snprintf(
-    buf, sizeof(buf),
-    "{"
-    "\"uptime_ms\":%lu,"
-    "\"audio_running\":%u,"
-    "\"underruns_total\":%lu,"
-    "\"i2s_write_fails\":%lu,"
-    "\"audio_render_avg_us\":%lu,"
-    "\"audio_render_max_us\":%lu,"
-    "\"event_queue_depth\":%u,"
-    "\"event_queue_high_water\":%u,"
-    "\"event_queue_drops\":%lu,"
-    "\"noteoff_depth\":%u,"
-    "\"noteoff_high_water\":%u,"
-    "\"noteoff_drops\":%lu,"
-    "\"noteoff_sent\":%lu,"
-    "\"loop_jitter_avg_us\":%lu,"
-    "\"loop_jitter_max_us\":%lu,"
-    "\"loop_long_count\":%lu,"
-    "\"transport_catchup_events\":%lu,"
-    "\"transport_catchup_max\":%lu,"
-    "\"sse_connected\":%u,"
-    "\"sse_drops\":%lu,"
-    "\"sse_scope_skips\":%lu,"
-    "\"aux_ready\":%u,"
-    "\"aux_wait_ms\":%lu"
-    "}",
-    (unsigned long)millis(),
-    gSynth.running() ? 1u : 0u,
-    (unsigned long)perf.underrunsTotal,
-    (unsigned long)perf.i2sWriteFails,
-    (unsigned long)perf.audioRenderAvgUs,
-    (unsigned long)perf.audioRenderMaxUs,
-    (unsigned)perf.queueDepth,
-    (unsigned)perf.queueHighWater,
-    (unsigned long)perf.queueDrops,
-    (unsigned)gNoteOffDepth,
-    (unsigned)gNoteOffHighWater,
-    (unsigned long)gNoteOffDropCount,
-    (unsigned long)gNoteOffSentCount,
-    (unsigned long)gLoopJitterAvgUs,
-    (unsigned long)gLoopJitterMaxUs,
-    (unsigned long)gLoopLongCount,
-    (unsigned long)gTransportCatchupEvents,
-    (unsigned long)gTransportCatchupMax,
-    sseConnected ? 1u : 0u,
-    (unsigned long)gSseDropCount,
-    (unsigned long)gSseScopeSkipCount,
-    auxSwitchReady() ? 1u : 0u,
-    (unsigned long)auxSwitchWaitMs()
-  );
-  server.send(200, "application/json", buf);
 }
 
 static inline bool testStaFromPortal(const String &ssid, const String &pass, String &msg, String &hint, uint32_t timeoutMs = 15000) {
@@ -2270,9 +2160,9 @@ static inline void startAPPortal() {
 // -------------------- Loop timing --------------------
 const uint32_t PLANT_INTERVAL_MS = 8;    // ~125 Hz
 const uint32_t LED_INTERVAL_MS   = 34;   // ~29 FPS
-const uint32_t SSE_SCOPE_MS      = 120;  // ~8 fps scope (plant only)
-const uint32_t SSE_NOTE_MS       = 70;   // ~14 fps note grid
-const uint32_t SSE_DRUM_MS       = 70;   // ~14 fps drum UI
+const uint32_t SSE_SCOPE_MS      = 100;  // 10 fps scope (plant only)
+const uint32_t SSE_NOTE_MS       = 60;   // ~16 fps note grid
+const uint32_t SSE_DRUM_MS       = 50;   // ~20 fps drum UI
 bool     gWarmupDone = false;
 uint32_t gWarmupEndMs = 0;
 
@@ -2333,7 +2223,9 @@ void setup() {
 
   WiFi.setAutoReconnect(true);
   WiFi.persistent(false);
-  applyWifiStabilityProfile();
+
+  // Coexistence-safe
+  WiFi.setSleep(true);
 
   gAuxUnlockAtMs = millis() + AUX_STARTUP_LOCK_MS;
   gSynth.setDrumsEnabled(true);
@@ -2388,7 +2280,6 @@ void setup() {
   server.on("/wifi/save",   HTTP_POST, handleWifiSave);
   server.on("/wifi/forget", handleWifiForget);
   server.on("/api/info",    handleApiInfo);
-  server.on("/api/perf",    handleApiPerf);
   server.on("/reboot",      handleReboot);
 
   server.onNotFound([](){
@@ -2421,7 +2312,6 @@ void setup() {
   Serial.println("  /");
   Serial.println("  /setup");
   Serial.println("  /api/info");
-  Serial.println("  /api/perf");
   Serial.print("Output mode: ");
   Serial.println(outputModeName(gOutputMode));
   if (midiOutIsSerial()) Serial.println("@I MIDIMODE SERIAL READY");
@@ -2429,7 +2319,6 @@ void setup() {
   startMDNS();
 
   for (auto &q : offQ) q.on = false;
-  gNoteOffDepth = 0;
 
   recalcTransport(true);
   pushStateIfChanged(true);
@@ -2438,15 +2327,6 @@ void setup() {
 // -------------------- loop() --------------------
 void loop() {
   uint32_t now = millis();
-  static uint32_t lastLoopUs = 0;
-  const uint32_t loopUs = micros();
-  if (lastLoopUs != 0) {
-    const uint32_t dtUs = loopUs - lastLoopUs;
-    if (dtUs > gLoopJitterMaxUs) gLoopJitterMaxUs = dtUs;
-    gLoopJitterAvgUs = (gLoopJitterAvgUs == 0) ? dtUs : ((gLoopJitterAvgUs * 31u + dtUs) >> 5);
-    if (dtUs > 22000u) gLoopLongCount++;
-  }
-  lastLoopUs = loopUs;
 
   if (setupPortalActive()) dns.processNextRequest();
   server.handleClient();
@@ -2468,7 +2348,6 @@ void loop() {
   // Transport tick
   if ((int32_t)(now - T.nextTickMs) >= 0) {
     uint8_t maxCatch = 4;
-    uint8_t catchCount = 0;
     do {
       uint32_t base = T.stepMs;
       uint32_t swingAdd = 0;
@@ -2478,14 +2357,9 @@ void loop() {
 
       T.nextTickMs += base + swingAdd;
       transportTick();
-      catchCount++;
 
       if (--maxCatch == 0) break;
     } while ((int32_t)(now - T.nextTickMs) >= 0);
-    if (catchCount > 1) {
-      gTransportCatchupEvents++;
-      if (catchCount > gTransportCatchupMax) gTransportCatchupMax = catchCount;
-    }
 
     if ((int32_t)(now - T.nextTickMs) > (int32_t)T.stepMs * 8) {
       T.nextTickMs = now + T.stepMs;
@@ -2500,13 +2374,13 @@ void loop() {
   }
 
   // BLE advertising keepalive (helps Windows rediscover after odd disconnects)
-  if (outputModeIsBle() && !gMidiConnected && (now - gLastBleKickMs) > BLE_KICK_INTERVAL_MS) {
-    gLastBleKickMs = now;
+  if (outputModeIsBle() && !gMidiConnected && (millis() - gLastBleKickMs) > BLE_KICK_INTERVAL_MS) {
+    gLastBleKickMs = millis();
     bleKickAdvertising();
   }
 
-  if (outputModeIsSerial() && (now - gLastSerialBeaconMs) > SERIAL_MIDI_BEACON_MS) {
-    gLastSerialBeaconMs = now;
+  if (outputModeIsSerial() && (millis() - gLastSerialBeaconMs) > SERIAL_MIDI_BEACON_MS) {
+    gLastSerialBeaconMs = millis();
     Serial.println("@I MIDIMODE SERIAL READY");
   }
 
@@ -2517,41 +2391,18 @@ void loop() {
       Serial.printf("@W I2S UNDERRUN %lu\n", (unsigned long)u);
     }
   }
-  if ((int32_t)(now - gLastPerfLogMs) >= 5000) {
-    gLastPerfLogMs = now;
-    beca::SynthEngine::PerfSnapshot perf = {};
-    gSynth.getPerfSnapshot(perf);
-    if (perf.underrunsTotal > 0 || perf.queueDrops > 0 || gNoteOffDropCount > 0 ||
-        gSseDropCount > 0 || gLoopLongCount > 0 || gTransportCatchupEvents > 0) {
-      Serial.printf(
-        "@P u=%lu q=%u/%u qdrop=%lu noff=%u/%u ndrop=%lu loop=%lu/%luus catch=%lu/%lu sse=%lu\n",
-        (unsigned long)perf.underrunsTotal,
-        (unsigned)perf.queueDepth,
-        (unsigned)perf.queueHighWater,
-        (unsigned long)perf.queueDrops,
-        (unsigned)gNoteOffDepth,
-        (unsigned)gNoteOffHighWater,
-        (unsigned long)gNoteOffDropCount,
-        (unsigned long)gLoopJitterAvgUs,
-        (unsigned long)gLoopJitterMaxUs,
-        (unsigned long)gTransportCatchupEvents,
-        (unsigned long)gTransportCatchupMax,
-        (unsigned long)gSseDropCount
-      );
-    }
-  }
 
 
   // SSE maintenance
   if (sseConnected) {
     if (!sseClient.connected()) {
       sseConnected = false;
-    } else if ((now - sseConnectedAt) > SSE_MAX_LIFETIME_MS) {
+    } else if ((millis() - sseConnectedAt) > SSE_MAX_LIFETIME_MS) {
       sseClient.stop();
       sseConnected = false;
     } else {
       // State diff push
-      if ((int32_t)(now - lastStatePushMs) >= 150) {
+      if ((int32_t)(now - lastStatePushMs) >= 120) {
         lastStatePushMs = now;
         pushStateIfChanged(false);
       }
@@ -2559,15 +2410,9 @@ void loop() {
       // Scope stream
       if ((int32_t)(now - lastSseScopeMs) >= (int32_t)SSE_SCOPE_MS) {
         lastSseScopeMs = now;
-        const int16_t scopeMilli = (int16_t)constrain((int)lroundf(gScopePlant * 1000.0f), 0, 1000);
-        if (lastScopeMilli < 0 || abs(scopeMilli - lastScopeMilli) >= 2) {
-          lastScopeMilli = scopeMilli;
-          char buf[16];
-          snprintf(buf, sizeof(buf), "%.3f", (double)(scopeMilli * 0.001f));
-          sseSend("scope", buf);
-        } else {
-          gSseScopeSkipCount++;
-        }
+        char buf[32];
+        snprintf(buf, sizeof(buf), "%.3f", (double)gScopePlant);
+        sseSend("scope", buf);
       }
 
       // Note grid stream (diff-based)

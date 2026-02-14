@@ -1350,8 +1350,6 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
       let lastNoteEventMs = 0;
       let lastNoteState = { list: [], vel: 96, held: false };
       let synthState = {};
-      let synthLoadInFlight = null;
-      let synthLastLoadMs = 0;
       let oscW = 0;
       let oscH = 0;
       let noteW = 0;
@@ -1647,21 +1645,11 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
         syncCustomSelect(fltType);
       }
 
-      async function loadSynthState(force = false) {
-        const now = performance.now();
-        if (!force && synthLoadInFlight) return synthLoadInFlight;
-        if (!force && now - synthLastLoadMs < 180) return null;
-        synthLoadInFlight = (async () => {
-          try {
-            const j = await (await fetch("/api/synth", { cache: "no-store" })).json();
-            applySynthState(j);
-            synthLastLoadMs = performance.now();
-          } catch (e) {
-          } finally {
-            synthLoadInFlight = null;
-          }
-        })();
-        return synthLoadInFlight;
+      async function loadSynthState() {
+        try {
+          const j = await (await fetch("/api/synth", { cache: "no-store" })).json();
+          applySynthState(j);
+        } catch (e) {}
       }
 
       function postSynthPatch(patch, key = "synth", delay = 80) {
@@ -2177,9 +2165,17 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
 
       // SSE stream
       const es = new EventSource("/events");
-      let reconnectUiTimer = null;
 
-      function applyStatePacket(j) {
+      es.addEventListener("hello", () => {
+        if (!uiMuted) status.textContent = "ok";
+      });
+
+      es.onerror = () => {
+        if (!uiMuted) status.textContent = "reconnecting...";
+      };
+
+      es.addEventListener("state", (e) => {
+        const j = JSON.parse(e.data);
         if (!uiMuted) status.textContent = "ok";
         const outMode = typeof j.outputmode !== "undefined" ? (j.outputmode | 0) : (((j.midimode | 0) === 1) ? 1 : 0);
         const auxReadyState = typeof j.aux_ready !== "undefined" ? ((j.aux_ready | 0) === 1) : true;
@@ -2293,42 +2289,7 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
             scheduleNoteDraw([lastMidi], j.vel | 0, false);
           }
         }
-      }
-
-      es.onopen = () => {
-        if (reconnectUiTimer) {
-          clearTimeout(reconnectUiTimer);
-          reconnectUiTimer = null;
-        }
-        if (!uiMuted) status.textContent = "ok";
-      };
-
-      es.onerror = () => {
-        if (reconnectUiTimer) return;
-        reconnectUiTimer = setTimeout(() => {
-          reconnectUiTimer = null;
-          if (es.readyState !== EventSource.OPEN && !uiMuted) status.textContent = "reconnecting...";
-        }, 500);
-      };
-
-      es.addEventListener("hello", () => {
-        if (reconnectUiTimer) {
-          clearTimeout(reconnectUiTimer);
-          reconnectUiTimer = null;
-        }
-        if (!uiMuted) status.textContent = "ok";
       });
-
-      es.addEventListener("state", (e) => {
-        if (reconnectUiTimer) {
-          clearTimeout(reconnectUiTimer);
-          reconnectUiTimer = null;
-        }
-        try {
-          applyStatePacket(JSON.parse(e.data));
-        } catch (err) {}
-      });
-
       es.addEventListener("scope", (e) => {
         const plant = Number(e.data);
         plantA.push(plant);
@@ -2455,10 +2416,10 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
       outAux.onclick = () => setOutputMode(2);
 
       synthPreset.onchange = (e) => {
-        postForm("/api/synth", { preset: e.target.value }).then(() => loadSynthState(true)).catch(() => {});
+        postForm("/api/synth", { preset: e.target.value }).then(loadSynthState).catch(() => {});
       };
       presetReset.onclick = () => {
-        postForm("/api/synth", { reset: 1 }).then(() => loadSynthState(true)).catch(() => {});
+        postForm("/api/synth", { reset: 1 }).then(loadSynthState).catch(() => {});
       };
       synthTest.onclick = () => sendNow("/api/synth/test", true);
 

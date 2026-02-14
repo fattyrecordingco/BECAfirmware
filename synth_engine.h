@@ -42,16 +42,6 @@ class SynthEngine {
  public:
   static constexpr uint8_t kPresetCount = 18;
 
-  struct PerfSnapshot {
-    uint32_t underrunsTotal;
-    uint32_t i2sWriteFails;
-    uint16_t queueDepth;
-    uint16_t queueHighWater;
-    uint32_t queueDrops;
-    uint32_t audioRenderAvgUs;
-    uint32_t audioRenderMaxUs;
-  };
-
   SynthEngine();
 
   bool start(int pinBck, int pinWs, int pinData, uint32_t sampleRate = 44100, uint16_t blockSize = 64);
@@ -78,7 +68,6 @@ class SynthEngine {
   void service(uint32_t nowMs);
 
   uint32_t consumeUnderruns();
-  void getPerfSnapshot(PerfSnapshot& out) const;
 
   static const char* presetName(uint8_t index);
   static void presetDefaults(uint8_t index, SynthParams& out);
@@ -115,12 +104,10 @@ class SynthEngine {
   };
 
   static constexpr uint8_t kMaxVoices = 8;
-  static constexpr uint8_t kEventQueueSize = 128;
-  static constexpr uint8_t kEventQueueMask = kEventQueueSize - 1;
+  static constexpr uint8_t kEventQueueSize = 64;
   static constexpr uint8_t kOffSchedSize = 24;
   static constexpr uint16_t kBlockMax = 128;
   static constexpr uint32_t kMaxDelaySamples = 35280;
-  static constexpr uint8_t kMaxEventsPerBlock = 28;
 
   static void taskTrampoline(void* arg);
   void audioTask();
@@ -147,7 +134,7 @@ class SynthEngine {
   SynthParams paramsSlots_[2];
   volatile uint8_t activeParamSlot_;
 
-  mutable portMUX_TYPE eventMux_;
+  portMUX_TYPE eventMux_;
   Event eventQueue_[kEventQueueSize];
   volatile uint8_t eventHead_;
   volatile uint8_t eventTail_;
@@ -173,15 +160,8 @@ class SynthEngine {
   float revMemR_;
 
   int16_t i2sBlock_[kBlockMax * 2];
-  float noteHzLut_[128];
 
   volatile uint32_t underruns_;
-  volatile uint32_t underrunsTotal_;
-  volatile uint32_t i2sWriteFails_;
-  volatile uint16_t queueHighWater_;
-  volatile uint32_t queueDrops_;
-  volatile uint32_t renderAvgUs_;
-  volatile uint32_t renderMaxUs_;
 
   volatile float fadeTarget_;
   float fadeValue_;
