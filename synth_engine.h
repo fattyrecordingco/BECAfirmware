@@ -57,6 +57,7 @@ class SynthEngine {
 
   void drumHit(uint8_t part, uint8_t vel);
   void allDrumsOff();
+  void setDrumsEnabled(bool enabled);
 
   void setParams(const SynthParams& params);
   void getParams(SynthParams& out) const;
@@ -169,6 +170,7 @@ class SynthEngine {
   bool testToneActive_;
   uint32_t testToneEndMs_;
   uint8_t testNotes_[3];
+  volatile bool drumsEnabled_;
 };
 
 }  // namespace beca

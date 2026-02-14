@@ -40,7 +40,8 @@ SynthEngine::SynthEngine()
       fadeValue_(1.0f),
       fadeStep_(0.001f),
       testToneActive_(false),
-      testToneEndMs_(0) {
+      testToneEndMs_(0),
+      drumsEnabled_(true) {
   memset(voices_, 0, sizeof(voices_));
   memset(offSched_, 0, sizeof(offSched_));
   memset(eventQueue_, 0, sizeof(eventQueue_));
@@ -564,11 +565,17 @@ void SynthEngine::allNotesOff() {
 }
 
 void SynthEngine::drumHit(uint8_t part, uint8_t vel) {
+  if (!drumsEnabled_) return;
   pushEvent(EVT_DRUM_HIT, part, vel);
 }
 
 void SynthEngine::allDrumsOff() {
   pushEvent(EVT_ALL_DRUMS_OFF, 0, 0);
+}
+
+void SynthEngine::setDrumsEnabled(bool enabled) {
+  drumsEnabled_ = enabled;
+  if (!enabled) allDrumsOff();
 }
 
 bool SynthEngine::pushEvent(uint8_t type, uint8_t a, uint8_t b) {
@@ -678,7 +685,7 @@ void SynthEngine::handleEvent(const Event& e, const SynthParams& p) {
       }
       break;
     case EVT_DRUM_HIT:
-      drum_.trigger(e.a, e.b);
+      if (drumsEnabled_) drum_.trigger(e.a, e.b);
       break;
     case EVT_ALL_DRUMS_OFF:
       drum_.allOff();
@@ -782,7 +789,7 @@ void SynthEngine::renderBlock(const SynthParams& p) {
 
     float drumL = 0.0f;
     float drumR = 0.0f;
-    drum_.render(drumL, drumR);
+    if (drumsEnabled_) drum_.render(drumL, drumR);
 
     float mixL = synthL + drumL;
     float mixR = synthR + drumR;

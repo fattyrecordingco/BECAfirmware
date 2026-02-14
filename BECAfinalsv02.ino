@@ -81,6 +81,8 @@ static inline bool outputModeIsBle() { return gOutputMode == OUTPUT_BLE; }
 static inline bool outputModeIsSerial() { return gOutputMode == OUTPUT_SERIAL; }
 static inline bool midiOutIsSerial() { return outputModeIsSerial(); }
 static inline bool midiOutReady()    { return outputModeIsSerial() || (outputModeIsBle() && gMidiConnected); }
+static inline bool drumsAllowedForCurrentOutput();
+static inline void enforceAuxDrumGuard();
 
 static inline void serialMidiSend3(uint8_t st, uint8_t d1, uint8_t d2) {
   char line[24];
@@ -258,9 +260,13 @@ static inline void setOutputMode(uint8_t mode) {
   gOutputMode = next;
 
   if (outputModeIsAux()) {
+    enforceAuxDrumGuard();
+    gSynth.setDrumsEnabled(false);
     startAuxAudio();
     return;
   }
+
+  gSynth.setDrumsEnabled(true);
 
   if (outputModeIsSerial()) {
     gLastSerialBeaconMs = 0;
@@ -369,6 +375,14 @@ Transport T;
 // -------------------- Music theory --------------------
 enum Mode { MODE_NOTE = 0, MODE_ARP = 1, MODE_CHORD = 2, MODE_DRUM = 3 };
 Mode gMode = MODE_CHORD;
+
+static inline bool drumsAllowedForCurrentOutput() { return !outputModeIsAux(); }
+static inline void enforceAuxDrumGuard() {
+  if (!drumsAllowedForCurrentOutput() && gMode == MODE_DRUM) {
+    gMode = MODE_NOTE;
+    Serial.println("@I AUX DRUM MODE BLOCKED -> NOTES");
+  }
+}
 
 uint8_t rootMidi = 60; // stored as MIDI, we expose root "semi" in UI via rootMidi%12
 uint8_t lowOct   = 3;
@@ -514,15 +528,14 @@ static inline void sendMelodic(uint8_t note, uint8_t vel = 96, uint8_t ch = 1, u
 
 // drums also light drum-grid + extend hold window (for feel)
 static inline void sendDrum(uint8_t note, uint8_t vel = 110, uint16_t gateMs = 60) {
+  if (!drumsAllowedForCurrentOutput()) return;
   int8_t part = drumPartFromNote(note);
   if (part >= 0) {
     // respect selection mask
     if (((uint8_t)drumSelMask & (1u << (uint8_t)part)) == 0) return;
   }
 
-  if (outputModeIsAux()) {
-    if (part >= 0) gSynth.drumHit((uint8_t)part, vel);
-  } else if (midiOutReady()) {
+  if (midiOutReady()) {
     midiSendNoteOn(note, vel, DRUM_CH);
     queueNoteOff(note, DRUM_CH, gateMs);
   }
@@ -1043,6 +1056,10 @@ static inline void stepCHORD_internal() {
 }
 
 static inline void stepDRUM_internal() {
+  if (!drumsAllowedForCurrentOutput()) {
+    stepNOTE_internal();
+    return;
+  }
   float fd, fo, e; uint8_t vel;
   samplePlant(fd, fo, vel, e);
 
@@ -1124,6 +1141,11 @@ static inline void step_fromPlantTrigger() {
     } break;
 
     case MODE_DRUM: {
+      if (!drumsAllowedForCurrentOutput()) {
+        sendMelodic(note, vel, 1, gate);
+        lastMidiOut = note;
+        break;
+      }
       // Plant-triggered "hit" can play multiple parts depending on energy,
       // but still respects drumSelMask.
       uint8_t kickVel  = (uint8_t)max((int)80, (int)vel);
@@ -1485,7 +1507,15 @@ static inline void setHighOct() {
   server.send(200, "text/plain", "OK");
 }
 
-static inline void setMode()   { if (server.hasArg("i")) gMode = (Mode)constrain(server.arg("i").toInt(), 0, 3); pushStateIfChanged(true); server.send(200,"text/plain","OK"); }
+static inline void setMode() {
+  if (server.hasArg("i")) {
+    Mode next = (Mode)constrain(server.arg("i").toInt(), 0, 3);
+    if (!drumsAllowedForCurrentOutput() && next == MODE_DRUM) next = MODE_NOTE;
+    gMode = next;
+  }
+  pushStateIfChanged(true);
+  server.send(200, "text/plain", "OK");
+}
 static inline void setClock()  { if (server.hasArg("v")) gClock = (ClockMode)constrain(server.arg("v").toInt(), 0, 1); pushStateIfChanged(true); server.send(200,"text/plain","OK"); }
 static inline void setScale()  { if (server.hasArg("i")) gScale = (ScaleType)constrain(server.arg("i").toInt(), 0, 14); pushStateIfChanged(true); server.send(200,"text/plain","OK"); }
 
@@ -1669,7 +1699,7 @@ static inline void setDrumSel() {
 }
 
 static inline void randomize() {
-  gMode  = (Mode)random(0, 4);
+  gMode  = (Mode)random(0, drumsAllowedForCurrentOutput() ? 4 : 3);
   gScale = (ScaleType)random(0, 15);
   fxMode = (EffectMode)random(0, (int)FX_COUNT);
   currentPaletteIndex = (uint8_t)random(0, NUM_BUILTIN + NUM_CUSTOM);
@@ -2157,7 +2187,9 @@ void setup() {
   // Coexistence-safe
   WiFi.setSleep(true);
 
+  gSynth.setDrumsEnabled(!outputModeIsAux());
   if (outputModeIsAux()) {
+    enforceAuxDrumGuard();
     startAuxAudio();
   }
 
@@ -2377,7 +2409,8 @@ void loop() {
       }
 
       // Drum UI stream (diff-based): hitMask|selMask
-      if ((int32_t)(now - lastSseDrumMs) >= (int32_t)SSE_DRUM_MS) {
+      if (drumsAllowedForCurrentOutput() &&
+          (int32_t)(now - lastSseDrumMs) >= (int32_t)SSE_DRUM_MS) {
         lastSseDrumMs = now;
         uint8_t hit = drumHitMaskNow();
         uint8_t sel = (uint8_t)drumSelMask;

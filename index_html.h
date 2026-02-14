@@ -1267,6 +1267,7 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
       const velLab = $("velLab");
 
       const mode = $("mode");
+      const drumModeOption = mode ? mode.querySelector('option[value="3"]') : null;
       const clockSel = $("clockSel");
       const scale = $("scale");
       const tsSel = $("tsSel");
@@ -1535,12 +1536,17 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
         filterCtx.stroke();
       }
 
-      function setOutputButtons(mode) {
-        currentOutputMode = mode | 0;
+      function setOutputButtons(outputMode) {
+        currentOutputMode = outputMode | 0;
         outBle.classList.toggle("active", currentOutputMode === 0);
         outSerial.classList.toggle("active", currentOutputMode === 1);
         outAux.classList.toggle("active", currentOutputMode === 2);
         synthPanel.classList.toggle("hidden", currentOutputMode !== 2);
+        if (drumModeOption) drumModeOption.disabled = currentOutputMode === 2;
+        if (currentOutputMode === 2 && ((mode && mode.value) | 0) === 3) {
+          mode.value = "0";
+        }
+        syncCustomSelect(mode);
       }
 
       async function setOutputMode(mode) {
@@ -2118,13 +2124,13 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
       es.addEventListener("state", (e) => {
         const j = JSON.parse(e.data);
         if (!uiMuted) status.textContent = "ok";
-        currentMode = (j.mode | 0);
-
         const outMode = typeof j.outputmode !== "undefined" ? (j.outputmode | 0) : (((j.midimode | 0) === 1) ? 1 : 0);
+        const guardedMode = (outMode === 2 && (j.mode | 0) === 3) ? 0 : (j.mode | 0);
+        currentMode = guardedMode;
         const midiSerial = outMode === 1;
         const bleVal = outMode === 2 ? "aux out" : (midiSerial ? "serial bridge" : (j.ble ? "connected" : "--"));
         const clockVal = j.clock ? "Plant" : "Internal";
-        const modeName = MODE_NAMES[j.mode] || "--";
+        const modeName = MODE_NAMES[guardedMode] || "--";
         const scaleName = SCALE_NAMES[j.scale] || "--";
         const rootName = NOTE_NAMES[j.root] || "--";
         const sensStr = (+j.sens).toFixed(2);
@@ -2157,7 +2163,7 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
         setValueIfChanged(loct, j.lo, "loct");
         setValueIfChanged(hoct, j.hi, "hoct");
 
-        setValueIfChanged(mode, j.mode, "mode");
+        setValueIfChanged(mode, guardedMode, "mode");
         setValueIfChanged(clockSel, j.clock, "clockSel");
         setValueIfChanged(scale, j.scale, "scale");
         setValueIfChanged(tsSel, tsStr.replace("/", "-"), "tsSel");
@@ -2202,7 +2208,7 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
           if (!wasAux && outMode === 2) loadSynthState();
         }
 
-        const nextDrum = (j.mode | 0) === 3;
+        const nextDrum = guardedMode === 3;
         if (isDrumMode !== nextDrum) {
           isDrumMode = nextDrum;
           drumWrap.classList.toggle("hidden", !isDrumMode);
@@ -2289,8 +2295,15 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
         debouncedSend("hi", "/hi?v=" + v, 60);
       };
 
-      mode.onchange = (e) =>
-        debouncedSend("mode", "/mode?i=" + e.target.value, 30);
+      mode.onchange = (e) => {
+        let next = e.target.value | 0;
+        if (currentOutputMode === 2 && next === 3) {
+          next = 0;
+          e.target.value = "0";
+          syncCustomSelect(mode);
+        }
+        debouncedSend("mode", "/mode?i=" + next, 30);
+      };
       clockSel.onchange = (e) =>
         debouncedSend("clock", "/clock?v=" + e.target.value, 30);
       scale.onchange = (e) =>
