@@ -8,8 +8,15 @@ namespace beca {
 namespace {
 
 const char* kPresetNames[SynthEngine::kPresetCount] = {
-    "Fatty Neon Lead", "Glass Reed Lead", "Verdant Pad", "Forest Choir", "Jivari Strings",
-    "Pulse Arp 1",     "Pulse Arp 2",      "Rhythm Gate", "Thick Mono Bass", "Rubber Bass",
+    "Fatty Neon Lead",  "Glass Reed Lead",  "Verdant Pad",      "Forest Choir",    "Jivari Strings",
+    "Pulse Arp 1",      "Pulse Arp 2",      "Rhythm Gate",      "Thick Mono Bass", "Rubber Bass",
+    "Amber Bloom Pad",  "Dawn Mist Keys",   "Velvet Hollow",    "Moon Tape Choir", "Aero Bell Wash",
+    "Soft Grain Pluck", "Low Tide Organ",   "Warm Drift Mono",
+};
+
+const float kPolyVoiceNorm[9] = {
+    0.0f,       0.250000f, 0.176777f, 0.144338f, 0.125000f,
+    0.111803f, 0.102062f, 0.094491f, 0.088388f,
 };
 
 }  // namespace
@@ -35,6 +42,12 @@ SynthEngine::SynthEngine()
       lastResonance_(0.0f),
       filterDirty_(true),
       underruns_(0),
+      underrunsTotal_(0),
+      i2sWriteFails_(0),
+      queueHighWater_(0),
+      queueDrops_(0),
+      renderAvgUs_(0),
+      renderMaxUs_(0),
       fadeTarget_(1.0f),
       fadeValue_(1.0f),
       fadeStep_(0.001f),
@@ -45,6 +58,11 @@ SynthEngine::SynthEngine()
   memset(offSched_, 0, sizeof(offSched_));
   memset(eventQueue_, 0, sizeof(eventQueue_));
   memset(delay_, 0, sizeof(delay_));
+  memset(noteHzLut_, 0, sizeof(noteHzLut_));
+
+  for (uint16_t i = 0; i < 128; ++i) {
+    noteHzLut_[i] = 440.0f * exp2f((static_cast<float>(i) - 69.0f) / 12.0f);
+  }
 
   SynthParams p;
   presetDefaults(0, p);
@@ -288,6 +306,182 @@ void SynthEngine::presetDefaults(uint8_t index, SynthParams& out) {
       out.detuneCents = 1.1f;
       out.gainTrim = 0.84f;
       break;
+    case 10:  // Amber Bloom Pad
+      out.waveA = 3;
+      out.waveB = 2;
+      out.oscMix = 0.44f;
+      out.mono = 0;
+      out.maxVoices = 8;
+      out.attack = 0.62f;
+      out.decay = 1.40f;
+      out.sustain = 0.68f;
+      out.release = 2.20f;
+      out.filterType = SYNTH_FILTER_LOWPASS;
+      out.cutoffHz = 2600.0f;
+      out.resonance = 0.60f;
+      out.reverb = 0.40f;
+      out.delayMs = 380.0f;
+      out.delayFeedback = 0.29f;
+      out.delayMix = 0.18f;
+      out.distDrive = 0.02f;
+      out.master = 0.50f;
+      out.detuneCents = 3.2f;
+      out.gainTrim = 0.82f;
+      break;
+    case 11:  // Dawn Mist Keys
+      out.waveA = 2;
+      out.waveB = 3;
+      out.oscMix = 0.35f;
+      out.mono = 0;
+      out.maxVoices = 6;
+      out.attack = 0.028f;
+      out.decay = 0.54f;
+      out.sustain = 0.58f;
+      out.release = 0.68f;
+      out.filterType = SYNTH_FILTER_LOWPASS;
+      out.cutoffHz = 3400.0f;
+      out.resonance = 0.90f;
+      out.reverb = 0.18f;
+      out.delayMs = 190.0f;
+      out.delayFeedback = 0.16f;
+      out.delayMix = 0.11f;
+      out.distDrive = 0.04f;
+      out.master = 0.56f;
+      out.detuneCents = 1.3f;
+      out.gainTrim = 0.86f;
+      break;
+    case 12:  // Velvet Hollow
+      out.waveA = 3;
+      out.waveB = 1;
+      out.oscMix = 0.40f;
+      out.mono = 0;
+      out.maxVoices = 5;
+      out.attack = 0.14f;
+      out.decay = 0.70f;
+      out.sustain = 0.54f;
+      out.release = 1.10f;
+      out.filterType = SYNTH_FILTER_BANDPASS;
+      out.cutoffHz = 1450.0f;
+      out.resonance = 1.10f;
+      out.reverb = 0.26f;
+      out.delayMs = 230.0f;
+      out.delayFeedback = 0.19f;
+      out.delayMix = 0.14f;
+      out.distDrive = 0.05f;
+      out.master = 0.52f;
+      out.detuneCents = 2.4f;
+      out.gainTrim = 0.84f;
+      break;
+    case 13:  // Moon Tape Choir
+      out.waveA = 3;
+      out.waveB = 0;
+      out.oscMix = 0.60f;
+      out.mono = 0;
+      out.maxVoices = 8;
+      out.attack = 0.88f;
+      out.decay = 1.25f;
+      out.sustain = 0.72f;
+      out.release = 2.60f;
+      out.filterType = SYNTH_FILTER_LOWPASS;
+      out.cutoffHz = 1950.0f;
+      out.resonance = 0.68f;
+      out.reverb = 0.44f;
+      out.delayMs = 420.0f;
+      out.delayFeedback = 0.32f;
+      out.delayMix = 0.22f;
+      out.distDrive = 0.02f;
+      out.master = 0.48f;
+      out.detuneCents = 4.2f;
+      out.gainTrim = 0.78f;
+      break;
+    case 14:  // Aero Bell Wash
+      out.waveA = 2;
+      out.waveB = 3;
+      out.oscMix = 0.20f;
+      out.mono = 0;
+      out.maxVoices = 5;
+      out.attack = 0.09f;
+      out.decay = 0.82f;
+      out.sustain = 0.46f;
+      out.release = 1.70f;
+      out.filterType = SYNTH_FILTER_HIGHPASS;
+      out.cutoffHz = 450.0f;
+      out.resonance = 0.85f;
+      out.reverb = 0.32f;
+      out.delayMs = 275.0f;
+      out.delayFeedback = 0.23f;
+      out.delayMix = 0.18f;
+      out.distDrive = 0.03f;
+      out.master = 0.51f;
+      out.detuneCents = 0.7f;
+      out.gainTrim = 0.82f;
+      break;
+    case 15:  // Soft Grain Pluck
+      out.waveA = 1;
+      out.waveB = 3;
+      out.oscMix = 0.18f;
+      out.mono = 0;
+      out.maxVoices = 4;
+      out.attack = 0.004f;
+      out.decay = 0.24f;
+      out.sustain = 0.30f;
+      out.release = 0.38f;
+      out.filterType = SYNTH_FILTER_LOWPASS;
+      out.cutoffHz = 3800.0f;
+      out.resonance = 1.35f;
+      out.reverb = 0.12f;
+      out.delayMs = 145.0f;
+      out.delayFeedback = 0.17f;
+      out.delayMix = 0.10f;
+      out.distDrive = 0.08f;
+      out.master = 0.55f;
+      out.detuneCents = 1.1f;
+      out.gainTrim = 0.88f;
+      break;
+    case 16:  // Low Tide Organ
+      out.waveA = 3;
+      out.waveB = 2;
+      out.oscMix = 0.50f;
+      out.mono = 0;
+      out.maxVoices = 5;
+      out.attack = 0.035f;
+      out.decay = 0.62f;
+      out.sustain = 0.74f;
+      out.release = 0.92f;
+      out.filterType = SYNTH_FILTER_LOWPASS;
+      out.cutoffHz = 2100.0f;
+      out.resonance = 0.74f;
+      out.reverb = 0.19f;
+      out.delayMs = 210.0f;
+      out.delayFeedback = 0.15f;
+      out.delayMix = 0.09f;
+      out.distDrive = 0.05f;
+      out.master = 0.53f;
+      out.detuneCents = 1.6f;
+      out.gainTrim = 0.86f;
+      break;
+    case 17:  // Warm Drift Mono
+      out.waveA = 0;
+      out.waveB = 3;
+      out.oscMix = 0.32f;
+      out.mono = 1;
+      out.maxVoices = 1;
+      out.attack = 0.015f;
+      out.decay = 0.26f;
+      out.sustain = 0.63f;
+      out.release = 0.44f;
+      out.filterType = SYNTH_FILTER_LOWPASS;
+      out.cutoffHz = 2400.0f;
+      out.resonance = 1.2f;
+      out.reverb = 0.11f;
+      out.delayMs = 110.0f;
+      out.delayFeedback = 0.16f;
+      out.delayMix = 0.08f;
+      out.distDrive = 0.12f;
+      out.master = 0.54f;
+      out.detuneCents = 2.3f;
+      out.gainTrim = 0.87f;
+      break;
   }
 }
 
@@ -319,6 +513,11 @@ void SynthEngine::sanitizeParams(SynthParams& p) const {
     p.delayFeedback = 0.92f;
   }
   if (p.distDrive > 0.8f) p.master *= 0.92f;
+  if (p.maxVoices >= 6 && p.detuneCents > 5.5f) p.detuneCents = 5.5f;
+  if (p.maxVoices >= 6) {
+    const float safeMaster = 0.72f / p.gainTrim;
+    if (p.master > safeMaster) p.master = safeMaster;
+  }
 }
 
 bool SynthEngine::start(int pinBck, int pinWs, int pinData, uint32_t sampleRate, uint16_t blockSize) {
@@ -362,6 +561,13 @@ bool SynthEngine::start(int pinBck, int pinWs, int pinData, uint32_t sampleRate,
   filterL_.reset();
   filterR_.reset();
   filterDirty_ = true;
+  underruns_ = 0;
+  underrunsTotal_ = 0;
+  i2sWriteFails_ = 0;
+  queueHighWater_ = 0;
+  queueDrops_ = 0;
+  renderAvgUs_ = 0;
+  renderMaxUs_ = 0;
 
   for (auto& v : voices_) {
     v.active = false;
@@ -373,6 +579,9 @@ bool SynthEngine::start(int pinBck, int pinWs, int pinData, uint32_t sampleRate,
     v.env.reset();
   }
   memset(offSched_, 0, sizeof(offSched_));
+  memset(eventQueue_, 0, sizeof(eventQueue_));
+  eventHead_ = 0;
+  eventTail_ = 0;
   drum_.init(static_cast<float>(sampleRate_));
 
   fadeValue_ = 0.0f;
@@ -498,6 +707,19 @@ uint32_t SynthEngine::consumeUnderruns() {
   return v;
 }
 
+void SynthEngine::getPerfSnapshot(PerfSnapshot& out) const {
+  portENTER_CRITICAL(&eventMux_);
+  const uint8_t depth = static_cast<uint8_t>((eventHead_ - eventTail_) & kEventQueueMask);
+  out.underrunsTotal = underrunsTotal_;
+  out.i2sWriteFails = i2sWriteFails_;
+  out.queueDepth = depth;
+  out.queueHighWater = queueHighWater_;
+  out.queueDrops = queueDrops_;
+  out.audioRenderAvgUs = renderAvgUs_;
+  out.audioRenderMaxUs = renderMaxUs_;
+  portEXIT_CRITICAL(&eventMux_);
+}
+
 void SynthEngine::noteOn(uint8_t note, uint8_t vel, uint16_t gateMs) {
   pushEvent(EVT_NOTE_ON, note, vel);
 
@@ -548,13 +770,17 @@ void SynthEngine::setDrumsEnabled(bool enabled) {
 bool SynthEngine::pushEvent(uint8_t type, uint8_t a, uint8_t b) {
   bool ok = false;
   portENTER_CRITICAL(&eventMux_);
-  const uint8_t next = static_cast<uint8_t>((eventHead_ + 1u) % kEventQueueSize);
+  const uint8_t next = static_cast<uint8_t>((eventHead_ + 1u) & kEventQueueMask);
   if (next != eventTail_) {
     eventQueue_[eventHead_].type = type;
     eventQueue_[eventHead_].a = a;
     eventQueue_[eventHead_].b = b;
     eventHead_ = next;
+    const uint8_t depth = static_cast<uint8_t>((eventHead_ - eventTail_) & kEventQueueMask);
+    if (depth > queueHighWater_) queueHighWater_ = depth;
     ok = true;
+  } else {
+    queueDrops_++;
   }
   portEXIT_CRITICAL(&eventMux_);
   return ok;
@@ -565,7 +791,7 @@ bool SynthEngine::popEvent(Event& out) {
   portENTER_CRITICAL(&eventMux_);
   if (eventTail_ != eventHead_) {
     out = eventQueue_[eventTail_];
-    eventTail_ = static_cast<uint8_t>((eventTail_ + 1u) % kEventQueueSize);
+    eventTail_ = static_cast<uint8_t>((eventTail_ + 1u) & kEventQueueMask);
     ok = true;
   }
   portEXIT_CRITICAL(&eventMux_);
@@ -634,7 +860,6 @@ void SynthEngine::handleEvent(const Event& e, const SynthParams& p) {
       Voice* v = allocVoice(e.a, p.mono != 0);
       if (!v) break;
       v->vel = dsp::clampf(static_cast<float>(e.b) / 127.0f, 0.05f, 1.0f);
-      v->env.setSampleRate(static_cast<float>(sampleRate_));
       v->env.set(p.attack, p.decay, p.sustain, p.release);
       v->env.noteOn();
       if (p.mono) {
@@ -696,6 +921,18 @@ void SynthEngine::renderBlock(const SynthParams& p) {
 
   const uint32_t delaySamples = static_cast<uint32_t>(
       constrain(static_cast<int>((p.delayMs * static_cast<float>(sampleRate_)) / 1000.0f), 1, static_cast<int>(kMaxDelaySamples - 1)));
+  const float invSampleRate = 1.0f / static_cast<float>(sampleRate_);
+  const float oscMix = p.oscMix;
+  const float oscInvMix = 1.0f - oscMix;
+  const float driveGain = 1.0f + p.distDrive * 5.5f;
+  const float invDriveGain = 1.0f / driveGain;
+  const float delayDry = 1.0f - p.delayMix;
+  const float delayWet = p.delayMix;
+  const float reverbMix = p.reverb;
+  const float master = p.master;
+  const float softClipGain = 1.6f;
+  const float invSoftClipGain = 1.0f / softClipGain;
+  const float gainTrim = p.gainTrim;
 
   Voice* activeList[kMaxVoices];
   float incA[kMaxVoices];
@@ -709,14 +946,14 @@ void SynthEngine::renderBlock(const SynthParams& p) {
       continue;
     }
 
-    const float noteHz = dsp::midiToHz(v.note);
+    const float noteHz = noteHzLut_[v.note & 0x7Fu];
     const float lowNoteScale = dsp::clampf((static_cast<float>(v.note) - 24.0f) / 60.0f, 0.35f, 1.0f);
     const float detune = p.detuneCents * lowNoteScale;
-    const float detuneRatio = powf(2.0f, detune / 1200.0f);
+    const float detuneRatio = exp2f(detune / 1200.0f);
 
     activeList[activeTarget] = &v;
-    incA[activeTarget] = noteHz / static_cast<float>(sampleRate_);
-    incB[activeTarget] = (noteHz * detuneRatio) / static_cast<float>(sampleRate_);
+    incA[activeTarget] = noteHz * invSampleRate;
+    incB[activeTarget] = (noteHz * detuneRatio) * invSampleRate;
     activeTarget++;
   }
 
@@ -741,15 +978,12 @@ void SynthEngine::renderBlock(const SynthParams& p) {
 
       const float a = osc(p.waveA, v.phaseA);
       const float b = osc(p.waveB, v.phaseB);
-      const float s = ((1.0f - p.oscMix) * a + p.oscMix * b) * env * v.vel;
+      const float s = (oscInvMix * a + oscMix * b) * env * v.vel;
       synthSum += s;
     }
 
-    const float polyGain = activeVoicesNow > 0 ? (0.25f / sqrtf(static_cast<float>(activeVoicesNow))) : 0.0f;
-    float mono = synthSum * polyGain * p.gainTrim;
-
-    const float driveGain = 1.0f + p.distDrive * 5.5f;
-    mono = dsp::fastTanh(mono * driveGain) / driveGain;
+    float mono = synthSum * kPolyVoiceNorm[activeVoicesNow] * gainTrim;
+    mono = dsp::fastTanh(mono * driveGain) * invDriveGain;
 
     float synthL = filterL_.process(mono);
     float synthR = filterR_.process(mono);
@@ -761,7 +995,8 @@ void SynthEngine::renderBlock(const SynthParams& p) {
     float mixL = synthL + drumL;
     float mixR = synthR + drumR;
 
-    const uint32_t readPos = (delayPos_ + kMaxDelaySamples - delaySamples) % kMaxDelaySamples;
+    const uint32_t readPos = (delayPos_ >= delaySamples) ? (delayPos_ - delaySamples)
+                                                          : (delayPos_ + (kMaxDelaySamples - delaySamples));
     const float d = static_cast<float>(delay_[readPos]) / 127.0f;
 
     const float writeL = dsp::clampf(mixL + d * p.delayFeedback, -1.0f, 1.0f);
@@ -769,8 +1004,8 @@ void SynthEngine::renderBlock(const SynthParams& p) {
     const float writeMono = 0.5f * (writeL + writeR);
     delay_[delayPos_] = static_cast<int8_t>(writeMono * 127.0f);
 
-    mixL = mixL * (1.0f - p.delayMix) + d * p.delayMix;
-    mixR = mixR * (1.0f - p.delayMix) + d * p.delayMix;
+    mixL = mixL * delayDry + d * delayWet;
+    mixR = mixR * delayDry + d * delayWet;
 
     delayPos_++;
     if (delayPos_ >= kMaxDelaySamples) delayPos_ = 0;
@@ -780,17 +1015,17 @@ void SynthEngine::renderBlock(const SynthParams& p) {
     const float revL = revMemL_ * 0.62f + revMemR_ * 0.15f;
     const float revR = revMemR_ * 0.62f + revMemL_ * 0.15f;
 
-    mixL += revL * p.reverb;
-    mixR += revR * p.reverb;
+    mixL += revL * reverbMix;
+    mixR += revR * reverbMix;
 
-    mixL *= p.master;
-    mixR *= p.master;
+    mixL *= master;
+    mixR *= master;
 
     mixL = dcL_.process(mixL);
     mixR = dcR_.process(mixR);
 
-    mixL = dsp::fastTanh(mixL * 1.6f) / 1.6f;
-    mixR = dsp::fastTanh(mixR * 1.6f) / 1.6f;
+    mixL = dsp::fastTanh(mixL * softClipGain) * invSoftClipGain;
+    mixR = dsp::fastTanh(mixR * softClipGain) * invSoftClipGain;
 
     if (fadeValue_ < fadeTarget_) {
       fadeValue_ += fadeStep_;
@@ -819,16 +1054,38 @@ void SynthEngine::audioTask() {
     portEXIT_CRITICAL(&paramMux_);
 
     Event e;
-    while (popEvent(e)) handleEvent(e, p);
+    uint8_t processed = 0;
+    while (processed < kMaxEventsPerBlock && popEvent(e)) {
+      handleEvent(e, p);
+      processed++;
+    }
 
+    const uint32_t tRender0 = micros();
     renderBlock(p);
+    const uint32_t renderUs = micros() - tRender0;
+    portENTER_CRITICAL(&eventMux_);
+    if (renderUs > renderMaxUs_) renderMaxUs_ = renderUs;
+    renderAvgUs_ = (renderAvgUs_ == 0) ? renderUs : ((renderAvgUs_ * 15u + renderUs) >> 4);
+    portEXIT_CRITICAL(&eventMux_);
 
     size_t bytesWritten = 0;
     const size_t bytes = static_cast<size_t>(blockSize_) * 2u * sizeof(int16_t);
-    const esp_err_t err = i2s_write(i2sPort_, i2sBlock_, bytes, &bytesWritten, 20 / portTICK_PERIOD_MS);
-    if (err != ESP_OK || bytesWritten != bytes) {
+    bool writeOk = false;
+    const esp_err_t err = i2s_write(i2sPort_, i2sBlock_, bytes, &bytesWritten, 12 / portTICK_PERIOD_MS);
+    if (err == ESP_OK && bytesWritten == bytes) {
+      writeOk = true;
+    } else if (err == ESP_OK && bytesWritten < bytes) {
+      size_t remainWritten = 0;
+      const uint8_t* pOut = reinterpret_cast<const uint8_t*>(i2sBlock_) + bytesWritten;
+      const size_t remain = bytes - bytesWritten;
+      const esp_err_t err2 = i2s_write(i2sPort_, pOut, remain, &remainWritten, 4 / portTICK_PERIOD_MS);
+      writeOk = (err2 == ESP_OK && remainWritten == remain);
+    }
+    if (!writeOk) {
       portENTER_CRITICAL(&eventMux_);
       underruns_++;
+      underrunsTotal_++;
+      i2sWriteFails_++;
       portEXIT_CRITICAL(&eventMux_);
     }
     taskYIELD();

@@ -1064,6 +1064,14 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
               <option value="7">Rhythm Gate</option>
               <option value="8">Thick Mono Bass</option>
               <option value="9">Rubber Bass</option>
+              <option value="10">Amber Bloom Pad</option>
+              <option value="11">Dawn Mist Keys</option>
+              <option value="12">Velvet Hollow</option>
+              <option value="13">Moon Tape Choir</option>
+              <option value="14">Aero Bell Wash</option>
+              <option value="15">Soft Grain Pluck</option>
+              <option value="16">Low Tide Organ</option>
+              <option value="17">Warm Drift Mono</option>
             </select>
             <div class="stack" style="margin-top:10px;">
               <button id="presetReset" class="btn">Preset Reset</button>
@@ -1342,6 +1350,8 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
       let lastNoteEventMs = 0;
       let lastNoteState = { list: [], vel: 96, held: false };
       let synthState = {};
+      let synthLoadInFlight = null;
+      let synthLastLoadMs = 0;
       let oscW = 0;
       let oscH = 0;
       let noteW = 0;
@@ -1601,7 +1611,8 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
       function applySynthState(s) {
         if (!s) return;
         synthState = s;
-        const presetIdx = Math.max(0, Math.min(9, (s.preset ?? 0) | 0));
+        const presetMax = Math.max(0, synthPreset.options.length - 1);
+        const presetIdx = Math.max(0, Math.min(presetMax, (s.preset ?? 0) | 0));
         synthPreset.value = presetIdx;
         atk.value = s.attack ?? 0;
         dec.value = s.decay ?? 0;
@@ -1636,11 +1647,21 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
         syncCustomSelect(fltType);
       }
 
-      async function loadSynthState() {
-        try {
-          const j = await (await fetch("/api/synth", { cache: "no-store" })).json();
-          applySynthState(j);
-        } catch (e) {}
+      async function loadSynthState(force = false) {
+        const now = performance.now();
+        if (!force && synthLoadInFlight) return synthLoadInFlight;
+        if (!force && now - synthLastLoadMs < 180) return null;
+        synthLoadInFlight = (async () => {
+          try {
+            const j = await (await fetch("/api/synth", { cache: "no-store" })).json();
+            applySynthState(j);
+            synthLastLoadMs = performance.now();
+          } catch (e) {
+          } finally {
+            synthLoadInFlight = null;
+          }
+        })();
+        return synthLoadInFlight;
       }
 
       function postSynthPatch(patch, key = "synth", delay = 80) {
@@ -2407,10 +2428,10 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
       outAux.onclick = () => setOutputMode(2);
 
       synthPreset.onchange = (e) => {
-        postForm("/api/synth", { preset: e.target.value }).then(loadSynthState).catch(() => {});
+        postForm("/api/synth", { preset: e.target.value }).then(() => loadSynthState(true)).catch(() => {});
       };
       presetReset.onclick = () => {
-        postForm("/api/synth", { reset: 1 }).then(loadSynthState).catch(() => {});
+        postForm("/api/synth", { reset: 1 }).then(() => loadSynthState(true)).catch(() => {});
       };
       synthTest.onclick = () => sendNow("/api/synth/test", true);
 
