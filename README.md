@@ -28,46 +28,81 @@ This firmware version supports:
 - `fortyseveneffects/MIDI Library@5.0.2`
 - `fastled/FastLED@3.10.3`
 
-## 3) Safe Download Links (Official Sources)
+## 3) Required Software + Official Links
 
-- Arduino IDE: https://www.arduino.cc/en/software
-- ESP32 Arduino core docs: https://docs.espressif.com/projects/arduino-esp32/en/latest/installing.html
-- Python (Windows/macOS/Linux): https://www.python.org/downloads/
+Core tools:
+
+- Arduino IDE 2.x: https://www.arduino.cc/en/software
+- PlatformIO (VS Code extension): https://platformio.org/platformio-ide
+- PlatformIO Core CLI: https://docs.platformio.org/en/latest/core/installation/index.html
+- ESP32 Arduino core install docs: https://docs.espressif.com/projects/arduino-esp32/en/latest/installing.html
+- Python (for helper scripts/bridge): https://www.python.org/downloads/
+- Git: https://git-scm.com/downloads
+
+MIDI/DAW helpers:
+
 - loopMIDI (Windows): https://www.tobias-erichsen.de/software/loopmidi.html
 - LoopBe1 (Windows alternative): https://www.nerds.de/en/loopbe1.html
-- Ableton MIDI setup docs: https://help.ableton.com/hc/en-us/articles/209774205-Live-s-MIDI-ports
-- Silicon Labs CP210x USB-UART drivers (if needed): https://www.silabs.com/developers/usb-to-uart-bridge-vcp-drivers
+- Ableton MIDI port setup: https://help.ableton.com/hc/en-us/articles/209774205-Live-s-MIDI-ports
+
+USB serial drivers (install only the one matching your USB-UART chip):
+
+- Silicon Labs CP210x: https://www.silabs.com/developers/usb-to-uart-bridge-vcp-drivers
+- WCH CH340/CH341: https://www.wch-ic.com/downloads/CH341SER_EXE.html
+- FTDI VCP: https://ftdichip.com/drivers/vcp-drivers/
 
 Notes:
 
-- Many BECA boards enumerate as CH340/CH341 USB serial. If your board is not detected, install the correct USB-UART driver for your board chipset.
-- Use only official vendor pages above.
+- Most BECA boards appear as `CP210x` or `CH340/CH341`.
+- On Windows, check Device Manager -> Ports (COM & LPT) to identify the chipset before installing a driver.
+- Use official vendor pages only.
 
-## 4) How To Update/Upload This Patch To BECA
+## 4) How To Install This Patch Update
 
-### Option A: PlatformIO (recommended)
+This repo now contains the Onboard-Synth patch merged into `master`.
 
-1. Open this project folder.
-2. Confirm `platformio.ini` has:
-- ESP32 platform package line tied to Arduino core `2.0.14` (`framework-arduinoespressif32@3.20014...`)
-- Correct `upload_port` (example: `COM5`).
-3. Build:
+### 4.1 Update your local project to patched `master`
+
+If you already cloned this repo:
+
 ```bash
+git checkout master
+git pull origin master
+```
+
+Or download the latest `master` ZIP from your repo host and extract it to a clean folder.
+
+### 4.2 Flash with PlatformIO (recommended)
+
+1. Open this project folder in VS Code or terminal.
+2. Confirm `platformio.ini` includes:
+- `platform_packages = platformio/framework-arduinoespressif32@3.20014.231204` (Arduino core `2.0.14`)
+- Correct `upload_port` / `monitor_port` for your board (example: `COM5`)
+3. Run a clean build:
+```bash
+pio run -t clean
 pio run
 ```
-4. Upload:
+4. Upload firmware:
 ```bash
 pio run -t upload
 ```
 5. Power-cycle BECA after upload.
 
-### Option B: Arduino IDE
+### 4.3 Flash with Arduino IDE
 
 1. Open `BECAfinalsv02.ino`.
-2. Install ESP32 board package and select an ESP32 Dev Module compatible target.
-3. Ensure required libraries are installed (see section 2).
-4. Select the right COM port.
-5. Click Upload.
+2. Install ESP32 boards package `2.0.14` (Boards Manager: `esp32 by Espressif Systems`).
+3. Install required libraries (section 2 versions).
+4. Select a compatible board target (for example, `ESP32 Dev Module`).
+5. Select the correct COM port.
+6. Upload and power-cycle BECA.
+
+### 4.4 Post-flash sanity check
+
+1. Confirm BLE advertisement name `BECA BLE-MIDI`.
+2. Open BECA Web UI and verify `Output Mode` options: `BLE`, `SERIAL`, `AUX OUT`.
+3. Toggle `Mute I/O` once to confirm global mute behavior.
 
 ## 5) First-Time BECA Setup (Wi-Fi + UI)
 
