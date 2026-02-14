@@ -40,7 +40,7 @@ struct SynthParams {
 
 class SynthEngine {
  public:
-  static constexpr uint8_t kPresetCount = 13;
+  static constexpr uint8_t kPresetCount = 10;
 
   SynthEngine();
 
@@ -103,7 +103,7 @@ class SynthEngine {
     uint8_t b;
   };
 
-  static constexpr uint8_t kMaxVoices = 12;
+  static constexpr uint8_t kMaxVoices = 8;
   static constexpr uint8_t kEventQueueSize = 64;
   static constexpr uint8_t kOffSchedSize = 24;
   static constexpr uint16_t kBlockMax = 128;

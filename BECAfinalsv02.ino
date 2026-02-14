@@ -67,7 +67,9 @@ enum OutputMode : uint8_t { OUTPUT_BLE = 0, OUTPUT_SERIAL = 1, OUTPUT_AUX = 2 };
 volatile uint8_t gOutputMode = OUTPUT_BLE;
 const uint32_t SERIAL_MIDI_BAUD = 115200;
 const uint32_t SERIAL_MIDI_BEACON_MS = 2000;
+const uint32_t AUX_STARTUP_LOCK_MS = 12000;
 uint32_t gLastSerialBeaconMs = 0;
+uint32_t gAuxUnlockAtMs = 0;
 
 beca::SynthEngine gSynth;
 uint32_t gLastSynthUnderrunLogMs = 0;
@@ -81,6 +83,11 @@ static inline bool outputModeIsBle() { return gOutputMode == OUTPUT_BLE; }
 static inline bool outputModeIsSerial() { return gOutputMode == OUTPUT_SERIAL; }
 static inline bool midiOutIsSerial() { return outputModeIsSerial(); }
 static inline bool midiOutReady()    { return outputModeIsSerial() || (outputModeIsBle() && gMidiConnected); }
+static inline bool auxSwitchReady() { return (int32_t)(millis() - gAuxUnlockAtMs) >= 0; }
+static inline uint32_t auxSwitchWaitMs() {
+  if (auxSwitchReady()) return 0;
+  return gAuxUnlockAtMs - millis();
+}
 static inline bool drumsAllowedForCurrentOutput();
 static inline void enforceAuxDrumGuard();
 
@@ -244,6 +251,10 @@ static inline void stopAuxAudio() {
 
 static inline void setOutputMode(uint8_t mode) {
   uint8_t next = (uint8_t)constrain((int)mode, 0, 2);
+  if (next == OUTPUT_AUX && !auxSwitchReady()) {
+    Serial.printf("@I AUX LOCKED %lu ms\n", (unsigned long)auxSwitchWaitMs());
+    return;
+  }
   if (next == gOutputMode) return;
 
   Serial.printf("@I OUTPUTMODE %s -> %s\n", outputModeName(gOutputMode), outputModeName(next));
@@ -1240,6 +1251,7 @@ struct LastState {
   uint8_t  beats;
   uint8_t  den;
   uint8_t  drumsel;
+  uint8_t  auxready;
 };
 LastState LS = {};
 
@@ -1326,6 +1338,7 @@ static inline bool stateChanged() {
   if (LS.last  != lastNote) return true;
   if (LS.vel   != lastVel) return true;
   if (LS.drumsel != (uint8_t)drumSelMask) return true;
+  if (LS.auxready != (auxSwitchReady() ? 1 : 0)) return true;
 
   return false;
 }
@@ -1355,6 +1368,7 @@ static inline void captureState() {
   LS.beats = gTS.beats;
   LS.den   = gTS.noteVal;
   LS.drumsel = (uint8_t)drumSelMask;
+  LS.auxready = auxSwitchReady() ? 1 : 0;
 }
 
 static inline void pushStateIfChanged(bool force=false) {
@@ -1365,7 +1379,7 @@ static inline void pushStateIfChanged(bool force=false) {
   captureState();
   stateVersion++;
 
-  char buf[760];
+  char buf[840];
   snprintf(buf, sizeof(buf),
     "{\"ver\":%u,"
     "\"ble\":%u,"
@@ -1390,6 +1404,8 @@ static inline void pushStateIfChanged(bool force=false) {
     "\"vi\":%u,"
     "\"rest\":%.2f,"
     "\"nr\":%u,"
+    "\"aux_ready\":%u,"
+    "\"aux_wait_ms\":%lu,"
     "\"ts\":\"%u/%u\","
     "\"last\":\"%u\","
     "\"vel\":%u,"
@@ -1417,6 +1433,8 @@ static inline void pushStateIfChanged(bool force=false) {
     LS.vi,
     (double)LS.rest,
     LS.nr,
+    LS.auxready,
+    (unsigned long)auxSwitchWaitMs(),
     LS.beats,
     LS.den,
     LS.last,
@@ -1570,8 +1588,13 @@ static inline bool parseOutputModeArg(const String& in, uint8_t& outMode) {
 
 static inline void handleApiOutputModeGet() {
   sendNoCacheHeaders();
-  char buf[96];
-  snprintf(buf, sizeof(buf), "{\"mode\":\"%s\",\"value\":%u}", outputModeName(gOutputMode), (unsigned)gOutputMode);
+  char buf[160];
+  snprintf(
+    buf, sizeof(buf),
+    "{\"mode\":\"%s\",\"value\":%u,\"aux_ready\":%u,\"aux_wait_ms\":%lu}",
+    outputModeName(gOutputMode), (unsigned)gOutputMode,
+    auxSwitchReady() ? 1u : 0u, (unsigned long)auxSwitchWaitMs()
+  );
   server.send(200, "application/json", buf);
 }
 
@@ -1584,6 +1607,16 @@ static inline void handleApiOutputModePost() {
 
   if (!ok) {
     server.send(400, "application/json", "{\"ok\":0,\"err\":\"mode required\"}");
+    return;
+  }
+  if (next == OUTPUT_AUX && !auxSwitchReady()) {
+    char buf[128];
+    snprintf(
+      buf, sizeof(buf),
+      "{\"ok\":0,\"err\":\"aux not ready\",\"aux_ready\":0,\"aux_wait_ms\":%lu}",
+      (unsigned long)auxSwitchWaitMs()
+    );
+    server.send(409, "application/json", buf);
     return;
   }
 
@@ -2169,11 +2202,18 @@ void setup() {
   gDeviceName = prefs.getString("name", "");
   gStaSsid    = prefs.getString("ssid", "");
   gStaPass    = prefs.getString("pass", "");
+  const uint8_t legacyMidiMode = (uint8_t)constrain((int)prefs.getUChar("midimode", 0), 0, 1);
   uint8_t storedOutput = prefs.getUChar("outputmode", 255);
   if (storedOutput > 2) {
-    storedOutput = (uint8_t)constrain((int)prefs.getUChar("midimode", 0), 0, 1);
+    storedOutput = legacyMidiMode;
   }
-  gOutputMode = (uint8_t)constrain((int)storedOutput, 0, 2);
+  uint8_t bootOutput = (uint8_t)constrain((int)storedOutput, 0, 2);
+  if (bootOutput == OUTPUT_AUX) {
+    bootOutput = (legacyMidiMode == 1) ? OUTPUT_SERIAL : OUTPUT_BLE;
+    Serial.printf("@I BOOT MIDI STABILIZE MODE %s (AUX unlock in %lu ms)\n",
+                  outputModeName(bootOutput), (unsigned long)AUX_STARTUP_LOCK_MS);
+  }
+  gOutputMode = bootOutput;
   prefs.end();
   if (gDeviceName.length() == 0) gDeviceName = "beca-" + shortChipId();
 
@@ -2187,11 +2227,8 @@ void setup() {
   // Coexistence-safe
   WiFi.setSleep(true);
 
-  gSynth.setDrumsEnabled(!outputModeIsAux());
-  if (outputModeIsAux()) {
-    enforceAuxDrumGuard();
-    startAuxAudio();
-  }
+  gAuxUnlockAtMs = millis() + AUX_STARTUP_LOCK_MS;
+  gSynth.setDrumsEnabled(true);
 
   // Routes
   server.on("/",         handlePage);

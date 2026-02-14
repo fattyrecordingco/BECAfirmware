@@ -624,6 +624,10 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
         background: rgba(0, 131, 81, 0.2);
         box-shadow: 0 0 14px rgba(0, 131, 81, 0.22);
       }
+      .mode-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
       /* ---- Drum UI ---- */
       #drumWrap {
         margin-top: 12px;
@@ -1060,9 +1064,6 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
               <option value="7">Rhythm Gate</option>
               <option value="8">Thick Mono Bass</option>
               <option value="9">Rubber Bass</option>
-              <option value="10">808 Kit</option>
-              <option value="11">Rock Kit</option>
-              <option value="12">Jazz Kit</option>
             </select>
             <div class="stack" style="margin-top:10px;">
               <button id="presetReset" class="btn">Preset Reset</button>
@@ -1336,6 +1337,8 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
       let isDrumMode = false;
       let currentMode = 2;
       let currentOutputMode = 0;
+      let auxReady = true;
+      let auxWaitMs = 0;
       let lastNoteEventMs = 0;
       let lastNoteState = { list: [], vel: 96, held: false };
       let synthState = {};
@@ -1536,12 +1539,25 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
         filterCtx.stroke();
       }
 
+      function setAuxAvailability(ready, waitMs = 0) {
+        auxReady = !!ready;
+        auxWaitMs = Math.max(0, waitMs | 0);
+        outAux.disabled = !auxReady && currentOutputMode !== 2;
+        if (!auxReady && currentOutputMode !== 2) {
+          const sec = Math.max(1, Math.ceil(auxWaitMs / 1000));
+          outAux.title = "AUX warming (" + sec + "s)";
+        } else {
+          outAux.title = "AUX OUT";
+        }
+      }
+
       function setOutputButtons(outputMode) {
         currentOutputMode = outputMode | 0;
         outBle.classList.toggle("active", currentOutputMode === 0);
         outSerial.classList.toggle("active", currentOutputMode === 1);
         outAux.classList.toggle("active", currentOutputMode === 2);
         synthPanel.classList.toggle("hidden", currentOutputMode !== 2);
+        setAuxAvailability(auxReady, auxWaitMs);
         if (drumModeOption) drumModeOption.disabled = currentOutputMode === 2;
         if (currentOutputMode === 2 && ((mode && mode.value) | 0) === 3) {
           mode.value = "0";
@@ -1549,16 +1565,44 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
         syncCustomSelect(mode);
       }
 
-      async function setOutputMode(mode) {
-        setOutputButtons(mode | 0);
-        await postForm("/api/outputmode", { mode });
-        if ((mode | 0) === 2) loadSynthState();
+      async function setOutputMode(nextMode) {
+        const target = nextMode | 0;
+        if (target === 2 && !auxReady) {
+          if (!uiMuted) {
+            const sec = Math.max(1, Math.ceil(auxWaitMs / 1000));
+            status.textContent = "aux warming (" + sec + "s)";
+          }
+          return;
+        }
+
+        const prev = currentOutputMode | 0;
+        setOutputButtons(target);
+        try {
+          const res = await postForm("/api/outputmode", { mode: target });
+          let j = null;
+          try { j = await res.json(); } catch (e) {}
+
+          if (j && typeof j.aux_ready !== "undefined") {
+            setAuxAvailability((j.aux_ready | 0) === 1, j.aux_wait_ms | 0);
+          }
+          if (!res.ok) {
+            setOutputButtons(prev);
+            return;
+          }
+          if (j && typeof j.value !== "undefined") {
+            setOutputButtons(j.value | 0);
+          }
+          if ((currentOutputMode | 0) === 2) loadSynthState();
+        } catch (e) {
+          setOutputButtons(prev);
+        }
       }
 
       function applySynthState(s) {
         if (!s) return;
         synthState = s;
-        synthPreset.value = s.preset ?? 0;
+        const presetIdx = Math.max(0, Math.min(9, (s.preset ?? 0) | 0));
+        synthPreset.value = presetIdx;
         atk.value = s.attack ?? 0;
         dec.value = s.decay ?? 0;
         sus.value = s.sustain ?? 0;
@@ -2125,6 +2169,9 @@ const char INDEX_HTML[] PROGMEM = R"BECA_UI_HTML(
         const j = JSON.parse(e.data);
         if (!uiMuted) status.textContent = "ok";
         const outMode = typeof j.outputmode !== "undefined" ? (j.outputmode | 0) : (((j.midimode | 0) === 1) ? 1 : 0);
+        const auxReadyState = typeof j.aux_ready !== "undefined" ? ((j.aux_ready | 0) === 1) : true;
+        const auxWaitState = typeof j.aux_wait_ms !== "undefined" ? (j.aux_wait_ms | 0) : 0;
+        setAuxAvailability(auxReadyState, auxWaitState);
         const guardedMode = (outMode === 2 && (j.mode | 0) === 3) ? 0 : (j.mode | 0);
         currentMode = guardedMode;
         const midiSerial = outMode === 1;

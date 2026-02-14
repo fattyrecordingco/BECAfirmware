@@ -9,8 +9,7 @@ namespace {
 
 const char* kPresetNames[SynthEngine::kPresetCount] = {
     "Fatty Neon Lead", "Glass Reed Lead", "Verdant Pad", "Forest Choir", "Jivari Strings",
-    "Pulse Arp 1",     "Pulse Arp 2",      "Rhythm Gate", "Thick Mono Bass",
-    "Rubber Bass",     "808 Kit",          "Rock Kit",    "Jazz Kit",
+    "Pulse Arp 1",     "Pulse Arp 2",      "Rhythm Gate", "Thick Mono Bass", "Rubber Bass",
 };
 
 }  // namespace
@@ -288,38 +287,6 @@ void SynthEngine::presetDefaults(uint8_t index, SynthParams& out) {
       out.master = 0.54f;
       out.detuneCents = 1.1f;
       out.gainTrim = 0.84f;
-      break;
-    case 10:  // 808 Kit
-      out.waveA = 3;
-      out.waveB = 3;
-      out.oscMix = 0.0f;
-      out.mono = 1;
-      out.maxVoices = 4;
-      out.attack = 0.001f;
-      out.decay = 0.09f;
-      out.sustain = 0.0f;
-      out.release = 0.08f;
-      out.cutoffHz = 3200.0f;
-      out.resonance = 0.8f;
-      out.reverb = 0.10f;
-      out.delayMs = 120.0f;
-      out.delayFeedback = 0.12f;
-      out.delayMix = 0.07f;
-      out.distDrive = 0.12f;
-      out.master = 0.60f;
-      out.detuneCents = 0.0f;
-      out.gainTrim = 0.86f;
-      out.drumKit = 0;
-      break;
-    case 11:  // Rock Kit
-      out.master = 0.58f;
-      out.gainTrim = 0.84f;
-      out.drumKit = 1;
-      break;
-    case 12:  // Jazz Kit
-      out.master = 0.57f;
-      out.gainTrim = 0.82f;
-      out.drumKit = 2;
       break;
   }
 }
