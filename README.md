@@ -86,6 +86,26 @@ sudo usermod -aG dialout $USER
 2. Use `Export Diagnostics Zip`.
 3. Go to `Troubleshooting` in this README.
 
+### Read only what you need
+
+If you are a normal end user, focus on:
+1. `Start Here (Master Branch Users)`
+2. `Section 10` (one-click app flow)
+3. `Section 11` (connect to DAW)
+4. `Section 12` (open BECA web UI)
+5. `Section 16` (troubleshooting)
+
+You can ignore advanced sections unless you are developing firmware.
+
+### Quick glossary (plain words)
+
+- `DAW`: your music software (Ableton, FL Studio, Logic, REAPER, etc).
+- `MIDI`: note/control messages used to play instruments in a DAW.
+- `Serial`: USB cable data path from BECA to computer.
+- `BLE`: Bluetooth MIDI (wireless).
+- `COM port`: the USB device name on Windows (example `COM5`).
+- `Flash firmware`: install/update BECA’s internal software.
+
 ## 0) Official Branching And Version Policy
 
 To keep firmware and installer updates separate and predictable, use these branches:
@@ -355,31 +375,45 @@ sudo usermod -aG dialout $USER
 
 ## 11) Connect BECA To A DAW (Windows/macOS/Linux)
 
-### Recommended path: serial bridge via BECA Setup
+If this feels confusing, do not worry.
+Follow this section one line at a time, in order.
 
-1. Start BECA Setup and finish Step 3 (`Start Bridge`).
-2. In BECA web UI, set `Output Mode` to `SERIAL`.
-3. In your DAW, enable the MIDI input/output port selected in BECA Setup.
-4. Arm a MIDI track and test plant input.
+### One simple path that works for most people (recommended)
 
-### DAW examples
+1. Open `BECA Setup`.
+2. In Step 3, click `Start Bridge`.
+3. Open BECA control page in browser.
+4. Set output mode to `SERIAL`.
+5. Open your DAW.
+6. In DAW MIDI settings, enable the same MIDI port name shown in BECA Setup.
+7. Create or select one instrument/MIDI track.
+8. Arm/record-enable that track.
+9. Move/touch your plant sensor and watch for MIDI activity.
 
-- Ableton Live (Windows/macOS):
-  `Preferences -> Link, Tempo & MIDI -> MIDI Ports` and enable track input for your selected MIDI port.
-- FL Studio (Windows):
-  `Options -> MIDI settings` and enable your selected MIDI input port.
-- Logic Pro (macOS):
-  `Logic Pro -> Settings -> MIDI` then create/arm a software instrument track.
-- REAPER (Windows/macOS/Linux):
-  `Options -> Preferences -> Audio -> MIDI Devices` and enable the selected input.
-- Ardour (Linux):
-  Enable ALSA/JACK MIDI input from the selected bridge destination and arm a MIDI track.
+### If you do not hear sound yet
 
-### Alternative path: BLE MIDI
+1. Confirm your DAW track has an instrument loaded (piano/synth/etc).
+2. Confirm track monitoring is on.
+3. Confirm the selected MIDI input matches BECA Setup Step 3 exactly.
+4. Click `Test Note` in BECA Setup.
+5. If Test Note works but plant data does not, re-check BECA mode is `SERIAL`.
 
-1. In BECA web UI, set `Output Mode` to `BLE`.
-2. Pair/connect to `BECA BLE-MIDI` in your OS or DAW MIDI-Bluetooth panel.
-3. Enable that input in your DAW and arm a track.
+### DAW menu cheat sheet (where to look)
+
+- Ableton Live: `Preferences -> Link, Tempo & MIDI`
+- FL Studio: `Options -> MIDI settings`
+- Logic Pro: `Logic Pro -> Settings -> MIDI`
+- REAPER: `Options -> Preferences -> Audio -> MIDI Devices`
+- Ardour: MIDI/ALSA/JACK input routing panel
+
+### Optional Bluetooth path (BLE)
+
+Use this only if you want wireless MIDI and your DAW/OS supports BLE MIDI well.
+
+1. In BECA control page, set mode to `BLE`.
+2. Pair/connect to `BECA BLE-MIDI`.
+3. Enable BLE MIDI input inside your DAW.
+4. Arm a track and test.
 
 ## 12) Open The BECA Web UI (Control Page)
 
@@ -443,92 +477,76 @@ Test:
 
 ## 16) Troubleshooting
 
-### Problem: No COM port appears
+If something fails, start here first.
 
-Fix:
-1. Install correct USB driver (CP210x/CH340/FTDI).
-2. Replace USB cable with a data cable.
-3. Try another USB port.
+### 60-second reset routine (do this before deeper debugging)
 
-### Problem: Upload fails (`Connecting...` / timeout)
+1. Close DAW, Arduino IDE, and any serial monitor windows.
+2. Unplug BECA USB.
+3. Wait 5 seconds.
+4. Plug BECA USB back in.
+5. Open only `BECA Setup`.
+6. Run Step 1 -> Step 2 -> Step 3 again.
 
-Fix:
-1. Hold `BOOT` button while upload starts.
-2. Release after upload begins.
-3. Power-cycle board and retry.
+### Problem: BECA not detected (no COM/serial port)
 
-### Problem: Setup page does not open
+1. Try a different USB cable (data cable required).
+2. Try a different USB port.
+3. Install USB driver for your chip:
+- CH340/CH341: https://www.wch-ic.com/downloads/CH341SER_EXE.html
+- CP210x: https://www.silabs.com/developers/usb-to-uart-bridge-vcp-drivers
+4. On Windows, check Device Manager -> `Ports (COM & LPT)`.
 
-Fix:
-1. Connect to `BECA-XXXX` Wi-Fi AP.
-2. Open `http://192.168.4.1/setup` manually.
+### Problem: Flashing fails
 
-### Problem: Wi-Fi setup fails
+1. Confirm no other app is using BECA serial port.
+2. Click `Rescan Device` in Step 1.
+3. Try flash again in Step 2.
+4. If your board has a `BOOT` button, hold it as flash starts.
+5. If error mentions `unexpected argument '--port'`, install BECA Setup `0.1.2` or newer.
 
-Fix:
-1. Confirm password is correct.
-2. Use `2.4 GHz` SSID.
-3. If "connected but no IP", reboot router/hotspot and retry.
+### Problem: BECA Setup opens, but firmware list does not load
 
-### Problem: `beca-xxxx.local` does not open
+1. Confirm internet access is available.
+2. Close and reopen BECA Setup.
+3. Click `Rescan Device`.
+4. If still failing, use `Copy Logs` and `Export Diagnostics Zip`.
 
-Fix:
-1. Use direct IP: `http://<device-ip>/`.
-2. Keep BECA and your computer on the same LAN.
+### Problem: Bridge shows reconnecting / access denied
 
-### Problem: BLE device not found
+1. Close Arduino Serial Monitor, PlatformIO monitor, and old BECA bridge sessions.
+2. Stop bridge, wait 3 seconds, start bridge again.
+3. Unplug/replug BECA if needed.
+4. Keep only one app connected to BECA serial at a time.
 
-Fix:
-1. Set mode to `BLE`.
-2. Power-cycle BECA.
-3. Re-scan for `BECA BLE-MIDI`.
+### Problem: DAW gets no notes in SERIAL mode
 
-### Problem: Serial bridge says `Access is denied`
+1. Start bridge first in BECA Setup Step 3.
+2. Set BECA output mode to `SERIAL` in web UI.
+3. Enable the same MIDI port in DAW settings.
+4. Arm/record-enable a track.
+5. Press `Test Note` in BECA Setup to confirm routing.
 
-Fix:
-1. Close Arduino Serial Monitor and PlatformIO monitor.
-2. Close old bridge windows.
-3. Unplug/replug BECA USB.
-4. Start bridge again.
+### Problem: BECA web page does not open
 
-### Problem: Setup app says firmware list failed, but internet is working
+1. Connect to `BECA-XXXX` Wi-Fi.
+2. Open `http://192.168.4.1/setup`.
+3. Save Wi-Fi settings again.
+4. Use direct IP if `.local` is unavailable.
 
-Fix:
-1. This is usually a GitHub release manifest lookup issue, not local Wi-Fi.
-2. Confirm at least one recent published release has `firmware-manifest.json` attached.
-3. Confirm BECA Setup is configured to use repo `fattyrecordingco/BECAfirmware`.
-4. Retry `Rescan Device`, then restart BECA Setup.
+### Problem: No audio in AUX OUT mode
 
-### Problem: Flash fails with `unexpected argument '--port' found`
+1. Set BECA mode to `AUX OUT`.
+2. Confirm `Mute I/O` is OFF.
+3. Check PCM5102A wiring and power.
+4. Run `http://<beca-ip>/api/synth/test`.
 
-Fix:
-1. Update BECA Setup to version `0.1.2` or newer.
-2. This was caused by an older espflash command format in earlier app builds.
-3. Re-run Step 2 (`Flash Selected Firmware`) after updating.
+### Problem: Windows says `WebView2Loader.dll was not found`
 
-### Problem: `WebView2Loader.dll was not found` on Windows
-
-Fix:
-1. Run `BECA Setup_..._x64-setup.exe` (recommended), not a lone copied `beca-setup.exe`.
-2. If using portable build, keep `beca-setup.exe` and `WebView2Loader.dll` in the same folder.
-3. Do not run `target/release/beca-setup.exe` directly from build output.
-4. Install/repair Microsoft Edge WebView2 Runtime:
+1. Use installer build `BECA Setup_*_x64-setup.exe`.
+2. If using portable build, keep `beca-setup.exe` and `WebView2Loader.dll` together.
+3. Install/repair Microsoft Edge WebView2 Runtime:
    https://go.microsoft.com/fwlink/p/?LinkId=2124703
-
-### Problem: DAW receives no notes in `SERIAL` mode
-
-Fix:
-1. Start bridge first, then switch BECA to `SERIAL`.
-2. Confirm DAW MIDI input is enabled.
-3. Confirm track is armed and correct input selected.
-
-### Problem: No sound in `AUX OUT`
-
-Fix:
-1. Check PCM5102A wiring and power.
-2. Confirm mode is `AUX OUT`.
-3. Run `/api/synth/test`.
-4. Confirm `Mute I/O` is OFF.
 
 ## 17) Setup App Build Artifacts
 
