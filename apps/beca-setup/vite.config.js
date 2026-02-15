@@ -1,0 +1,14 @@
+import { defineConfig } from "vite";
+import { resolve } from "path";
+
+export default defineConfig({
+  root: resolve(__dirname, "ui"),
+  build: {
+    outDir: resolve(__dirname, "dist"),
+    emptyOutDir: true
+  },
+  server: {
+    port: 1420,
+    strictPort: true
+  }
+});

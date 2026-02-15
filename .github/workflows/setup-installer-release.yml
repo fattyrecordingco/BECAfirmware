@@ -1,0 +1,93 @@
+name: Build Setup Installer
+
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+
+jobs:
+  build-installers:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-22.04]
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: apps/beca-setup/package.json
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux system deps for Tauri
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - name: Install JS dependencies
+        working-directory: apps/beca-setup
+        run: npm install
+
+      - name: Build native sidecars
+        run: |
+          cargo build -p beca-bridge --release
+          cargo build -p beca-flasher --release
+
+      - name: Install espflash sidecar
+        run: cargo install espflash --locked --version 4.2.0
+
+      - name: Copy sidecars (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Copy-Item target\release\beca-bridge.exe apps\beca-setup\src-tauri\binaries\beca-bridge.exe -Force
+          Copy-Item target\release\beca-flasher.exe apps\beca-setup\src-tauri\binaries\beca-flasher.exe -Force
+          Copy-Item $env:USERPROFILE\.cargo\bin\espflash.exe apps\beca-setup\src-tauri\binaries\espflash.exe -Force
+
+      - name: Copy sidecars (macOS/Linux)
+        if: runner.os != 'Windows'
+        run: |
+          cp target/release/beca-bridge apps/beca-setup/src-tauri/binaries/beca-bridge
+          cp target/release/beca-flasher apps/beca-setup/src-tauri/binaries/beca-flasher
+          cp ~/.cargo/bin/espflash apps/beca-setup/src-tauri/binaries/espflash
+          chmod +x apps/beca-setup/src-tauri/binaries/beca-bridge
+          chmod +x apps/beca-setup/src-tauri/binaries/beca-flasher
+          chmod +x apps/beca-setup/src-tauri/binaries/espflash
+
+      - name: Build Tauri bundle
+        working-directory: apps/beca-setup
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run tauri build
+
+      - name: Upload installer artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: beca-setup-${{ matrix.os }}
+          path: apps/beca-setup/src-tauri/target/release/bundle/**
+
+      - name: Attach artifacts to GitHub Release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            apps/beca-setup/src-tauri/target/release/bundle/**/*.msi
+            apps/beca-setup/src-tauri/target/release/bundle/**/*.exe
+            apps/beca-setup/src-tauri/target/release/bundle/**/*.dmg
+            apps/beca-setup/src-tauri/target/release/bundle/**/*.AppImage
+            apps/beca-setup/src-tauri/target/release/bundle/**/*.deb

@@ -1,0 +1,15 @@
+{
+  "schema_version": "1.0.0",
+  "repository": "Fatty-Recording-Co/BECA",
+  "generated_at": "2026-02-15T00:00:00Z",
+  "firmware": [
+    {
+      "version": "1.0.0",
+      "channel": "stable",
+      "supported_hardware": ["ESP32-PICO-V3"],
+      "merged_bin_url": "https://github.com/Fatty-Recording-Co/BECA/releases/download/v1.0.0/beca-1.0.0-merged.bin",
+      "merged_bin_sha256": "REPLACE_WITH_64_CHAR_SHA256",
+      "release_notes_url": "https://github.com/Fatty-Recording-Co/BECA/releases/tag/v1.0.0"
+    }
+  ]
+}
