@@ -1,0 +1,27 @@
+[package]
+name = "beca-bridge"
+version = "0.1.0"
+edition = "2021"
+description = "BECA serial to MIDI bridge"
+license = "MIT"
+
+[lib]
+name = "beca_bridge"
+path = "src/lib.rs"
+
+[[bin]]
+name = "beca-bridge"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0"
+clap = { version = "4.5", features = ["derive"] }
+ctrlc = "3.4"
+midir = "0.10"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serialport = "4.7"
+thiserror = "2.0"
+
+[dev-dependencies]
+pretty_assertions = "1.4"

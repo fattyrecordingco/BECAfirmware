@@ -1,0 +1,28 @@
+[package]
+name = "beca-flasher"
+version = "0.1.0"
+edition = "2021"
+description = "BECA firmware flasher wrapper for bundled espflash/esptool"
+license = "MIT"
+
+[lib]
+name = "beca_flasher"
+path = "src/lib.rs"
+
+[[bin]]
+name = "beca-flasher"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0"
+clap = { version = "4.5", features = ["derive"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sha2 = "0.10"
+hex = "0.4"
+serialport = "4.7"
+tokio = { version = "1.43", features = ["fs", "io-util", "macros", "process", "rt-multi-thread"] }
+
+[dev-dependencies]
+tempfile = "3.15"

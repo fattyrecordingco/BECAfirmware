@@ -15,3 +15,20 @@ secrets.h
 
 # logs
 *.log
+
+# Python
+.venv/
+__pycache__/
+
+# Node/Tauri
+node_modules/
+dist/
+apps/beca-setup/src-tauri/target/
+target/
+apps/beca-setup/dist-installer/
+apps/beca-setup/src-tauri/binaries/*
+!apps/beca-setup/src-tauri/binaries/README.txt
+
+# App runtime files
+*.zip
+*.tmp

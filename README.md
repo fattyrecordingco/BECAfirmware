@@ -3,6 +3,22 @@
 This guide is written for first-time and non-technical users.
 Follow it top-to-bottom to install, flash, and use BECA successfully.
 
+## 0) Official Branching And Version Policy
+
+To keep firmware and installer updates separate and predictable, use these branches:
+
+- `official-system-updates`: firmware/system source of truth (ESP32 sketch + web UI + firmware docs)
+- `official-app-updates`: BECA Setup desktop app source of truth (installer, flasher wrapper, bridge, CI packaging)
+
+Current firmware baseline label:
+- `verBECAbetav1.0.1` (based on commit `27559f9`, "README Update")
+
+Publish flow:
+1. Land firmware changes in `official-system-updates`.
+2. Build firmware and attach release assets (including `firmware-manifest.json`) on GitHub Releases.
+3. Land installer/app changes in `official-app-updates`.
+4. BECA Setup pulls "latest stable" firmware from Releases, not from `main`.
+
 ## 1) What BECA Does
 
 BECA is an ESP32 firmware that turns plant input into musical output with a web interface.
@@ -179,45 +195,58 @@ Notes:
 3. Enable that MIDI input in your DAW.
 4. Arm a MIDI track and test plant input.
 
-## 10) Serial MIDI Setup (Windows)
+## 10) One-Click Setup App (Recommended)
 
-Use this if you want wired MIDI into a DAW.
+Use BECA Setup for the easiest end-user flow:
+- Detect BECA over USB
+- Flash latest stable firmware
+- Start Serial -> MIDI bridge
 
-### One-time setup
+### Windows quick start
+
+1. Download `BECA Setup_..._x64-setup.exe` from Releases.
+2. Run the installer and finish setup.
+3. Launch `BECA Setup` from Start Menu.
+4. In app Step 1, connect BECA and confirm detected COM port.
+5. In Step 2, click `Flash Selected Firmware`.
+6. In Step 3, pick MIDI output and click `Start Bridge`.
+7. Click `Test Note` and confirm DAW receives MIDI.
+
+Important Windows notes:
+- Prefer the installer `.exe` over standalone `beca-setup.exe`.
+- If using portable mode, run the packaged portable folder/zip that includes both:
+  - `beca-setup.exe`
+  - `WebView2Loader.dll`
+- If WebView2 runtime is missing, install:
+  - https://go.microsoft.com/fwlink/p/?LinkId=2124703
+
+### macOS/Linux quick start
+
+1. Download and install the BECA Setup package for your OS (`.dmg` / `.AppImage`).
+2. Open app and follow Step 1, Step 2, Step 3 in order.
+3. If serial permission is denied on Linux, add your user to `dialout` and relogin.
+
+More details:
+- `docs/SETUP_APP.md`
+
+## 11) Legacy Serial MIDI Setup (Advanced / Manual)
+
+Use this only if you are not using BECA Setup app.
+
+### Windows (legacy python bridge)
 
 1. Install Python 3.
-2. Install loopback MIDI tool:
-- loopMIDI (recommended): https://www.tobias-erichsen.de/software/loopmidi.html
-- LoopBe1 (alternative): https://www.nerds.de/en/loopbe1.html
-3. In loopMIDI, create a port named `BECA Serial MIDI` (or use LoopBe port).
-
-### Start the bridge
-
-From project root:
+2. Install loopMIDI or LoopBe1.
+3. In loopMIDI, create port `BECA Serial MIDI`.
+4. Run:
 
 ```bat
 tools\beca_link\start_windows.bat
 ```
 
-This script creates a virtual environment, installs dependencies, lists serial/MIDI ports, and starts the bridge.
+5. Keep BECA in `BLE` first, then switch to `SERIAL` after bridge starts.
 
-If needed, force LoopBe output:
-
-```bat
-tools\beca_link\start_windows_loopbe.bat
-```
-
-### Correct startup order (important)
-
-1. Keep BECA in `BLE` mode first.
-2. Start bridge and confirm it is running.
-3. Then switch BECA to `SERIAL` mode in the web UI.
-4. In DAW, enable loopback input and arm track.
-
-## 11) Serial MIDI Setup (macOS/Linux)
-
-1. Keep BECA in `BLE` mode first.
-2. Start bridge:
+### macOS/Linux (legacy python bridge)
 
 ```bash
 cd tools/beca_link
@@ -225,8 +254,7 @@ chmod +x start_mac_linux.sh
 ./start_mac_linux.sh
 ```
 
-3. Switch BECA output mode to `SERIAL`.
-4. Select BECA bridge MIDI output in your DAW.
+Then switch BECA output to `SERIAL`.
 
 ## 12) AUX OUT Setup (Onboard Audio)
 
@@ -258,7 +286,6 @@ Fix:
 1. Install correct USB driver (CP210x/CH340/FTDI).
 2. Replace USB cable with a data cable.
 3. Try another USB port.
-4. Reopen Arduino IDE.
 
 ### Problem: Upload fails (`Connecting...` / timeout)
 
@@ -301,6 +328,23 @@ Fix:
 3. Unplug/replug BECA USB.
 4. Start bridge again.
 
+### Problem: Setup app says firmware list failed, but internet is working
+
+Fix:
+1. This is usually a GitHub release manifest lookup issue, not local Wi-Fi.
+2. Confirm the repository release has `firmware-manifest.json` attached.
+3. Confirm BECA Setup is configured to use repo `fattyrecordingco/BECAfirmware`.
+4. Retry `Rescan Device`, then restart BECA Setup.
+
+### Problem: `WebView2Loader.dll was not found` on Windows
+
+Fix:
+1. Run `BECA Setup_..._x64-setup.exe` (recommended), not a lone copied `beca-setup.exe`.
+2. If using portable build, keep `beca-setup.exe` and `WebView2Loader.dll` in the same folder.
+3. Do not run `target/release/beca-setup.exe` directly from build output.
+4. Install/repair Microsoft Edge WebView2 Runtime:
+   https://go.microsoft.com/fwlink/p/?LinkId=2124703
+
 ### Problem: DAW receives no notes in `SERIAL` mode
 
 Fix:
@@ -316,17 +360,37 @@ Fix:
 3. Run `/api/synth/test`.
 4. Confirm `Mute I/O` is OFF.
 
-## 15) Project File Map
+## 15) Setup App Build Artifacts
+
+Windows local build artifacts:
+- `apps/beca-setup/dist-installer/windows/*_x64-setup.exe`
+- `apps/beca-setup/dist-installer/windows/*_x64_en-US.msi`
+- `apps/beca-setup/dist-installer/windows/*_portable.zip`
+
+Windows local build command:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools/build_setup_windows.ps1
+```
+
+## 16) Project File Map
 
 - Main firmware: `BECAfinalsv02.ino`
 - Web UI source: `index.html`
 - Generated web UI header: `index_html.h`
-- Serial MIDI bridge: `tools/beca_link/beca_link.py`
-- Bridge launcher (Windows auto): `tools/beca_link/start_windows.bat`
-- Bridge launcher (Windows LoopBe): `tools/beca_link/start_windows_loopbe.bat`
-- Bridge launcher (macOS/Linux): `tools/beca_link/start_mac_linux.sh`
+- Setup app: `apps/beca-setup`
+- Native bridge: `tools/bridge`
+- Flasher wrapper: `tools/flasher`
+- Legacy python bridge: `tools/beca_link`
 
-## 16) Developer Note (Only if you edit UI)
+## 17) Maintainer Rule For README Updates
+
+For every setup-app release, update this README with:
+1. New installer filenames/versions.
+2. Any changed prerequisites (drivers, WebView2, permissions).
+3. Any changed troubleshooting steps.
+
+## 18) Developer Note (Only if you edit UI)
 
 If you edit `index.html`, regenerate `index_html.h`:
 

@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BECA Setup</title>
+    <link rel="stylesheet" href="./src/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div class="brand">
+          <h1>BECA Setup</h1>
+          <p>Plant Synth Installer + Serial MIDI Bridge</p>
+        </div>
+        <div class="pill">ESP32-PICO-V3</div>
+      </header>
+
+      <section class="card" id="step-connect">
+        <div class="step-head">
+          <span class="badge">Step 1</span>
+          <h2>Connect BECA</h2>
+        </div>
+        <p id="connect-status">Scanning USB serial ports...</p>
+        <div class="row">
+          <button id="btn-scan">Rescan Device</button>
+          <span id="port-chip" class="hint"></span>
+        </div>
+        <ul id="port-fixes" class="hint-list"></ul>
+      </section>
+
+      <section class="card" id="step-firmware">
+        <div class="step-head">
+          <span class="badge">Step 2</span>
+          <h2>Update Firmware</h2>
+        </div>
+        <label for="firmware-select">Firmware version</label>
+        <select id="firmware-select"></select>
+        <div class="row">
+          <button id="btn-backup">Backup Settings</button>
+          <button id="btn-flash" class="primary">Flash Selected Firmware</button>
+          <button id="btn-restore">Restore Settings</button>
+        </div>
+        <progress id="flash-progress" max="100" value="0"></progress>
+        <p id="flash-status" class="hint">Waiting to flash.</p>
+      </section>
+
+      <section class="card" id="step-bridge">
+        <div class="step-head">
+          <span class="badge">Step 3</span>
+          <h2>Start Bridge</h2>
+        </div>
+        <label for="midi-select">MIDI Output</label>
+        <select id="midi-select"></select>
+        <div class="row">
+          <button id="btn-start-bridge" class="primary">Start Bridge</button>
+          <button id="btn-stop-bridge">Stop Bridge</button>
+          <button id="btn-test-note">Test Note</button>
+        </div>
+        <p id="bridge-status" class="hint">Bridge not running.</p>
+        <div id="activity" class="activity-dot"></div>
+      </section>
+
+      <section class="card details">
+        <div class="row row-spread">
+          <button id="btn-export">Export Diagnostics Zip</button>
+          <button id="btn-copy">Copy Logs</button>
+        </div>
+        <details>
+          <summary>Show details</summary>
+          <pre id="log-view"></pre>
+        </details>
+      </section>
+    </main>
+
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>
