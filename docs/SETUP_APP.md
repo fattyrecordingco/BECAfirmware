@@ -2,6 +2,14 @@
 
 `BECA Setup` is a desktop installer/wizard for flashing BECA firmware and running the Serial -> MIDI bridge without manual terminal steps.
 
+## End-user manual
+
+For complete user instructions (Windows/macOS/Linux install, DAW setup, and BECA control page usage), use:
+- `README.md` sections `10` through `16`
+
+Current setup app version baseline in this branch:
+- `0.1.2`
+
 ## Final architecture choice
 
 - Desktop shell: `Tauri + Rust + HTML/JS`
