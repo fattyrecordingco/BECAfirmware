@@ -5,21 +5,86 @@ Follow it top-to-bottom to install, flash, and use BECA successfully.
 
 ## Start Here (Master Branch Users)
 
-If you opened this repository on the `master` branch, this is the fastest path:
+This section is the easiest path for first-time users on Windows, macOS, or Linux.
+No coding is required.
 
-1. Click `Code` -> `Download ZIP` (optional source download).
-2. Open this ZIP locally so you have this manual and project files.
-3. Go to repository `Releases`.
-4. Download the BECA Setup installer for your OS:
+### What to prepare before you start
+
+1. Your BECA device.
+2. A USB data cable (not charge-only).
+3. A computer with internet.
+4. Your DAW installed (Ableton/FL/Logic/REAPER/etc).
+
+### Important: ZIP vs installer
+
+If you click `Code` -> `Download ZIP`, you get source files and this manual.
+The installer app is downloaded from `Releases`, not from inside the ZIP.
+
+### Step A: Open Releases and download the correct installer
+
+1. On the GitHub page, click `Releases` (right side panel).
+2. Download exactly one file for your OS:
 - Windows: `BECA Setup_*_x64-setup.exe`
 - macOS: `BECA Setup_*.dmg`
 - Linux: `BECA Setup_*.AppImage`
-5. Install BECA Setup and follow in-app Step 1 -> Step 2 -> Step 3.
-6. Open BECA web UI and set output mode for your DAW workflow.
 
-Important:
-- Most users should install from `Releases` binaries, not build from source.
-- Source ZIP is mainly for documentation, firmware source visibility, and advanced development.
+### Step B: Install by operating system
+
+Windows:
+1. Double-click `BECA Setup_*_x64-setup.exe`.
+2. Finish setup with default options.
+3. Open `BECA Setup` from Start Menu.
+4. If Windows shows missing WebView2 runtime, install:
+   https://go.microsoft.com/fwlink/p/?LinkId=2124703
+5. If BECA is not detected, install the matching USB serial driver:
+- CH340/CH341: https://www.wch-ic.com/downloads/CH341SER_EXE.html
+- CP210x: https://www.silabs.com/developers/usb-to-uart-bridge-vcp-drivers
+
+macOS:
+1. Open `BECA Setup_*.dmg`.
+2. Drag `BECA Setup` into `Applications`.
+3. Open app from `Applications`.
+4. If blocked on first run, right-click app and choose `Open`.
+5. If BECA is not detected, reconnect cable and close other serial apps.
+
+Linux:
+1. Make AppImage executable:
+```bash
+chmod +x BECA\ Setup_*.AppImage
+```
+2. Run AppImage:
+```bash
+./BECA\ Setup_*.AppImage
+```
+3. If serial permission is denied:
+```bash
+sudo usermod -aG dialout $USER
+```
+4. Log out and log back in, then retry.
+
+### Step C: In-app setup (same on all OS)
+
+1. Connect BECA by USB.
+2. In BECA Setup Step 1, confirm your device/port appears.
+3. In Step 2, keep `Latest Stable` selected and click `Flash Selected Firmware`.
+4. Wait for success message (`Flash complete`).
+5. In Step 3, choose MIDI output and click `Start Bridge`.
+6. Click `Test Note` and check your DAW receives MIDI.
+
+### Step D: Open BECA control page in browser
+
+1. If this is first setup, connect to Wi-Fi `BECA-XXXX`.
+2. Open `http://192.168.4.1/setup`.
+3. Enter home Wi-Fi details and save.
+4. After reboot, open:
+- `http://<device-ip>/` or
+- `http://<device-name>.local/`
+
+### If anything fails
+
+1. Use the app `Show details` logs and `Copy Logs`.
+2. Use `Export Diagnostics Zip`.
+3. Go to `Troubleshooting` in this README.
 
 ## 0) Official Branching And Version Policy
 
