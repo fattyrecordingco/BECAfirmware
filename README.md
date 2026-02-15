@@ -3,6 +3,24 @@
 This guide is written for first-time and non-technical users.
 Follow it top-to-bottom to install, flash, and use BECA successfully.
 
+## Start Here (Master Branch Users)
+
+If you opened this repository on the `master` branch, this is the fastest path:
+
+1. Click `Code` -> `Download ZIP` (optional source download).
+2. Open this ZIP locally so you have this manual and project files.
+3. Go to repository `Releases`.
+4. Download the BECA Setup installer for your OS:
+- Windows: `BECA Setup_*_x64-setup.exe`
+- macOS: `BECA Setup_*.dmg`
+- Linux: `BECA Setup_*.AppImage`
+5. Install BECA Setup and follow in-app Step 1 -> Step 2 -> Step 3.
+6. Open BECA web UI and set output mode for your DAW workflow.
+
+Important:
+- Most users should install from `Releases` binaries, not build from source.
+- Source ZIP is mainly for documentation, firmware source visibility, and advanced development.
+
 ## 0) Official Branching And Version Policy
 
 To keep firmware and installer updates separate and predictable, use these branches:
@@ -15,9 +33,11 @@ Current firmware baseline label:
 
 Publish flow:
 1. Land firmware changes in `official-system-updates`.
-2. Build firmware and attach release assets (including `firmware-manifest.json`) on GitHub Releases.
+2. Publish firmware release with tag `firmware-vx.y.z` (or `verBECAbetavx.y.z`) and assets:
+`beca-x.y.z-merged.bin` + `firmware-manifest.json` (via `.github/workflows/firmware-release.yml`).
 3. Land installer/app changes in `official-app-updates`.
-4. BECA Setup pulls "latest stable" firmware from Releases, not from `main`.
+4. Publish installer release with tag `setup-vx.y.z` (triggers `.github/workflows/setup-installer-release.yml`).
+5. BECA Setup resolves firmware from the most recent published release that includes `firmware-manifest.json`.
 
 ## 1) What BECA Does
 
@@ -51,10 +71,13 @@ Hardware:
 - Optional for `AUX OUT`: PCM5102A DAC + speakers/headphones
 
 Software:
+- BECA Setup installer from GitHub Releases (recommended for all users)
 - Arduino IDE 2.x: https://www.arduino.cc/en/software
 - PlatformIO (optional): https://platformio.org/platformio-ide
-- Python 3 (for Serial MIDI bridge): https://www.python.org/downloads/
 - Git (optional): https://git-scm.com/downloads
+
+Optional legacy-only dependency:
+- Python 3 (only if using `tools/beca_link` legacy bridge scripts): https://www.python.org/downloads/
 
 USB serial driver (install the one matching your board):
 - CP210x: https://www.silabs.com/developers/usb-to-uart-bridge-vcp-drivers
@@ -64,19 +87,24 @@ USB serial driver (install the one matching your board):
 Windows tip:
 - Open Device Manager -> `Ports (COM & LPT)` to see your USB chip and COM port.
 
-## 4) Download the Firmware Project
+## 4) Download the Project Source (Optional)
 
-Choose one:
+Most end users can skip this section and use BECA Setup from Releases.
 
-1. Download ZIP from your repository host, then extract it.
-2. Clone with Git:
+If you still want a local copy of source/docs:
+
+1. Download ZIP from `master` (`Code` -> `Download ZIP`), then extract it.
+2. Or clone with Git:
 
 ```bash
 git clone <your-repo-url>
 cd BECAfinalsv02
 ```
 
-You should see `BECAfinalsv02.ino` in the project root.
+Then use this folder for:
+- reading docs locally
+- manual Arduino/PlatformIO flashing (advanced)
+- development workflows
 
 ## 5) Flash Method A (Recommended): Arduino IDE
 
@@ -202,34 +230,104 @@ Use BECA Setup for the easiest end-user flow:
 - Flash latest stable firmware
 - Start Serial -> MIDI bridge
 
-### Windows quick start
+### Windows install and first run
 
-1. Download `BECA Setup_..._x64-setup.exe` from Releases.
-2. Run the installer and finish setup.
+1. Open GitHub Releases and download `BECA Setup_*_x64-setup.exe`.
+2. Run installer and complete setup.
 3. Launch `BECA Setup` from Start Menu.
-4. In app Step 1, connect BECA and confirm detected COM port.
-5. In Step 2, click `Flash Selected Firmware`.
-6. In Step 3, pick MIDI output and click `Start Bridge`.
-7. Click `Test Note` and confirm DAW receives MIDI.
+4. Plug in BECA using a USB data cable.
+5. In Step 1, confirm detected port (example: `COM5`).
+6. In Step 2, leave firmware set to `Latest Stable` and click `Flash Selected Firmware`.
+7. Wait for `Flash complete` status.
+8. In Step 3, select your MIDI output and click `Start Bridge`.
+9. Click `Test Note` and confirm activity in your DAW.
 
-Important Windows notes:
-- Prefer the installer `.exe` over standalone `beca-setup.exe`.
-- If using portable mode, run the packaged portable folder/zip that includes both:
-  - `beca-setup.exe`
-  - `WebView2Loader.dll`
-- If WebView2 runtime is missing, install:
-  - https://go.microsoft.com/fwlink/p/?LinkId=2124703
+Windows notes:
+- Prefer installer `.exe` over a loose copied `beca-setup.exe`.
+- Portable mode requires both `beca-setup.exe` and `WebView2Loader.dll` in the same folder.
+- If WebView2 runtime is missing, install it:
+  https://go.microsoft.com/fwlink/p/?LinkId=2124703
+- If no MIDI destinations exist, install/start loopMIDI and create one port.
 
-### macOS/Linux quick start
+### macOS install and first run
 
-1. Download and install the BECA Setup package for your OS (`.dmg` / `.AppImage`).
-2. Open app and follow Step 1, Step 2, Step 3 in order.
-3. If serial permission is denied on Linux, add your user to `dialout` and relogin.
+1. Download `BECA Setup_*.dmg` from Releases.
+2. Open `.dmg` and drag `BECA Setup` into `Applications`.
+3. Open `BECA Setup` from Applications.
+4. If macOS blocks first launch, right-click app -> `Open`.
+5. Connect BECA via USB and complete Step 1, Step 2, Step 3 in the app.
+6. In your DAW, choose the same MIDI destination you selected in Step 3.
 
-More details:
-- `docs/SETUP_APP.md`
+macOS notes:
+- If serial access is denied, close any app already using the serial port.
+- Keep BECA Setup and DAW open while bridging in `SERIAL` mode.
 
-## 11) Legacy Serial MIDI Setup (Advanced / Manual)
+### Linux install and first run
+
+1. Download `BECA Setup_*.AppImage` from Releases.
+2. Make it executable:
+
+```bash
+chmod +x BECA\ Setup_*.AppImage
+```
+
+3. Run it:
+
+```bash
+./BECA\ Setup_*.AppImage
+```
+
+4. Connect BECA and complete Step 1, Step 2, Step 3 in order.
+
+Linux notes:
+- If serial permission is denied, add your user to `dialout` and relogin:
+
+```bash
+sudo usermod -aG dialout $USER
+```
+
+- If AppImage fails to launch, ensure `fuse` support is installed.
+
+## 11) Connect BECA To A DAW (Windows/macOS/Linux)
+
+### Recommended path: serial bridge via BECA Setup
+
+1. Start BECA Setup and finish Step 3 (`Start Bridge`).
+2. In BECA web UI, set `Output Mode` to `SERIAL`.
+3. In your DAW, enable the MIDI input/output port selected in BECA Setup.
+4. Arm a MIDI track and test plant input.
+
+### DAW examples
+
+- Ableton Live (Windows/macOS):
+  `Preferences -> Link, Tempo & MIDI -> MIDI Ports` and enable track input for your selected MIDI port.
+- FL Studio (Windows):
+  `Options -> MIDI settings` and enable your selected MIDI input port.
+- Logic Pro (macOS):
+  `Logic Pro -> Settings -> MIDI` then create/arm a software instrument track.
+- REAPER (Windows/macOS/Linux):
+  `Options -> Preferences -> Audio -> MIDI Devices` and enable the selected input.
+- Ardour (Linux):
+  Enable ALSA/JACK MIDI input from the selected bridge destination and arm a MIDI track.
+
+### Alternative path: BLE MIDI
+
+1. In BECA web UI, set `Output Mode` to `BLE`.
+2. Pair/connect to `BECA BLE-MIDI` in your OS or DAW MIDI-Bluetooth panel.
+3. Enable that input in your DAW and arm a track.
+
+## 12) Open The BECA Web UI (Control Page)
+
+After flashing and reboot, open the BECA control page in a browser:
+
+1. If BECA is not configured yet, connect to Wi-Fi `BECA-XXXX`.
+2. Open `http://192.168.4.1/setup`, enter Wi-Fi credentials, and save.
+3. After BECA joins your Wi-Fi, open either:
+- `http://<device-ip>/`
+- `http://<device-name>.local/`
+4. Use the control page to change output mode (`BLE` / `SERIAL` / `AUX OUT`) and tune behavior.
+
+## 13) Legacy Serial MIDI Setup (Advanced / Manual)
 
 Use this only if you are not using BECA Setup app.
 
@@ -256,7 +354,7 @@ chmod +x start_mac_linux.sh
 
 Then switch BECA output to `SERIAL`.
 
-## 12) AUX OUT Setup (Onboard Audio)
+## 14) AUX OUT Setup (Onboard Audio)
 
 Default PCM5102A wiring:
 
@@ -270,7 +368,7 @@ Test:
 2. Open `http://<beca-ip>/api/synth/test`.
 3. Confirm you hear a short test tone/chord.
 
-## 13) Operating Rules (Avoid Common Problems)
+## 15) Operating Rules (Avoid Common Problems)
 
 - Do not run Serial Monitor and Serial MIDI bridge at the same time.
 - Keep bridge terminal open while using `SERIAL` mode.
@@ -278,7 +376,7 @@ Test:
 - Use 2.4 GHz Wi-Fi for setup and normal operation.
 - If using BLE only, bridge tool is not required.
 
-## 14) Troubleshooting
+## 16) Troubleshooting
 
 ### Problem: No COM port appears
 
@@ -332,9 +430,16 @@ Fix:
 
 Fix:
 1. This is usually a GitHub release manifest lookup issue, not local Wi-Fi.
-2. Confirm the repository release has `firmware-manifest.json` attached.
+2. Confirm at least one recent published release has `firmware-manifest.json` attached.
 3. Confirm BECA Setup is configured to use repo `fattyrecordingco/BECAfirmware`.
 4. Retry `Rescan Device`, then restart BECA Setup.
+
+### Problem: Flash fails with `unexpected argument '--port' found`
+
+Fix:
+1. Update BECA Setup to version `0.1.2` or newer.
+2. This was caused by an older espflash command format in earlier app builds.
+3. Re-run Step 2 (`Flash Selected Firmware`) after updating.
 
 ### Problem: `WebView2Loader.dll was not found` on Windows
 
@@ -360,7 +465,7 @@ Fix:
 3. Run `/api/synth/test`.
 4. Confirm `Mute I/O` is OFF.
 
-## 15) Setup App Build Artifacts
+## 17) Setup App Build Artifacts
 
 Windows local build artifacts:
 - `apps/beca-setup/dist-installer/windows/*_x64-setup.exe`
@@ -373,7 +478,7 @@ Windows local build command:
 powershell -ExecutionPolicy Bypass -File tools/build_setup_windows.ps1
 ```
 
-## 16) Project File Map
+## 18) Project File Map
 
 - Main firmware: `BECAfinalsv02.ino`
 - Web UI source: `index.html`
@@ -381,16 +486,17 @@ powershell -ExecutionPolicy Bypass -File tools/build_setup_windows.ps1
 - Setup app: `apps/beca-setup`
 - Native bridge: `tools/bridge`
 - Flasher wrapper: `tools/flasher`
+- Firmware release tooling: `tools/release`
 - Legacy python bridge: `tools/beca_link`
 
-## 17) Maintainer Rule For README Updates
+## 19) Maintainer Rule For README Updates
 
 For every setup-app release, update this README with:
 1. New installer filenames/versions.
 2. Any changed prerequisites (drivers, WebView2, permissions).
 3. Any changed troubleshooting steps.
 
-## 18) Developer Note (Only if you edit UI)
+## 20) Developer Note (Only if you edit UI)
 
 If you edit `index.html`, regenerate `index_html.h`:
 

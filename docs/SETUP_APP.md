@@ -2,6 +2,14 @@
 
 `BECA Setup` is a desktop installer/wizard for flashing BECA firmware and running the Serial -> MIDI bridge without manual terminal steps.
 
+## End-user manual
+
+For complete user instructions (Windows/macOS/Linux install, DAW setup, and BECA control page usage), use:
+- `README.md` sections `10` through `16`
+
+Current setup app version baseline in this branch:
+- `0.1.2`
+
 ## Final architecture choice
 
 - Desktop shell: `Tauri + Rust + HTML/JS`
@@ -109,14 +117,14 @@ Notes:
 
 ## Maintainer release workflow
 
-1. Build firmware for BECA and generate merged `.bin`.
-2. Compute SHA256 checksum.
-3. Update `firmware-manifest.json` for the new version.
-4. Create GitHub Release tag (for example `v1.0.3`) and attach:
-- merged `.bin`
+1. Firmware release branch: `official-system-updates`.
+2. Run firmware workflow `.github/workflows/firmware-release.yml` using tag `firmware-vx.y.z` (or `verBECAbetavx.y.z`).
+3. Workflow builds firmware, merges image, and publishes:
+- `beca-x.y.z-merged.bin`
 - `firmware-manifest.json`
-5. Publish release.
-6. CI workflow `.github/workflows/setup-installer-release.yml` builds setup installers and uploads artifacts.
+4. App release branch: `official-app-updates`.
+5. Publish BECA Setup release tag as `setup-vx.y.z` to trigger `.github/workflows/setup-installer-release.yml`.
+6. Keep firmware and app releases separate so manifest lookup remains stable.
 
 ## Local development
 
@@ -163,6 +171,6 @@ Logs are written to the app data folder:
 ## Firmware manifest troubleshooting
 
 If BECA Setup logs indicate manifest fetch failure:
-- It usually means GitHub latest release is missing or inaccessible.
+- It usually means no recent published release includes `firmware-manifest.json`.
 - Create/publish a release in `fattyrecordingco/BECAfirmware`.
 - Ensure release includes `firmware-manifest.json` asset.

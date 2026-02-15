@@ -4,7 +4,8 @@ use clap::{Parser, Subcommand};
 use midir::{MidiOutput, MidiOutputConnection};
 use serde::Serialize;
 use serialport::SerialPort;
-use std::io::{BufRead, BufReader};
+use std::io::Write;
+use std::io::{BufRead, BufReader, ErrorKind};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
@@ -148,6 +149,9 @@ fn run_bridge_session(
                 }
             }
             Err(err) => {
+                if matches!(err.kind(), ErrorKind::TimedOut | ErrorKind::WouldBlock) {
+                    continue;
+                }
                 return Err(anyhow!(err.to_string()));
             }
         }
@@ -234,6 +238,8 @@ fn emit_status(event: &str, state: &str, detail: &str) {
         detail: detail.to_string(),
     };
     if let Ok(json) = serde_json::to_string(&payload) {
-        println!("{json}");
+        let mut out = std::io::stdout();
+        let _ = writeln!(out, "{json}");
+        let _ = out.flush();
     }
 }

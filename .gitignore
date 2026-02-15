@@ -1,4 +1,5 @@
 .cache/
+.beca-cache/
 
 # OS
 .DS_Store
@@ -32,3 +33,8 @@ apps/beca-setup/src-tauri/binaries/*
 # App runtime files
 *.zip
 *.tmp
+
+# PlatformIO build outputs
+.pio/
+.pioenvs/
+.piolibdeps/
