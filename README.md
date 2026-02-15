@@ -1,150 +1,197 @@
-# BECA Firmware User Manual
+# BECA Firmware: Complete User Manual
 
-BECA is a plant-played instrument on ESP32 that outputs MIDI and drives LEDs from plant bio-capacitive input.
+This guide is written for first-time and non-technical users.
+Follow it top-to-bottom to install, flash, and use BECA successfully.
 
-This firmware version supports:
+## 1) What BECA Does
 
-- BLE MIDI output (`BECA BLE-MIDI`)
-- Serial MIDI output (bridged to DAWs)
-- AUX OUT onboard synth + drum engine over I2S (PCM5102A)
-- Web UI control with Wi-Fi setup portal and live status
+BECA is an ESP32 firmware that turns plant input into musical output with a web interface.
 
-## 1) What Is New In This Patch
+It supports:
+- `BLE` MIDI output (`BECA BLE-MIDI`)
+- `SERIAL` MIDI output (to DAWs using the included bridge tool)
+- `AUX OUT` onboard synth + drums over I2S (PCM5102A DAC)
+- Wi-Fi setup portal + browser UI + live status
 
-- New bottom-bar 3-state `Output Mode`: `BLE` | `SERIAL` | `AUX OUT`
-- New `SYNTH` panel in Web UI (shown only in `AUX OUT` mode)
-- Expanded AUX synth preset bank to 18 presets (includes mellow pads/keys/plucks)
-- New presets 10-17 retuned for cleaner headroom (less detune, less clipping risk)
-- `Mute I/O` is now firmware-enforced global mute (`/api/mute`), not just UI-local
-- Better Wi-Fi setup flow (captive redirect + plain-language connection errors)
-- Serial MIDI bridge tools in `tools/beca_link/`
+## 2) Required Versions (Important)
 
-## 2) Compatibility Baseline
+Use these exact versions for reliable flashing and runtime behavior:
 
-- ESP32 Arduino core target: `2.0.14`
-- Libraries in this project:
+- ESP32 Arduino core: `2.0.14`
 - `lathoub/BLE-MIDI@2.2`
 - `h2zero/NimBLE-Arduino@1.4.3`
 - `fortyseveneffects/MIDI Library@5.0.2`
 - `fastled/FastLED@3.10.3`
 
-## 3) Required Software + Official Links
+PlatformIO in this project is pinned to Arduino core `2.0.14` via:
+- `platformio/framework-arduinoespressif32@3.20014.231204`
 
-Core tools:
+## 3) What You Need Before Flashing
 
+Hardware:
+- BECA (ESP32-based board)
+- USB data cable (not charge-only)
+- Computer (Windows/macOS/Linux)
+- Optional for `AUX OUT`: PCM5102A DAC + speakers/headphones
+
+Software:
 - Arduino IDE 2.x: https://www.arduino.cc/en/software
-- PlatformIO (VS Code extension): https://platformio.org/platformio-ide
-- PlatformIO Core CLI: https://docs.platformio.org/en/latest/core/installation/index.html
-- ESP32 Arduino core install docs: https://docs.espressif.com/projects/arduino-esp32/en/latest/installing.html
-- Python (for helper scripts/bridge): https://www.python.org/downloads/
-- Git: https://git-scm.com/downloads
+- PlatformIO (optional): https://platformio.org/platformio-ide
+- Python 3 (for Serial MIDI bridge): https://www.python.org/downloads/
+- Git (optional): https://git-scm.com/downloads
 
-MIDI/DAW helpers:
+USB serial driver (install the one matching your board):
+- CP210x: https://www.silabs.com/developers/usb-to-uart-bridge-vcp-drivers
+- CH340/CH341: https://www.wch-ic.com/downloads/CH341SER_EXE.html
+- FTDI: https://ftdichip.com/drivers/vcp-drivers/
 
-- loopMIDI (Windows): https://www.tobias-erichsen.de/software/loopmidi.html
-- LoopBe1 (Windows alternative): https://www.nerds.de/en/loopbe1.html
-- Ableton MIDI port setup: https://help.ableton.com/hc/en-us/articles/209774205-Live-s-MIDI-ports
+Windows tip:
+- Open Device Manager -> `Ports (COM & LPT)` to see your USB chip and COM port.
 
-USB serial drivers (install only the one matching your USB-UART chip):
+## 4) Download the Firmware Project
 
-- Silicon Labs CP210x: https://www.silabs.com/developers/usb-to-uart-bridge-vcp-drivers
-- WCH CH340/CH341: https://www.wch-ic.com/downloads/CH341SER_EXE.html
-- FTDI VCP: https://ftdichip.com/drivers/vcp-drivers/
+Choose one:
 
-Notes:
-
-- Most BECA boards appear as `CP210x` or `CH340/CH341`.
-- On Windows, check Device Manager -> Ports (COM & LPT) to identify the chipset before installing a driver.
-- Use official vendor pages only.
-
-## 4) How To Install This Patch Update
-
-This repo now contains the Onboard-Synth patch merged into `master`.
-
-### 4.1 Update your local project to patched `master`
-
-If you already cloned this repo:
+1. Download ZIP from your repository host, then extract it.
+2. Clone with Git:
 
 ```bash
-git checkout master
-git pull origin master
+git clone <your-repo-url>
+cd BECAfinalsv02
 ```
 
-Or download the latest `master` ZIP from your repo host and extract it to a clean folder.
+You should see `BECAfinalsv02.ino` in the project root.
 
-### 4.2 Flash with PlatformIO (recommended)
+## 5) Flash Method A (Recommended): Arduino IDE
 
-1. Open this project folder in VS Code or terminal.
-2. Confirm `platformio.ini` includes:
-- `platform_packages = platformio/framework-arduinoespressif32@3.20014.231204` (Arduino core `2.0.14`)
-- Correct `upload_port` / `monitor_port` for your board (example: `COM5`)
-3. Run a clean build:
+This is the easiest method for most users.
+
+### Step 1: Open the firmware
+
+1. Open Arduino IDE.
+2. Click `File` -> `Open...`.
+3. Select `BECAfinalsv02.ino`.
+
+### Step 2: Install ESP32 board package version `2.0.14`
+
+1. In Arduino IDE, go to `Tools` -> `Board` -> `Boards Manager...`.
+2. Search for `esp32 by Espressif Systems`.
+3. Select version `2.0.14`.
+4. Click `Install`.
+
+If Arduino asks for an Additional Boards URL, use:
+- `https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json`
+
+### Step 3: Install required libraries
+
+In Arduino IDE: `Tools` -> `Manage Libraries...` and install these exact versions:
+
+- `BLE-MIDI` by lathoub, version `2.2`
+- `MIDI Library` by Forty Seven Effects, version `5.0.2`
+- `NimBLE-Arduino` by h2zero, version `1.4.3`
+- `FastLED` by fastled, version `3.10.3`
+
+### Step 4: Select board and COM port
+
+1. `Tools` -> `Board` -> `ESP32 Arduino` -> `ESP32 Dev Module`.
+2. `Tools` -> `Port` -> select your BECA COM port.
+
+If no port appears:
+- Install the correct USB driver.
+- Try another USB cable (must support data).
+- Try another USB port.
+
+### Step 5: Upload firmware
+
+1. Click the `Upload` arrow in Arduino IDE.
+2. Wait until upload finishes.
+3. Power-cycle BECA (unplug and plug back in).
+
+If upload fails with connection errors:
+- Hold the board `BOOT` button while upload starts.
+- Release after the progress bar begins moving.
+
+### Step 6: Basic post-flash check
+
+After reboot:
+- BLE name should appear as `BECA BLE-MIDI`.
+- BECA should start a setup Wi-Fi AP if Wi-Fi is not configured.
+
+## 6) Flash Method B (Optional): PlatformIO
+
+Use this if you are comfortable with VS Code/CLI.
+
+1. Open project folder in VS Code with PlatformIO extension.
+2. Edit `platformio.ini` and set correct `upload_port` and `monitor_port` for your system.
+3. Build:
+
 ```bash
 pio run -t clean
 pio run
 ```
-4. Upload firmware:
+
+4. Upload:
+
 ```bash
 pio run -t upload
 ```
-5. Power-cycle BECA after upload.
 
-### 4.3 Flash with Arduino IDE
+5. Power-cycle BECA.
 
-1. Open `BECAfinalsv02.ino`.
-2. Install ESP32 boards package `2.0.14` (Boards Manager: `esp32 by Espressif Systems`).
-3. Install required libraries (section 2 versions).
-4. Select a compatible board target (for example, `ESP32 Dev Module`).
-5. Select the correct COM port.
-6. Upload and power-cycle BECA.
+## 7) First-Time Wi-Fi Setup and UI Access
 
-### 4.4 Post-flash sanity check
+On first boot (or after forgetting Wi-Fi), BECA enters setup mode.
 
-1. Confirm BLE advertisement name `BECA BLE-MIDI`.
-2. Open BECA Web UI and verify `Output Mode` options: `BLE`, `SERIAL`, `AUX OUT`.
-3. Toggle `Mute I/O` once to confirm global mute behavior.
-
-## 5) First-Time BECA Setup (Wi-Fi + UI)
-
-1. Power ON BECA.
-2. Join AP: `BECA-xxxx`.
-3. Setup page should auto-open. If not, open: `http://192.168.4.1/setup`
+1. On your phone/laptop, connect to Wi-Fi network: `BECA-XXXX`.
+2. Setup page should open automatically.
+3. If it does not open, visit `http://192.168.4.1/setup`.
 4. Enter:
-- Device name
-- Wi-Fi SSID
+- Device name (for `.local`, example `beca-1234`)
+- Home Wi-Fi SSID
 - Wi-Fi password
-5. Press `Save and Connect`.
-6. If success, BECA reboots to normal mode.
-7. Open BECA UI via:
+5. Click `Save and Connect`.
+6. Wait for reboot.
+7. Open BECA UI using either:
 - `http://<device-ip>/`
-- or `http://<device-name>.local/` (if your system resolves mDNS)
+- `http://<device-name>.local/`
 
-## 6) BLE MIDI Setup (Simple Path)
+Important:
+- Use `2.4 GHz` Wi-Fi (ESP32 requirement).
+- If connection fails, BECA stays in setup mode so you can retry.
 
-1. Keep `Output Mode` set to `BLE` in BECA UI.
-2. Open your host app/DAW BLE MIDI connection panel.
-3. Connect to `BECA BLE-MIDI`.
-4. In DAW, enable that MIDI input and arm a MIDI track.
+## 8) Everyday Use: Output Modes
 
-## 7) Serial MIDI Setup (Windows, Recommended Workflow)
+Open the BECA web UI and choose output mode from the bottom bar.
 
-Important confirmed behavior:
+- `BLE`: Sends MIDI over Bluetooth Low Energy.
+- `SERIAL`: Sends MIDI over USB serial (requires bridge script for DAWs).
+- `AUX OUT`: Plays onboard synth/drums through PCM5102A DAC.
 
-- Start with `Output Mode = BLE`.
-- Start the bridge first.
-- Then switch `Output Mode` to `SERIAL`.
+Notes:
+- In `AUX OUT`, BECA does not output note MIDI events over BLE/Serial.
+- `Mute I/O` is a global mute: it silences AUX and blocks outgoing MIDI.
+- For stability, after reboot BECA may come up in `BLE` or `SERIAL`; reselect `AUX OUT` in the UI if needed.
 
-This order avoids startup port/state conflicts on some systems.
+## 9) BLE MIDI Setup (Simple)
 
-### 7.1 Install once
+1. In BECA UI, set `Output Mode` to `BLE`.
+2. In your DAW/app Bluetooth MIDI panel, connect to `BECA BLE-MIDI`.
+3. Enable that MIDI input in your DAW.
+4. Arm a MIDI track and test plant input.
 
-1. Install Python.
-2. Install one loopback MIDI tool:
-- `loopMIDI` preferred, or
-- `LoopBe1` alternative.
-3. In loopMIDI, create a port named `BECA Serial MIDI` (or use existing LoopBe port).
+## 10) Serial MIDI Setup (Windows)
 
-### 7.2 Start bridge
+Use this if you want wired MIDI into a DAW.
+
+### One-time setup
+
+1. Install Python 3.
+2. Install loopback MIDI tool:
+- loopMIDI (recommended): https://www.tobias-erichsen.de/software/loopmidi.html
+- LoopBe1 (alternative): https://www.nerds.de/en/loopbe1.html
+3. In loopMIDI, create a port named `BECA Serial MIDI` (or use LoopBe port).
+
+### Start the bridge
 
 From project root:
 
@@ -152,156 +199,140 @@ From project root:
 tools\beca_link\start_windows.bat
 ```
 
-What this script does:
+This script creates a virtual environment, installs dependencies, lists serial/MIDI ports, and starts the bridge.
 
-- Lists serial ports
-- Lists MIDI ports visible to Python
-- Starts bridge in foreground with logs
-
-If you want forced LoopBe port test:
+If needed, force LoopBe output:
 
 ```bat
 tools\beca_link\start_windows_loopbe.bat
 ```
 
-### 7.3 Then switch BECA to Serial
+### Correct startup order (important)
 
-After bridge is running:
+1. Keep BECA in `BLE` mode first.
+2. Start bridge and confirm it is running.
+3. Then switch BECA to `SERIAL` mode in the web UI.
+4. In DAW, enable loopback input and arm track.
 
-1. Open BECA UI.
-2. Set `Output Mode` to `SERIAL`.
-3. In Ableton:
-- Preferences -> Link, Tempo, MIDI
-- Enable `Track` for the selected loopback input
-- Select that input on MIDI track (`MIDI From`)
+## 11) Serial MIDI Setup (macOS/Linux)
 
-## 8) Serial MIDI Setup (macOS/Linux)
-
-1. Start with `Output Mode = BLE`.
+1. Keep BECA in `BLE` mode first.
 2. Start bridge:
+
 ```bash
 cd tools/beca_link
 chmod +x start_mac_linux.sh
 ./start_mac_linux.sh
 ```
-3. Switch BECA UI to `SERIAL`.
-4. In DAW, select bridge output MIDI port.
 
-## 9) Critical Operating Rules
+3. Switch BECA output mode to `SERIAL`.
+4. Select BECA bridge MIDI output in your DAW.
 
-- Do not run a serial monitor and the bridge on the same COM port at the same time.
-- On Windows, if bridge shows `Access is denied` for COM port, another app owns that port.
-- Keep bridge terminal open while using Serial MIDI.
-- If using BLE mode only, bridge is not required.
-- In `AUX OUT` mode, BECA does not emit MIDI note events (BLE or Serial).
-- When `Mute I/O` is ON, BECA force-silences AUX and blocks outgoing MIDI until unmuted.
+## 12) AUX OUT Setup (Onboard Audio)
 
-## 10) AUX OUT Wiring + Test
-
-PCM5102A default I2S wiring:
+Default PCM5102A wiring:
 
 - `BCK` -> `GPIO26`
 - `LRCK/WS` -> `GPIO27`
 - `DIN` -> `GPIO25`
 
-Audio path:
+Test:
 
-- PCM5102A analog outputs -> powered speakers/headphones.
+1. Set `Output Mode` to `AUX OUT` in UI.
+2. Open `http://<beca-ip>/api/synth/test`.
+3. Confirm you hear a short test tone/chord.
 
-Quick test flow:
+## 13) Operating Rules (Avoid Common Problems)
 
-1. In BECA UI, set `Output Mode` to `AUX OUT`.
-2. Open `/api/synth/test` in browser (or use Synth panel test button).
-3. Confirm a short 2-second tone/chord plays.
-4. Switch to `BLE` or `SERIAL` and confirm onboard audio is silent.
-5. Confirm plant activity triggers synth/drums only in `AUX OUT`.
+- Do not run Serial Monitor and Serial MIDI bridge at the same time.
+- Keep bridge terminal open while using `SERIAL` mode.
+- If bridge shows `Access is denied`, another app owns the COM port.
+- Use 2.4 GHz Wi-Fi for setup and normal operation.
+- If using BLE only, bridge tool is not required.
 
-## 11) Troubleshooting (Self-Service)
+## 14) Troubleshooting
 
-### A) Bridge terminal closes immediately
-
-Cause:
-
-- Old launcher behavior or startup error.
+### Problem: No COM port appears
 
 Fix:
+1. Install correct USB driver (CP210x/CH340/FTDI).
+2. Replace USB cable with a data cable.
+3. Try another USB port.
+4. Reopen Arduino IDE.
 
-- Use current `tools\beca_link\start_windows.bat` (foreground mode with pause and logs).
-
-### B) `Access is denied` on COM port
-
-Cause:
-
-- Port is locked by another process (PlatformIO monitor, Arduino Serial Monitor, another bridge window).
+### Problem: Upload fails (`Connecting...` / timeout)
 
 Fix:
+1. Hold `BOOT` button while upload starts.
+2. Release after upload begins.
+3. Power-cycle board and retry.
 
-1. Close Arduino Serial Monitor / PlatformIO monitor.
-2. Close any old bridge windows.
-3. Unplug/replug USB cable.
+### Problem: Setup page does not open
+
+Fix:
+1. Connect to `BECA-XXXX` Wi-Fi AP.
+2. Open `http://192.168.4.1/setup` manually.
+
+### Problem: Wi-Fi setup fails
+
+Fix:
+1. Confirm password is correct.
+2. Use `2.4 GHz` SSID.
+3. If "connected but no IP", reboot router/hotspot and retry.
+
+### Problem: `beca-xxxx.local` does not open
+
+Fix:
+1. Use direct IP: `http://<device-ip>/`.
+2. Keep BECA and your computer on the same LAN.
+
+### Problem: BLE device not found
+
+Fix:
+1. Set mode to `BLE`.
+2. Power-cycle BECA.
+3. Re-scan for `BECA BLE-MIDI`.
+
+### Problem: Serial bridge says `Access is denied`
+
+Fix:
+1. Close Arduino Serial Monitor and PlatformIO monitor.
+2. Close old bridge windows.
+3. Unplug/replug BECA USB.
 4. Start bridge again.
 
-### C) loopMIDI port not visible in bridge output list
-
-Cause:
-
-- Port is not available to Python MIDI backend in current Windows session.
+### Problem: DAW receives no notes in `SERIAL` mode
 
 Fix:
+1. Start bridge first, then switch BECA to `SERIAL`.
+2. Confirm DAW MIDI input is enabled.
+3. Confirm track is armed and correct input selected.
 
-1. Keep loopMIDI running.
-2. Recreate the port.
-3. Re-run:
-```bat
-python tools/beca_link/beca_link.py --midi-list
-```
-4. If still not visible, use LoopBe1 or use visible port name shown by `--midi-list`.
-
-### D) Ableton does not show the bridge port
+### Problem: No sound in `AUX OUT`
 
 Fix:
+1. Check PCM5102A wiring and power.
+2. Confirm mode is `AUX OUT`.
+3. Run `/api/synth/test`.
+4. Confirm `Mute I/O` is OFF.
 
-1. In Ableton Preferences -> Link, Tempo, MIDI, enable `Track` for that input port.
-2. Re-open Ableton after starting loopback tool and bridge.
-3. Confirm bridge is receiving BECA data (watch bridge log counters).
-
-### E) No notes in DAW after switching to Serial
-
-Fix checklist:
-
-1. Bridge running first.
-2. Then set BECA `Output Mode` to `SERIAL`.
-3. DAW track armed and MIDI input selected.
-4. No COM lock errors in bridge terminal.
-
-### F) BLE not connecting
-
-Fix:
-
-1. Set `Output Mode` to `BLE`.
-2. Power-cycle BECA.
-3. Reconnect from host BLE MIDI panel.
-
-### G) Wi-Fi setup fails
-
-Use setup page messages:
-
-- Wrong password -> re-enter password
-- Network not found -> use 2.4 GHz Wi-Fi
-- Connected but no IP -> router DHCP issue, reboot router/hotspot and retry
-
-## 12) Developer Notes
+## 15) Project File Map
 
 - Main firmware: `BECAfinalsv02.ino`
-- UI source: `index.html`
-- Generated UI header: `index_html.h`
-- Regenerate after UI edit:
+- Web UI source: `index.html`
+- Generated web UI header: `index_html.h`
+- Serial MIDI bridge: `tools/beca_link/beca_link.py`
+- Bridge launcher (Windows auto): `tools/beca_link/start_windows.bat`
+- Bridge launcher (Windows LoopBe): `tools/beca_link/start_windows_loopbe.bat`
+- Bridge launcher (macOS/Linux): `tools/beca_link/start_mac_linux.sh`
+
+## 16) Developer Note (Only if you edit UI)
+
+If you edit `index.html`, regenerate `index_html.h`:
+
 ```bash
 python make_index_header.py
 ```
-- Serial bridge tools: `tools/beca_link/`
-- Faust setup helpers:
-  - `tools/faust_setup_windows.ps1`
-  - `tools/faust_setup_macos.sh`
-  - `tools/faust_setup_linux.sh`
+
+Without this step, firmware may compile with old UI content.
 
