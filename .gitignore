@@ -15,3 +15,28 @@ secrets.h
 
 # logs
 *.log
+
+# Python
+.venv/
+tools/beca_link/.venv/
+__pycache__/
+*.pyc
+
+# PlatformIO build outputs
+.pio/
+.pioenvs/
+.piolibdeps/
+*.ino.cpp
+
+# Rust / Node build outputs
+target/
+node_modules/
+dist/
+
+# Setup app build outputs
+apps/beca-setup/src-tauri/target/
+apps/beca-setup/dist-installer/
+
+# temp archives
+*.zip
+*.tmp

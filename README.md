@@ -3,6 +3,23 @@
 This guide is written for first-time and non-technical users.
 Follow it top-to-bottom to install, flash, and use BECA successfully.
 
+## 0) Official Branching And Version Policy
+
+To keep firmware and installer updates separate and predictable, use these branches:
+
+- `official-system-updates`: firmware/system source of truth (ESP32 sketch + web UI + firmware docs)
+- `official-app-updates`: BECA Setup desktop app source of truth (installer, flasher wrapper, bridge, CI packaging)
+
+Current firmware baseline label:
+- `verBECAbetav1.0.1`
+
+Publish flow:
+1. Land firmware changes in `official-system-updates`.
+2. Publish firmware release with tag `firmware-vx.y.z` (or `verBECAbetavx.y.z`) and assets:
+`beca-x.y.z-merged.bin` + `firmware-manifest.json` (via `.github/workflows/firmware-release.yml`).
+3. Land installer/app changes in `official-app-updates`.
+4. Publish installer release with tag `setup-vx.y.z` (triggers `.github/workflows/setup-installer-release.yml`).
+
 ## 1) What BECA Does
 
 BECA is an ESP32 firmware that turns plant input into musical output with a web interface.
