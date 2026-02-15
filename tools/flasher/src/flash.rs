@@ -95,36 +95,8 @@ pub async fn verify_sha256(path: &Path, expected_hex: &str) -> Result<()> {
 pub async fn flash_firmware(cfg: &FlashCommandConfig) -> Result<()> {
     let mut cmd = Command::new(&cfg.tool_path);
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
-
-    match cfg.tool {
-        FlashTool::Espflash => {
-            cmd.arg("--port")
-                .arg(&cfg.port)
-                .arg("--baud")
-                .arg(cfg.baud.to_string())
-                .arg("flash")
-                .arg(&cfg.firmware_path);
-        }
-        FlashTool::Esptool => {
-            cmd.arg("--chip")
-                .arg("esp32")
-                .arg("--port")
-                .arg(&cfg.port)
-                .arg("--baud")
-                .arg(cfg.baud.to_string())
-                .arg("write_flash")
-                .arg("--flash_mode")
-                .arg("dio")
-                .arg("--flash_freq")
-                .arg("40m")
-                .arg("--flash_size")
-                .arg("detect")
-                .arg(&cfg.offset)
-                .arg(&cfg.firmware_path)
-                .arg("verify_flash")
-                .arg(&cfg.offset)
-                .arg(&cfg.firmware_path);
-        }
+    for arg in build_flash_args(cfg) {
+        cmd.arg(arg);
     }
 
     let output = cmd
@@ -215,6 +187,44 @@ fn sidecar_name(base: &str) -> String {
     }
 }
 
+fn build_flash_args(cfg: &FlashCommandConfig) -> Vec<String> {
+    match cfg.tool {
+        FlashTool::Espflash => vec![
+            // espflash v4+ expects subcommand first and raw binaries via write-bin.
+            "write-bin".to_string(),
+            "--chip".to_string(),
+            "esp32".to_string(),
+            "--port".to_string(),
+            cfg.port.clone(),
+            "--baud".to_string(),
+            cfg.baud.to_string(),
+            "--non-interactive".to_string(),
+            cfg.offset.clone(),
+            cfg.firmware_path.display().to_string(),
+        ],
+        FlashTool::Esptool => vec![
+            "--chip".to_string(),
+            "esp32".to_string(),
+            "--port".to_string(),
+            cfg.port.clone(),
+            "--baud".to_string(),
+            cfg.baud.to_string(),
+            "write_flash".to_string(),
+            "--flash_mode".to_string(),
+            "dio".to_string(),
+            "--flash_freq".to_string(),
+            "40m".to_string(),
+            "--flash_size".to_string(),
+            "detect".to_string(),
+            cfg.offset.clone(),
+            cfg.firmware_path.display().to_string(),
+            "verify_flash".to_string(),
+            cfg.offset.clone(),
+            cfg.firmware_path.display().to_string(),
+        ],
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -232,5 +242,39 @@ mod tests {
         )
         .await
         .expect("sha should match");
+    }
+
+    #[test]
+    fn espflash_uses_write_bin_subcommand() {
+        let cfg = FlashCommandConfig {
+            tool: FlashTool::Espflash,
+            tool_path: PathBuf::from("espflash"),
+            port: "COM5".to_string(),
+            baud: 921_600,
+            firmware_path: PathBuf::from("firmware.bin"),
+            offset: "0x0".to_string(),
+        };
+
+        let args = build_flash_args(&cfg);
+        assert_eq!(args.first().expect("first arg"), "write-bin");
+        assert!(args.contains(&"--port".to_string()));
+        assert!(args.contains(&"COM5".to_string()));
+        assert!(args.contains(&"0x0".to_string()));
+    }
+
+    #[test]
+    fn esptool_keeps_verify_flow() {
+        let cfg = FlashCommandConfig {
+            tool: FlashTool::Esptool,
+            tool_path: PathBuf::from("esptool"),
+            port: "COM5".to_string(),
+            baud: 460_800,
+            firmware_path: PathBuf::from("firmware.bin"),
+            offset: "0x0".to_string(),
+        };
+
+        let args = build_flash_args(&cfg);
+        assert!(args.contains(&"write_flash".to_string()));
+        assert!(args.contains(&"verify_flash".to_string()));
     }
 }

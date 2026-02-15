@@ -5,7 +5,7 @@ use midir::{MidiOutput, MidiOutputConnection};
 use serde::Serialize;
 use serialport::SerialPort;
 use std::io::Write;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, ErrorKind};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
@@ -149,6 +149,9 @@ fn run_bridge_session(
                 }
             }
             Err(err) => {
+                if matches!(err.kind(), ErrorKind::TimedOut | ErrorKind::WouldBlock) {
+                    continue;
+                }
                 return Err(anyhow!(err.to_string()));
             }
         }

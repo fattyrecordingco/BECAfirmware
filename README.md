@@ -338,6 +338,13 @@ Fix:
 3. Confirm BECA Setup is configured to use repo `fattyrecordingco/BECAfirmware`.
 4. Retry `Rescan Device`, then restart BECA Setup.
 
+### Problem: Flash fails with `unexpected argument '--port' found`
+
+Fix:
+1. Update BECA Setup to version `0.1.2` or newer.
+2. This was caused by an older espflash command format in earlier app builds.
+3. Re-run Step 2 (`Flash Selected Firmware`) after updating.
+
 ### Problem: `WebView2Loader.dll was not found` on Windows
 
 Fix:
