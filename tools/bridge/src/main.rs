@@ -4,6 +4,7 @@ use clap::{Parser, Subcommand};
 use midir::{MidiOutput, MidiOutputConnection};
 use serde::Serialize;
 use serialport::SerialPort;
+use std::io::Write;
 use std::io::{BufRead, BufReader};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
@@ -234,6 +235,8 @@ fn emit_status(event: &str, state: &str, detail: &str) {
         detail: detail.to_string(),
     };
     if let Ok(json) = serde_json::to_string(&payload) {
-        println!("{json}");
+        let mut out = std::io::stdout();
+        let _ = writeln!(out, "{json}");
+        let _ = out.flush();
     }
 }

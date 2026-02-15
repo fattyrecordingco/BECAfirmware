@@ -6,8 +6,8 @@ Firmware manifest + checksum + flash wrapper.
 
 ```bash
 beca-flasher detect
-beca-flasher manifest --repo Fatty-Recording-Co/BECA
-beca-flasher flash --repo Fatty-Recording-Co/BECA --port COM5 --firmware latest-stable
+beca-flasher manifest --repo fattyrecordingco/BECAfirmware
+beca-flasher flash --repo fattyrecordingco/BECAfirmware --port COM5 --firmware latest-stable
 beca-flasher backup-nvs --port COM5 --output nvs.bin --tool-path ./esptool.exe
 beca-flasher restore-nvs --port COM5 --backup nvs.bin --tool-path ./esptool.exe
 ```
