@@ -32,3 +32,8 @@ apps/beca-setup/src-tauri/binaries/*
 # App runtime files
 *.zip
 *.tmp
+
+# PlatformIO build outputs
+.pio/
+.pioenvs/
+.piolibdeps/

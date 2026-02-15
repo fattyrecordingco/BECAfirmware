@@ -28,4 +28,4 @@ Windows runtime note:
 - Build script copies `WebView2Loader.dll` into `src-tauri/` so installer places it beside `beca-setup.exe`.
 
 Firmware manifest source:
-- Latest release manifest is fetched from `fattyrecordingco/BECAfirmware`.
+- Manifest is fetched from the most recent published release in `fattyrecordingco/BECAfirmware` that includes `firmware-manifest.json`.

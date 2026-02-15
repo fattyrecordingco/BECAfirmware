@@ -26,6 +26,10 @@ pub struct FirmwareRelease {
 
 #[derive(Debug, Deserialize)]
 struct GithubRelease {
+    #[serde(default)]
+    tag_name: String,
+    #[serde(default)]
+    draft: bool,
     assets: Vec<GithubAsset>,
 }
 
@@ -84,7 +88,7 @@ pub fn parse_manifest(raw: &str) -> Result<FirmwareManifest> {
 }
 
 pub async fn fetch_latest_manifest(repository: &str) -> Result<FirmwareManifest> {
-    let url = format!("https://api.github.com/repos/{repository}/releases/latest");
+    let url = format!("https://api.github.com/repos/{repository}/releases?per_page=25");
     let client = reqwest::Client::new();
     let user_agent = format!("beca-flasher/{}", env!("CARGO_PKG_VERSION"));
     let release_response = client
@@ -102,12 +106,34 @@ Create a GitHub Release and attach firmware-manifest.json."
         ));
     }
 
-    let release: GithubRelease = release_response
+    let releases: Vec<GithubRelease> = release_response
         .error_for_status()
         .context("GitHub release endpoint returned non-success")?
         .json()
         .await
         .context("failed to decode GitHub release response")?;
+
+    if releases.is_empty() {
+        return Err(anyhow!(
+            "no releases found for repo '{repository}'. Create a release and attach firmware-manifest.json."
+        ));
+    }
+
+    let release = releases
+        .iter()
+        .find(|r| {
+            !r.draft
+                && r
+                    .assets
+                    .iter()
+                    .any(|a| a.name.eq_ignore_ascii_case("firmware-manifest.json"))
+        })
+        .ok_or_else(|| {
+            anyhow!(
+                "no release with firmware-manifest.json found in '{repository}'. \
+Attach firmware-manifest.json to a published release."
+            )
+        })?;
 
     let manifest_asset = release
         .assets
@@ -128,6 +154,7 @@ Create a GitHub Release and attach firmware-manifest.json."
         .context("failed to read firmware manifest body")?;
 
     parse_manifest(&raw)
+        .with_context(|| format!("failed to parse firmware-manifest.json from release '{}'", release.tag_name))
 }
 
 fn version_key(version: &str) -> Vec<u32> {

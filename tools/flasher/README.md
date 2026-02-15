@@ -14,4 +14,4 @@ beca-flasher restore-nvs --port COM5 --backup nvs.bin --tool-path ./esptool.exe
 
 ## Manifest
 
-The latest release must include `firmware-manifest.json` with firmware URLs + SHA256 checksums.
+At least one recent published release must include `firmware-manifest.json` with firmware URLs + SHA256 checksums.

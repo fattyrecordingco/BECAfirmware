@@ -1,0 +1,120 @@
+name: Build Firmware Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Firmware semantic version (e.g. 1.0.1)"
+        required: true
+      tag:
+        description: "Release tag (defaults to firmware-v<version>)"
+        required: false
+      channel:
+        description: "Release channel (stable or beta)"
+        required: false
+        default: "stable"
+  push:
+    tags:
+      - "firmware-v*"
+      - "verBECAbetav*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-release:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install platformio esptool
+
+      - name: Resolve release metadata
+        id: meta
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            VERSION="${{ inputs.version }}"
+            TAG="${{ inputs.tag }}"
+            CHANNEL="${{ inputs.channel }}"
+            if [[ -z "$TAG" ]]; then
+              TAG="firmware-v${VERSION}"
+            fi
+          else
+            TAG="${GITHUB_REF_NAME}"
+            if [[ "$TAG" =~ ([0-9]+\.[0-9]+\.[0-9]+) ]]; then
+              VERSION="${BASH_REMATCH[1]}"
+            else
+              echo "Unable to parse semantic version from tag: $TAG"
+              exit 1
+            fi
+            if [[ "$TAG" == *beta* ]]; then
+              CHANNEL="beta"
+            else
+              CHANNEL="stable"
+            fi
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "channel=$CHANNEL" >> "$GITHUB_OUTPUT"
+
+      - name: Build firmware
+        run: pio run -e esp32dev
+
+      - name: Merge firmware binary
+        shell: bash
+        run: |
+          VERSION="${{ steps.meta.outputs.version }}"
+          mkdir -p dist/firmware-release
+          python -m esptool --chip esp32 merge_bin \
+            -o "dist/firmware-release/beca-${VERSION}-merged.bin" \
+            --flash_mode dio \
+            --flash_freq 40m \
+            --flash_size 4MB \
+            0x1000 .pio/build/esp32dev/bootloader.bin \
+            0x8000 .pio/build/esp32dev/partitions.bin \
+            0x10000 .pio/build/esp32dev/firmware.bin
+
+      - name: Generate manifest
+        id: manifest
+        shell: bash
+        run: |
+          VERSION="${{ steps.meta.outputs.version }}"
+          TAG="${{ steps.meta.outputs.tag }}"
+          CHANNEL="${{ steps.meta.outputs.channel }}"
+          ASSET="beca-${VERSION}-merged.bin"
+          SHA=$(sha256sum "dist/firmware-release/${ASSET}" | awk '{print $1}')
+
+          python tools/release/generate_firmware_manifest.py \
+            --repo "${{ github.repository }}" \
+            --version "${VERSION}" \
+            --tag "${TAG}" \
+            --channel "${CHANNEL}" \
+            --hardware "ESP32-PICO-V3" \
+            --asset-name "${ASSET}" \
+            --sha256 "${SHA}" \
+            --output "dist/firmware-release/firmware-manifest.json"
+
+          echo "asset=${ASSET}" >> "$GITHUB_OUTPUT"
+
+      - name: Create or update release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: BECA Firmware ${{ steps.meta.outputs.version }}
+          target_commitish: official-system-updates
+          make_latest: true
+          files: |
+            dist/firmware-release/${{ steps.manifest.outputs.asset }}
+            dist/firmware-release/firmware-manifest.json

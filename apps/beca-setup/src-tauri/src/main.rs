@@ -420,7 +420,7 @@ async fn load_manifest(app: &AppHandle, state: &State<'_, RuntimeState>) -> anyh
                 return Err(anyhow!(
                     "Firmware manifest fetch failed for repo '{DEFAULT_FIRMWARE_REPO}'. \
 This is a GitHub release lookup issue (not BECA Wi-Fi). \
-Ensure the latest release includes 'firmware-manifest.json'. Details: {fetch_err}"
+Ensure at least one recent published release includes 'firmware-manifest.json'. Details: {fetch_err}"
                 ));
             }
         }

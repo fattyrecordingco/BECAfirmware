@@ -15,9 +15,11 @@ Current firmware baseline label:
 
 Publish flow:
 1. Land firmware changes in `official-system-updates`.
-2. Build firmware and attach release assets (including `firmware-manifest.json`) on GitHub Releases.
+2. Publish firmware release with tag `firmware-vx.y.z` (or `verBECAbetavx.y.z`) and assets:
+`beca-x.y.z-merged.bin` + `firmware-manifest.json` (via `.github/workflows/firmware-release.yml`).
 3. Land installer/app changes in `official-app-updates`.
-4. BECA Setup pulls "latest stable" firmware from Releases, not from `main`.
+4. Publish installer release with tag `setup-vx.y.z` (triggers `.github/workflows/setup-installer-release.yml`).
+5. BECA Setup resolves firmware from the most recent published release that includes `firmware-manifest.json`.
 
 ## 1) What BECA Does
 
@@ -332,7 +334,7 @@ Fix:
 
 Fix:
 1. This is usually a GitHub release manifest lookup issue, not local Wi-Fi.
-2. Confirm the repository release has `firmware-manifest.json` attached.
+2. Confirm at least one recent published release has `firmware-manifest.json` attached.
 3. Confirm BECA Setup is configured to use repo `fattyrecordingco/BECAfirmware`.
 4. Retry `Rescan Device`, then restart BECA Setup.
 
@@ -381,6 +383,7 @@ powershell -ExecutionPolicy Bypass -File tools/build_setup_windows.ps1
 - Setup app: `apps/beca-setup`
 - Native bridge: `tools/bridge`
 - Flasher wrapper: `tools/flasher`
+- Firmware release tooling: `tools/release`
 - Legacy python bridge: `tools/beca_link`
 
 ## 17) Maintainer Rule For README Updates
