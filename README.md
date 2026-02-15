@@ -3,6 +3,24 @@
 This guide is written for first-time and non-technical users.
 Follow it top-to-bottom to install, flash, and use BECA successfully.
 
+## Start Here (Master Branch Users)
+
+If you opened this repository on the `master` branch, this is the fastest path:
+
+1. Click `Code` -> `Download ZIP` (optional source download).
+2. Open this ZIP locally so you have this manual and project files.
+3. Go to repository `Releases`.
+4. Download the BECA Setup installer for your OS:
+- Windows: `BECA Setup_*_x64-setup.exe`
+- macOS: `BECA Setup_*.dmg`
+- Linux: `BECA Setup_*.AppImage`
+5. Install BECA Setup and follow in-app Step 1 -> Step 2 -> Step 3.
+6. Open BECA web UI and set output mode for your DAW workflow.
+
+Important:
+- Most users should install from `Releases` binaries, not build from source.
+- Source ZIP is mainly for documentation, firmware source visibility, and advanced development.
+
 ## 0) Official Branching And Version Policy
 
 To keep firmware and installer updates separate and predictable, use these branches:
@@ -53,10 +71,13 @@ Hardware:
 - Optional for `AUX OUT`: PCM5102A DAC + speakers/headphones
 
 Software:
+- BECA Setup installer from GitHub Releases (recommended for all users)
 - Arduino IDE 2.x: https://www.arduino.cc/en/software
 - PlatformIO (optional): https://platformio.org/platformio-ide
-- Python 3 (for Serial MIDI bridge): https://www.python.org/downloads/
 - Git (optional): https://git-scm.com/downloads
+
+Optional legacy-only dependency:
+- Python 3 (only if using `tools/beca_link` legacy bridge scripts): https://www.python.org/downloads/
 
 USB serial driver (install the one matching your board):
 - CP210x: https://www.silabs.com/developers/usb-to-uart-bridge-vcp-drivers
@@ -66,19 +87,24 @@ USB serial driver (install the one matching your board):
 Windows tip:
 - Open Device Manager -> `Ports (COM & LPT)` to see your USB chip and COM port.
 
-## 4) Download the Firmware Project
+## 4) Download the Project Source (Optional)
 
-Choose one:
+Most end users can skip this section and use BECA Setup from Releases.
 
-1. Download ZIP from your repository host, then extract it.
-2. Clone with Git:
+If you still want a local copy of source/docs:
+
+1. Download ZIP from `master` (`Code` -> `Download ZIP`), then extract it.
+2. Or clone with Git:
 
 ```bash
 git clone <your-repo-url>
 cd BECAfinalsv02
 ```
 
-You should see `BECAfinalsv02.ino` in the project root.
+Then use this folder for:
+- reading docs locally
+- manual Arduino/PlatformIO flashing (advanced)
+- development workflows
 
 ## 5) Flash Method A (Recommended): Arduino IDE
 
