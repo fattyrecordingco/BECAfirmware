@@ -1,4 +1,5 @@
 .cache/
+.beca-cache/
 
 # OS
 .DS_Store
