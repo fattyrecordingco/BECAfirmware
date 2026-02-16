@@ -75,15 +75,23 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          unset CARGO_BUILD_TARGET
-          host_triple="$(rustc -vV | sed -n 's/^host: //p')"
-          export PKG_CONFIG_ALLOW_CROSS=1
-          if cargo build -p beca-bridge --release --target "${host_triple}" -vv; then
+          log_file="$(mktemp)"
+          if cargo build -p beca-bridge --release -vv 2>&1 | tee "$log_file"; then
             exit 0
           fi
           echo "First beca-bridge build failed, retrying once..."
           sleep 5
-          cargo build -p beca-bridge --release --target "${host_triple}" -vv
+          if cargo build -p beca-bridge --release -vv 2>&1 | tee -a "$log_file"; then
+            exit 0
+          fi
+          {
+            echo "### beca-bridge build failure"
+            echo
+            echo '```text'
+            tail -n 200 "$log_file"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY" || true
+          exit 1
 
       - name: Install espflash sidecar
         run: cargo install espflash --locked --version 4.2.0
@@ -155,10 +163,10 @@ jobs:
 
           artifact_root="${RUNNER_TEMP}/beca-setup-artifacts"
           mirror_root="${GITHUB_WORKSPACE}/apps/beca-setup/dist-installer"
+          staged_root="${RUNNER_TEMP}/beca-setup-staged-mirror"
 
-          rm -rf "${mirror_root}/windows" "${mirror_root}/macos" "${mirror_root}/linux"
-          mkdir -p "${mirror_root}/windows" "${mirror_root}/macos" "${mirror_root}/linux"
-          touch "${mirror_root}/windows/.gitkeep" "${mirror_root}/macos/.gitkeep" "${mirror_root}/linux/.gitkeep"
+          rm -rf "${staged_root}"
+          mkdir -p "${staged_root}/windows" "${staged_root}/macos" "${staged_root}/linux"
 
           windows_count=0
           macos_count=0
@@ -168,26 +176,32 @@ jobs:
             lower="$(echo "${file}" | tr '[:upper:]' '[:lower:]')"
             case "${lower}" in
               *.dmg)
-                cp "${file}" "${mirror_root}/macos/"
+                cp "${file}" "${staged_root}/macos/"
                 macos_count=$((macos_count+1))
                 ;;
               *.appimage|*.deb)
-                cp "${file}" "${mirror_root}/linux/"
+                cp "${file}" "${staged_root}/linux/"
                 linux_count=$((linux_count+1))
                 ;;
               *.exe|*.msi|*.zip|*webview2loader.dll)
-                cp "${file}" "${mirror_root}/windows/"
+                cp "${file}" "${staged_root}/windows/"
                 windows_count=$((windows_count+1))
                 ;;
             esac
           done < <(find "${artifact_root}" -type f -print0)
 
-          total=$((windows_count+macos_count+linux_count))
           echo "Installer files copied -> windows:${windows_count} macos:${macos_count} linux:${linux_count}"
-          if [ "${total}" -eq 0 ]; then
-            echo "No installer files were available in workflow artifacts."
+          if [ "${windows_count}" -eq 0 ] || [ "${macos_count}" -eq 0 ] || [ "${linux_count}" -eq 0 ]; then
+            echo "Missing one or more platform artifacts. Mirror update aborted."
             exit 1
           fi
+
+          rm -rf "${mirror_root}/windows" "${mirror_root}/macos" "${mirror_root}/linux"
+          mkdir -p "${mirror_root}/windows" "${mirror_root}/macos" "${mirror_root}/linux"
+          cp -a "${staged_root}/windows/." "${mirror_root}/windows/"
+          cp -a "${staged_root}/macos/." "${mirror_root}/macos/"
+          cp -a "${staged_root}/linux/." "${mirror_root}/linux/"
+          touch "${mirror_root}/windows/.gitkeep" "${mirror_root}/macos/.gitkeep" "${mirror_root}/linux/.gitkeep"
 
       - name: Commit installer mirror updates
         shell: bash
