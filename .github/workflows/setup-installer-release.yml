@@ -84,11 +84,15 @@ jobs:
           if cargo build -p beca-bridge --release -vv 2>&1 | tee -a "$log_file"; then
             exit 0
           fi
+          tail_file="$(mktemp)"
+          tail -n 120 "$log_file" > "$tail_file" || true
+          escaped_tail="$(sed -e 's/%/%25/g' -e 's/\r/%0D/g' -e 's/\n/%0A/g' "$tail_file")"
+          echo "::error title=beca-bridge build failed::${escaped_tail}"
           {
             echo "### beca-bridge build failure"
             echo
             echo '```text'
-            tail -n 200 "$log_file"
+            cat "$tail_file"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY" || true
           exit 1
