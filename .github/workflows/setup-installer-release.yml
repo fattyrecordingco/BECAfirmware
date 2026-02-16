@@ -53,6 +53,12 @@ jobs:
             libudev-dev \
             patchelf
 
+      - name: Verify Linux bridge deps
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          pkg-config --modversion alsa
+          pkg-config --modversion libudev
+
       - name: Install JS dependencies
         working-directory: apps/beca-setup
         run: npm install
@@ -60,8 +66,21 @@ jobs:
       - name: Build flasher sidecar
         run: cargo build -p beca-flasher --release -vv
 
-      - name: Build bridge sidecar
+      - name: Build bridge sidecar (Windows)
+        if: runner.os == 'Windows'
         run: cargo build -p beca-bridge --release -vv
+
+      - name: Build bridge sidecar (macOS/Linux)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if cargo build -p beca-bridge --release -vv; then
+            exit 0
+          fi
+          echo "First beca-bridge build failed, retrying once..."
+          sleep 5
+          cargo build -p beca-bridge --release -vv
 
       - name: Install espflash sidecar
         run: cargo install espflash --locked --version 4.2.0
