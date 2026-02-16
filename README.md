@@ -586,6 +586,7 @@ Important:
 - This requires a published release tag matching `setup-v*`.
 - If no setup release exists yet, the script exits with a clear error.
 - CI also mirrors installers into this folder automatically after successful `Build Setup Installer` workflow runs (release or manual dispatch).
+- If one OS build fails, CI still mirrors available installer files from the successful OS jobs.
 
 ## 18) Project File Map
 

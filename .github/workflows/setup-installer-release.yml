@@ -104,7 +104,7 @@ jobs:
 
   sync-installer-mirror:
     needs: build-installers
-    if: needs.build-installers.result == 'success' && github.repository == 'fattyrecordingco/BECAfirmware'
+    if: always() && needs.build-installers.result != 'cancelled' && github.repository == 'fattyrecordingco/BECAfirmware'
     runs-on: ubuntu-22.04
 
     steps:
@@ -117,6 +117,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           pattern: beca-setup-*
+          merge-multiple: true
           path: ${{ runner.temp }}/beca-setup-artifacts
 
       - name: Sync cross-platform installer mirror
@@ -129,32 +130,34 @@ jobs:
 
           rm -rf "${mirror_root}/windows" "${mirror_root}/macos" "${mirror_root}/linux"
           mkdir -p "${mirror_root}/windows" "${mirror_root}/macos" "${mirror_root}/linux"
+          touch "${mirror_root}/windows/.gitkeep" "${mirror_root}/macos/.gitkeep" "${mirror_root}/linux/.gitkeep"
+
+          windows_count=0
+          macos_count=0
+          linux_count=0
 
           while IFS= read -r -d '' file; do
             lower="$(echo "${file}" | tr '[:upper:]' '[:lower:]')"
             case "${lower}" in
               *.dmg)
                 cp "${file}" "${mirror_root}/macos/"
+                macos_count=$((macos_count+1))
                 ;;
               *.appimage|*.deb)
                 cp "${file}" "${mirror_root}/linux/"
+                linux_count=$((linux_count+1))
                 ;;
               *.exe|*.msi|*.zip|*webview2loader.dll)
                 cp "${file}" "${mirror_root}/windows/"
+                windows_count=$((windows_count+1))
                 ;;
             esac
           done < <(find "${artifact_root}" -type f -print0)
 
-          if ! find "${mirror_root}/windows" -maxdepth 1 -type f \( -iname "*x64-setup.exe" -o -iname "*.msi" \) -print -quit | grep -q .; then
-            echo "Missing Windows installer artifacts in mirror."
-            exit 1
-          fi
-          if ! find "${mirror_root}/macos" -maxdepth 1 -type f -iname "*.dmg" -print -quit | grep -q .; then
-            echo "Missing macOS installer artifacts in mirror."
-            exit 1
-          fi
-          if ! find "${mirror_root}/linux" -maxdepth 1 -type f \( -iname "*.AppImage" -o -iname "*.deb" \) -print -quit | grep -q .; then
-            echo "Missing Linux installer artifacts in mirror."
+          total=$((windows_count+macos_count+linux_count))
+          echo "Installer files copied -> windows:${windows_count} macos:${macos_count} linux:${linux_count}"
+          if [ "${total}" -eq 0 ]; then
+            echo "No installer files were available in workflow artifacts."
             exit 1
           fi
 
@@ -170,6 +173,6 @@ jobs:
             exit 0
           fi
 
-          git add -f apps/beca-setup/dist-installer
+          git add -A -f apps/beca-setup/dist-installer
           git commit -m "chore(setup): sync installer mirror (windows/macos/linux)"
           git push origin HEAD:master
