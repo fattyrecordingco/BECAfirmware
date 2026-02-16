@@ -166,7 +166,8 @@ label {
 }
 
 button,
-select {
+select,
+input {
   border-radius: 12px;
   border: 1px solid var(--edge);
   padding: 8px 12px;
@@ -207,6 +208,14 @@ progress {
 .hint {
   color: var(--text-muted);
   margin-top: 8px;
+}
+
+.hint.error {
+  color: #8a2d2d;
+}
+
+.hint.ok {
+  color: #1d6e46;
 }
 
 .hint-list {

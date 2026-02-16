@@ -1,6 +1,6 @@
 # BECA Setup App
 
-`BECA Setup` is a desktop installer/wizard for flashing BECA firmware and running the Serial -> MIDI bridge without manual terminal steps.
+`BECA Setup` is a desktop installer/wizard for flashing BECA firmware, provisioning Wi-Fi over USB, and running the Serial -> MIDI bridge without manual terminal steps.
 
 ## End-user manual
 
@@ -63,7 +63,13 @@ Named baseline for this cycle:
 - Firmware binary is downloaded and SHA256 verified before flash.
 - Flash uses bundled `espflash` (or `esptool` if provided).
 
-3. **Start Bridge**
+3. **Set Wi-Fi**
+- Scans nearby Wi-Fi SSIDs through a USB serial command channel.
+- Saves device name + SSID + password using firmware provisioning logic.
+- Supports `Forget Wi-Fi` and controlled reboot from the app.
+- AP setup page (`BECA-XXXX` + `http://192.168.4.1/setup`) remains as fallback.
+
+4. **Start Bridge**
 - Lists MIDI output destinations.
 - Starts bundled native `beca-bridge` process.
 - Auto-reconnects on serial disconnect.

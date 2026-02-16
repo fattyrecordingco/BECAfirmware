@@ -11,7 +11,7 @@
       <header class="topbar">
         <div class="brand">
           <h1>BECA Setup</h1>
-          <p>Plant Synth Installer + Serial MIDI Bridge</p>
+          <p>Plant Synth Installer + Wi-Fi Setup + Serial MIDI Bridge</p>
         </div>
         <div class="pill">ESP32-PICO-V3</div>
       </header>
@@ -45,9 +45,32 @@
         <p id="flash-status" class="hint">Waiting to flash.</p>
       </section>
 
-      <section class="card" id="step-bridge">
+      <section class="card" id="step-wifi">
         <div class="step-head">
           <span class="badge">Step 3</span>
+          <h2>Set Wi-Fi</h2>
+        </div>
+        <p id="wifi-status" class="hint">Connect BECA first to configure Wi-Fi over USB.</p>
+        <label for="wifi-name">Device Name (.local)</label>
+        <input id="wifi-name" type="text" placeholder="beca-xxxx" />
+        <label for="wifi-ssid">Wi-Fi Network (2.4GHz)</label>
+        <div class="row">
+          <select id="wifi-ssid">
+            <option value="">Scan networks</option>
+          </select>
+          <button id="btn-wifi-scan">Rescan Networks</button>
+        </div>
+        <label for="wifi-pass">Password</label>
+        <input id="wifi-pass" type="password" placeholder="********" />
+        <div class="row">
+          <button id="btn-wifi-save" class="primary">Save and Reboot</button>
+          <button id="btn-wifi-forget">Forget Wi-Fi</button>
+        </div>
+      </section>
+
+      <section class="card" id="step-bridge">
+        <div class="step-head">
+          <span class="badge">Step 4</span>
           <h2>Start Bridge</h2>
         </div>
         <label for="midi-select">MIDI Output</label>

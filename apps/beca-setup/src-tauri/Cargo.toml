@@ -19,6 +19,7 @@ beca-flasher = { path = "../../../tools/flasher" }
 chrono = { version = "0.4", features = ["serde"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+serialport = "4.7"
 tauri = { version = "2.2", features = [] }
 tokio = { version = "1.43", features = ["macros", "process", "rt-multi-thread", "io-util", "fs"] }
 tracing = "0.1"

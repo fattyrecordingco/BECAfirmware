@@ -73,17 +73,20 @@ sudo usermod -aG dialout $USER
 2. In BECA Setup Step 1, confirm your device/port appears.
 3. In Step 2, keep `Latest Stable` selected and click `Flash Selected Firmware`.
 4. Wait for success message (`Flash complete`).
-5. In Step 3, choose MIDI output and click `Start Bridge`.
-6. Click `Test Note` and check your DAW receives MIDI.
+5. In Step 3, choose your Wi-Fi network, enter password, and click `Save and Reboot`.
+6. In Step 4, choose MIDI output and click `Start Bridge`.
+7. Click `Test Note` and check your DAW receives MIDI.
 
 ### Step D: Open BECA control page in browser
 
-1. If this is first setup, connect to Wi-Fi `BECA-XXXX`.
-2. Open `http://192.168.4.1/setup`.
-3. Enter home Wi-Fi details and save.
-4. After reboot, open:
+1. After Step 3 Wi-Fi setup in BECA Setup, wait for reboot.
+2. Open:
 - `http://<device-ip>/` or
 - `http://<device-name>.local/`
+3. If USB Wi-Fi setup is unavailable on older firmware, use fallback AP setup:
+- Connect to Wi-Fi `BECA-XXXX`
+- Open `http://192.168.4.1/setup`
+- Enter home Wi-Fi details and save
 
 ### If anything fails
 
@@ -274,20 +277,21 @@ pio run -t upload
 
 ## 7) First-Time Wi-Fi Setup and UI Access
 
-On first boot (or after forgetting Wi-Fi), BECA enters setup mode.
+Preferred path (latest firmware + setup app):
 
-1. On your phone/laptop, connect to Wi-Fi network: `BECA-XXXX`.
-2. Setup page should open automatically.
-3. If it does not open, visit `http://192.168.4.1/setup`.
-4. Enter:
-- Device name (for `.local`, example `beca-1234`)
-- Home Wi-Fi SSID
-- Wi-Fi password
-5. Click `Save and Connect`.
-6. Wait for reboot.
-7. Open BECA UI using either:
+1. Connect BECA by USB and open `BECA Setup`.
+2. In app Step 3 (`Set Wi-Fi`), select SSID, enter password, and click `Save and Reboot`.
+3. Wait for reboot.
+4. Open BECA UI using either:
 - `http://<device-ip>/`
 - `http://<device-name>.local/`
+
+Fallback path (AP portal):
+
+1. Connect to Wi-Fi network: `BECA-XXXX`.
+2. Open `http://192.168.4.1/setup`.
+3. Enter device name, SSID, and password.
+4. Click `Save and Connect` and wait for reboot.
 
 Important:
 - Use `2.4 GHz` Wi-Fi (ESP32 requirement).
@@ -318,6 +322,7 @@ Notes:
 Use BECA Setup for the easiest end-user flow:
 - Detect BECA over USB
 - Flash latest stable firmware
+- Set Wi-Fi credentials directly over USB
 - Start Serial -> MIDI bridge
 
 ### Windows install and first run
@@ -329,8 +334,9 @@ Use BECA Setup for the easiest end-user flow:
 5. In Step 1, confirm detected port (example: `COM5`).
 6. In Step 2, leave firmware set to `Latest Stable` and click `Flash Selected Firmware`.
 7. Wait for `Flash complete` status.
-8. In Step 3, select your MIDI output and click `Start Bridge`.
-9. Click `Test Note` and confirm activity in your DAW.
+8. In Step 3, choose Wi-Fi SSID/password and click `Save and Reboot`.
+9. In Step 4, select your MIDI output and click `Start Bridge`.
+10. Click `Test Note` and confirm activity in your DAW.
 
 Windows notes:
 - Prefer installer `.exe` over a loose copied `beca-setup.exe`.
@@ -345,8 +351,8 @@ Windows notes:
 2. Open `.dmg` and drag `BECA Setup` into `Applications`.
 3. Open `BECA Setup` from Applications.
 4. If macOS blocks first launch, right-click app -> `Open`.
-5. Connect BECA via USB and complete Step 1, Step 2, Step 3 in the app.
-6. In your DAW, choose the same MIDI destination you selected in Step 3.
+5. Connect BECA via USB and complete Step 1 through Step 4 in the app.
+6. In your DAW, choose the same MIDI destination you selected in Step 4.
 
 macOS notes:
 - If serial access is denied, close any app already using the serial port.
@@ -367,7 +373,7 @@ chmod +x BECA\ Setup_*.AppImage
 ./BECA\ Setup_*.AppImage
 ```
 
-4. Connect BECA and complete Step 1, Step 2, Step 3 in order.
+4. Connect BECA and complete Step 1 through Step 4 in order.
 
 Linux notes:
 - If serial permission is denied, add your user to `dialout` and relogin:
@@ -386,7 +392,7 @@ Follow this section one line at a time, in order.
 ### One simple path that works for most people (recommended)
 
 1. Open `BECA Setup`.
-2. In Step 3, click `Start Bridge`.
+2. In Step 4, click `Start Bridge`.
 3. Open BECA control page in browser.
 4. Set output mode to `SERIAL`.
 5. Open your DAW.
@@ -399,7 +405,7 @@ Follow this section one line at a time, in order.
 
 1. Confirm your DAW track has an instrument loaded (piano/synth/etc).
 2. Confirm track monitoring is on.
-3. Confirm the selected MIDI input matches BECA Setup Step 3 exactly.
+3. Confirm the selected MIDI input matches BECA Setup Step 4 exactly.
 4. Click `Test Note` in BECA Setup.
 5. If Test Note works but plant data does not, re-check BECA mode is `SERIAL`.
 
@@ -424,8 +430,8 @@ Use this only if you want wireless MIDI and your DAW/OS supports BLE MIDI well.
 
 After flashing and reboot, open the BECA control page in a browser:
 
-1. If BECA is not configured yet, connect to Wi-Fi `BECA-XXXX`.
-2. Open `http://192.168.4.1/setup`, enter Wi-Fi credentials, and save.
+1. Preferred: configure Wi-Fi in BECA Setup Step 3 (`Set Wi-Fi`) over USB.
+2. If needed, fallback to AP portal: connect to `BECA-XXXX`, then open `http://192.168.4.1/setup`.
 3. After BECA joins your Wi-Fi, open either:
 - `http://<device-ip>/`
 - `http://<device-name>.local/`
@@ -491,7 +497,7 @@ If something fails, start here first.
 3. Wait 5 seconds.
 4. Plug BECA USB back in.
 5. Open only `BECA Setup`.
-6. Run Step 1 -> Step 2 -> Step 3 again.
+6. Run Step 1 -> Step 2 -> Step 3 -> Step 4 again.
 
 ### Problem: BECA not detected (no COM/serial port)
 
@@ -526,7 +532,7 @@ If something fails, start here first.
 
 ### Problem: DAW gets no notes in SERIAL mode
 
-1. Start bridge first in BECA Setup Step 3.
+1. Start bridge first in BECA Setup Step 4.
 2. Set BECA output mode to `SERIAL` in web UI.
 3. Enable the same MIDI port in DAW settings.
 4. Arm/record-enable a track.
@@ -534,10 +540,10 @@ If something fails, start here first.
 
 ### Problem: BECA web page does not open
 
-1. Connect to `BECA-XXXX` Wi-Fi.
-2. Open `http://192.168.4.1/setup`.
-3. Save Wi-Fi settings again.
-4. Use direct IP if `.local` is unavailable.
+1. In BECA Setup Step 3, run `Set Wi-Fi` again and wait for reboot.
+2. Open `http://<device-ip>/` from the same LAN.
+3. If `.local` does not resolve, use direct IP.
+4. Fallback: connect to `BECA-XXXX` and use `http://192.168.4.1/setup`.
 
 ### Problem: No audio in AUX OUT mode
 

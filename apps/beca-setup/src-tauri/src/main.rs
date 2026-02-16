@@ -9,12 +9,13 @@ use beca_flasher::{
     select_best_port, FirmwareManifest,
 };
 use chrono::Utc;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fs::{self, File};
-use std::io::Write;
+use std::io::{ErrorKind, Read, Write};
 use std::path::PathBuf;
 use std::process::Stdio;
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::fs as tokio_fs;
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -25,6 +26,7 @@ use zip::write::SimpleFileOptions;
 
 const DEFAULT_FIRMWARE_REPO: &str = "fattyrecordingco/BECAfirmware";
 const HARDWARE_ID: &str = "ESP32-PICO-V3";
+const SERIAL_CTRL_BAUD: u32 = 115200;
 
 #[derive(Default)]
 struct RuntimeState {
@@ -65,6 +67,33 @@ struct BridgeEvent {
 #[derive(Debug, Serialize)]
 struct MidiOutOption {
     name: String,
+}
+
+#[derive(Debug, Serialize)]
+struct WifiSetupInfo {
+    mode: String,
+    ip: String,
+    name: String,
+    ssid: String,
+    wifi_error: String,
+    wifi_hint: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct SerialWifiInfo {
+    mode: Option<String>,
+    ip: Option<String>,
+    name: Option<String>,
+    ssid: Option<String>,
+    wifi_error: Option<String>,
+    wifi_hint: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct WifiProvisionResult {
+    ok: bool,
+    msg: String,
+    hint: String,
 }
 
 #[tauri::command]
@@ -232,6 +261,115 @@ async fn list_midi_outputs() -> Result<Vec<MidiOutOption>, String> {
         .into_iter()
         .map(|out| MidiOutOption { name: out.name })
         .collect())
+}
+
+#[tauri::command]
+async fn scan_wifi_networks(serial_port: String) -> Result<Vec<String>, String> {
+    tokio::task::spawn_blocking(move || {
+        let payload = run_serial_command_json(&serial_port, "@C WIFI_SCAN", "WIFI_SCAN", 20_000)?;
+        let mut list = Vec::new();
+        if let Some(items) = payload.get("list").and_then(|v| v.as_array()) {
+            for item in items {
+                if let Some(ssid) = item.as_str() {
+                    if !ssid.is_empty() && !list.iter().any(|s| s == ssid) {
+                        list.push(ssid.to_string());
+                    }
+                }
+            }
+        }
+        Ok::<Vec<String>, anyhow::Error>(list)
+    })
+    .await
+    .map_err(err_to_string)?
+    .map_err(err_to_string)
+}
+
+#[tauri::command]
+async fn get_wifi_setup_info(serial_port: String) -> Result<WifiSetupInfo, String> {
+    tokio::task::spawn_blocking(move || {
+        let payload = run_serial_command_json(&serial_port, "@C WIFI_INFO", "WIFI_INFO", 8_000)?;
+        let info: SerialWifiInfo =
+            serde_json::from_value(payload).context("invalid WIFI_INFO payload from device")?;
+        Ok::<WifiSetupInfo, anyhow::Error>(WifiSetupInfo {
+            mode: info.mode.unwrap_or_else(|| "ap".to_string()),
+            ip: info.ip.unwrap_or_default(),
+            name: info.name.unwrap_or_default(),
+            ssid: info.ssid.unwrap_or_default(),
+            wifi_error: info.wifi_error.unwrap_or_default(),
+            wifi_hint: info.wifi_hint.unwrap_or_default(),
+        })
+    })
+    .await
+    .map_err(err_to_string)?
+    .map_err(err_to_string)
+}
+
+#[tauri::command]
+async fn save_wifi_credentials(
+    serial_port: String,
+    name: String,
+    ssid: String,
+    pass: String,
+) -> Result<WifiProvisionResult, String> {
+    tokio::task::spawn_blocking(move || {
+        let command = format!(
+            "@C WIFI_SAVE name={}&ssid={}&pass={}",
+            url_encode_component(&name),
+            url_encode_component(&ssid),
+            url_encode_component(&pass)
+        );
+        let payload = run_serial_command_json(&serial_port, &command, "WIFI_SAVE", 25_000)?;
+        Ok::<WifiProvisionResult, anyhow::Error>(WifiProvisionResult {
+            ok: json_flag(&payload, "ok"),
+            msg: payload
+                .get("msg")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Wi-Fi setup command completed.")
+                .to_string(),
+            hint: payload
+                .get("hint")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+        })
+    })
+    .await
+    .map_err(err_to_string)?
+    .map_err(err_to_string)
+}
+
+#[tauri::command]
+async fn forget_wifi_credentials(serial_port: String) -> Result<WifiProvisionResult, String> {
+    tokio::task::spawn_blocking(move || {
+        let payload = run_serial_command_json(&serial_port, "@C WIFI_FORGET", "WIFI_FORGET", 8_000)?;
+        Ok::<WifiProvisionResult, anyhow::Error>(WifiProvisionResult {
+            ok: json_flag(&payload, "ok"),
+            msg: payload
+                .get("msg")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Saved Wi-Fi removed.")
+                .to_string(),
+            hint: payload
+                .get("hint")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+        })
+    })
+    .await
+    .map_err(err_to_string)?
+    .map_err(err_to_string)
+}
+
+#[tauri::command]
+async fn reboot_device(serial_port: String) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        let _ = run_serial_command_json(&serial_port, "@C REBOOT", "REBOOT", 8_000)?;
+        Ok::<(), anyhow::Error>(())
+    })
+    .await
+    .map_err(err_to_string)?
+    .map_err(err_to_string)
 }
 
 #[tauri::command]
@@ -470,6 +608,114 @@ where
     });
 }
 
+fn run_serial_command_json(
+    serial_port: &str,
+    command: &str,
+    expected_tag: &str,
+    timeout_ms: u64,
+) -> anyhow::Result<Value> {
+    let mut port = serialport::new(serial_port, SERIAL_CTRL_BAUD)
+        .timeout(Duration::from_millis(250))
+        .open()
+        .with_context(|| format!("failed to open serial port {serial_port}"))?;
+
+    let _ = port.clear(serialport::ClearBuffer::All);
+    port.write_all(command.as_bytes())
+        .with_context(|| format!("failed writing command to {serial_port}"))?;
+    port.write_all(b"\n")
+        .with_context(|| format!("failed writing newline to {serial_port}"))?;
+    port.flush()
+        .with_context(|| format!("failed flushing command to {serial_port}"))?;
+
+    let deadline = Instant::now() + Duration::from_millis(timeout_ms);
+    let mut line = Vec::<u8>::with_capacity(320);
+    let mut byte = [0u8; 1];
+
+    while Instant::now() < deadline {
+        match port.read(&mut byte) {
+            Ok(0) => continue,
+            Ok(_) => {
+                let b = byte[0];
+                if b == b'\r' {
+                    continue;
+                }
+                if b != b'\n' {
+                    if line.len() < 4096 {
+                        line.push(b);
+                    } else {
+                        line.clear();
+                    }
+                    continue;
+                }
+                if line.is_empty() {
+                    continue;
+                }
+
+                let raw = String::from_utf8_lossy(&line).trim().to_string();
+                line.clear();
+
+                if let Some(rest) = raw.strip_prefix("@R ") {
+                    let mut split = rest.splitn(2, ' ');
+                    let tag = split.next().unwrap_or("").trim();
+                    let payload = split.next().unwrap_or("{}").trim();
+                    if tag.eq_ignore_ascii_case(expected_tag) {
+                        let value: Value = serde_json::from_str(payload)
+                            .with_context(|| format!("invalid JSON payload for {expected_tag}: {payload}"))?;
+                        return Ok(value);
+                    }
+                    if tag.eq_ignore_ascii_case("ERR") {
+                        let value: Value = serde_json::from_str(payload).unwrap_or_else(|_| {
+                            serde_json::json!({"ok":0,"msg":"device returned malformed error payload"})
+                        });
+                        let msg = value
+                            .get("msg")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("device returned an error");
+                        return Err(anyhow!(msg.to_string()));
+                    }
+                }
+            }
+            Err(err) => {
+                if matches!(err.kind(), ErrorKind::TimedOut | ErrorKind::WouldBlock) {
+                    continue;
+                }
+                return Err(anyhow!(format!(
+                    "serial read failed on {serial_port}: {err}"
+                )));
+            }
+        }
+    }
+
+    Err(anyhow!(
+        "Timed out waiting for device response ({expected_tag}). Flash latest firmware and retry Wi-Fi setup."
+    ))
+}
+
+fn json_flag(payload: &Value, key: &str) -> bool {
+    payload.get(key).map_or(false, |v| match v {
+        Value::Bool(b) => *b,
+        Value::Number(n) => n.as_i64().unwrap_or(0) != 0,
+        Value::String(s) => s == "1" || s.eq_ignore_ascii_case("true"),
+        _ => false,
+    })
+}
+
+fn url_encode_component(input: &str) -> String {
+    let mut out = String::with_capacity(input.len() + 16);
+    for byte in input.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(char::from(byte))
+            }
+            b' ' => out.push('+'),
+            _ => {
+                let _ = std::fmt::Write::write_fmt(&mut out, format_args!("%{byte:02X}"));
+            }
+        }
+    }
+    out
+}
+
 fn resolve_flash_tool_for_app(app: &AppHandle) -> Result<(FlashTool, PathBuf), String> {
     let dirs = candidate_binary_dirs(app);
     for dir in dirs {
@@ -606,6 +852,11 @@ pub fn run() {
             backup_settings,
             restore_settings,
             list_midi_outputs,
+            scan_wifi_networks,
+            get_wifi_setup_info,
+            save_wifi_credentials,
+            forget_wifi_credentials,
+            reboot_device,
             start_bridge,
             stop_bridge,
             send_test_note,
