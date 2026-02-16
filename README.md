@@ -566,6 +566,9 @@ Windows local build command:
 powershell -ExecutionPolicy Bypass -File tools/build_setup_windows.ps1
 ```
 
+Linux CI packaging note:
+- `.github/workflows/setup-installer-release.yml` installs `libasound2-dev` and `libudev-dev` so `beca-bridge` sidecar builds on Ubuntu runners.
+
 Cross-platform installer mirror (from published setup release):
 
 ```powershell
