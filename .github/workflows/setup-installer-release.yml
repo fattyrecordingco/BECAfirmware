@@ -5,6 +5,9 @@ on:
   release:
     types: [published]
 
+permissions:
+  contents: write
+
 jobs:
   build-installers:
     if: github.event_name == 'workflow_dispatch' || startsWith(github.event.release.tag_name, 'setup-v')
@@ -92,3 +95,75 @@ jobs:
             apps/beca-setup/src-tauri/target/release/bundle/**/*.dmg
             apps/beca-setup/src-tauri/target/release/bundle/**/*.AppImage
             apps/beca-setup/src-tauri/target/release/bundle/**/*.deb
+
+  sync-installer-mirror:
+    needs: build-installers
+    if: needs.build-installers.result == 'success' && github.repository == 'fattyrecordingco/BECAfirmware'
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout master
+        uses: actions/checkout@v4
+        with:
+          ref: master
+
+      - name: Download installer artifacts from this run
+        uses: actions/download-artifact@v4
+        with:
+          pattern: beca-setup-*
+          path: ${{ runner.temp }}/beca-setup-artifacts
+
+      - name: Sync cross-platform installer mirror
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          artifact_root="${RUNNER_TEMP}/beca-setup-artifacts"
+          mirror_root="${GITHUB_WORKSPACE}/apps/beca-setup/dist-installer"
+
+          rm -rf "${mirror_root}/windows" "${mirror_root}/macos" "${mirror_root}/linux"
+          mkdir -p "${mirror_root}/windows" "${mirror_root}/macos" "${mirror_root}/linux"
+
+          while IFS= read -r -d '' file; do
+            lower="$(echo "${file}" | tr '[:upper:]' '[:lower:]')"
+            case "${lower}" in
+              *.dmg)
+                cp "${file}" "${mirror_root}/macos/"
+                ;;
+              *.appimage|*.deb)
+                cp "${file}" "${mirror_root}/linux/"
+                ;;
+              *.exe|*.msi|*.zip|*webview2loader.dll)
+                cp "${file}" "${mirror_root}/windows/"
+                ;;
+            esac
+          done < <(find "${artifact_root}" -type f -print0)
+
+          if ! find "${mirror_root}/windows" -maxdepth 1 -type f \( -iname "*x64-setup.exe" -o -iname "*.msi" \) -print -quit | grep -q .; then
+            echo "Missing Windows installer artifacts in mirror."
+            exit 1
+          fi
+          if ! find "${mirror_root}/macos" -maxdepth 1 -type f -iname "*.dmg" -print -quit | grep -q .; then
+            echo "Missing macOS installer artifacts in mirror."
+            exit 1
+          fi
+          if ! find "${mirror_root}/linux" -maxdepth 1 -type f \( -iname "*.AppImage" -o -iname "*.deb" \) -print -quit | grep -q .; then
+            echo "Missing Linux installer artifacts in mirror."
+            exit 1
+          fi
+
+      - name: Commit installer mirror updates
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if git diff --quiet -- apps/beca-setup/dist-installer; then
+            echo "No installer mirror changes."
+            exit 0
+          fi
+
+          git add -f apps/beca-setup/dist-installer
+          git commit -m "chore(setup): sync installer mirror (windows/macos/linux)"
+          git push origin HEAD:master

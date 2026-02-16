@@ -17,16 +17,21 @@ No coding is required.
 
 ### Important: ZIP vs installer
 
-If you click `Code` -> `Download ZIP`, you get source files and this manual.
-The installer app is downloaded from `Releases`, not from inside the ZIP.
+If you click `Code` -> `Download ZIP` from `master`, installers are mirrored inside:
+`apps/beca-setup/dist-installer/`.
+If your OS installer is missing there, use `Releases` as fallback.
 
-### Step A: Open Releases and download the correct installer
+### Step A: Locate and download the correct installer
 
-1. On the GitHub page, click `Releases` (right side panel).
+1. First check inside the extracted ZIP:
+- `apps/beca-setup/dist-installer/windows/`
+- `apps/beca-setup/dist-installer/macos/`
+- `apps/beca-setup/dist-installer/linux/`
 2. Download exactly one file for your OS:
 - Windows: `BECA Setup_*_x64-setup.exe`
 - macOS: `BECA Setup_*.dmg`
 - Linux: `BECA Setup_*.AppImage`
+3. If your OS file is not present in ZIP, open GitHub `Releases` and download the same OS file there.
 
 ### Step B: Install by operating system
 
@@ -560,6 +565,23 @@ Windows local build command:
 ```powershell
 powershell -ExecutionPolicy Bypass -File tools/build_setup_windows.ps1
 ```
+
+Cross-platform installer mirror (from published setup release):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools/sync_setup_installers.ps1 -Clean
+```
+
+Outputs after sync:
+- `apps/beca-setup/dist-installer/windows/*`
+- `apps/beca-setup/dist-installer/macos/*.dmg`
+- `apps/beca-setup/dist-installer/linux/*.AppImage`
+- `apps/beca-setup/dist-installer/linux/*.deb`
+
+Important:
+- This requires a published release tag matching `setup-v*`.
+- If no setup release exists yet, the script exits with a clear error.
+- CI also mirrors installers into this folder automatically after successful `Build Setup Installer` workflow runs (release or manual dispatch).
 
 ## 18) Project File Map
 
