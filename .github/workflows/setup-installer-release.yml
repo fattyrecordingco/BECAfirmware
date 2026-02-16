@@ -75,12 +75,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if cargo build -p beca-bridge --release -vv; then
+          unset CARGO_BUILD_TARGET
+          host_triple="$(rustc -vV | sed -n 's/^host: //p')"
+          export PKG_CONFIG_ALLOW_CROSS=1
+          if cargo build -p beca-bridge --release --target "${host_triple}" -vv; then
             exit 0
           fi
           echo "First beca-bridge build failed, retrying once..."
           sleep 5
-          cargo build -p beca-bridge --release -vv
+          cargo build -p beca-bridge --release --target "${host_triple}" -vv
 
       - name: Install espflash sidecar
         run: cargo install espflash --locked --version 4.2.0
