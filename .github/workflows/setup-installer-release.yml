@@ -37,6 +37,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
+            build-essential \
+            pkg-config \
             libwebkit2gtk-4.1-dev \
             libgtk-3-dev \
             libayatana-appindicator3-dev \
@@ -49,10 +51,11 @@ jobs:
         working-directory: apps/beca-setup
         run: npm install
 
-      - name: Build native sidecars
-        run: |
-          cargo build -p beca-bridge --release
-          cargo build -p beca-flasher --release
+      - name: Build flasher sidecar
+        run: cargo build -p beca-flasher --release -vv
+
+      - name: Build bridge sidecar
+        run: cargo build -p beca-bridge --release -vv
 
       - name: Install espflash sidecar
         run: cargo install espflash --locked --version 4.2.0
@@ -85,18 +88,19 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: beca-setup-${{ matrix.os }}
-          path: apps/beca-setup/src-tauri/target/release/bundle/**
+          path: target/release/bundle/**
+          if-no-files-found: error
 
       - name: Attach artifacts to GitHub Release
         if: github.event_name == 'release'
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            apps/beca-setup/src-tauri/target/release/bundle/**/*.msi
-            apps/beca-setup/src-tauri/target/release/bundle/**/*.exe
-            apps/beca-setup/src-tauri/target/release/bundle/**/*.dmg
-            apps/beca-setup/src-tauri/target/release/bundle/**/*.AppImage
-            apps/beca-setup/src-tauri/target/release/bundle/**/*.deb
+            target/release/bundle/**/*.msi
+            target/release/bundle/**/*.exe
+            target/release/bundle/**/*.dmg
+            target/release/bundle/**/*.AppImage
+            target/release/bundle/**/*.deb
 
   sync-installer-mirror:
     needs: build-installers
