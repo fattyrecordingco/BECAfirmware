@@ -2,6 +2,9 @@ name: Build Setup Installer
 
 on:
   workflow_dispatch:
+  push:
+    tags:
+      - "setup-v*"
   release:
     types: [published]
 
@@ -10,7 +13,10 @@ permissions:
 
 jobs:
   build-installers:
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.event.release.tag_name, 'setup-v')
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'release' && startsWith(github.event.release.tag_name, 'setup-v')) ||
+      (github.event_name == 'push' && startsWith(github.ref_name, 'setup-v'))
     strategy:
       fail-fast: false
       matrix:
