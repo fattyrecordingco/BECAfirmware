@@ -8,7 +8,7 @@ For complete user instructions (Windows/macOS/Linux install, DAW setup, and BECA
 - `README.md` sections `10` through `16`
 
 Current setup app version baseline in this branch:
-- `0.1.2`
+- `0.1.3`
 
 ## Final architecture choice
 

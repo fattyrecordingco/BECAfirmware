@@ -32,7 +32,9 @@ const el = {
 
 const state = {
   selectedPort: null,
-  logLines: []
+  logLines: [],
+  flashInProgress: false,
+  wifiOpInFlight: false
 };
 
 function addLog(line) {
@@ -54,17 +56,37 @@ function setWifiStatus(message, tone = "") {
   if (tone) el.wifiStatus.classList.add(tone);
 }
 
+function setWifiControlsEnabled(enabled) {
+  el.btnWifiScan.disabled = !enabled;
+  el.btnWifiSave.disabled = !enabled;
+  el.btnWifiForget.disabled = !enabled;
+  el.wifiName.disabled = !enabled;
+  el.wifiSsid.disabled = !enabled;
+  el.wifiPass.disabled = !enabled;
+}
+
 function resetWifiSection() {
   el.wifiName.value = "";
   el.wifiPass.value = "";
   el.wifiSsid.innerHTML = '<option value="">Connect BECA first</option>';
+  setWifiControlsEnabled(Boolean(state.selectedPort) && !state.flashInProgress && !state.wifiOpInFlight);
   setWifiStatus("Connect BECA first to configure Wi-Fi over USB.");
 }
 
 function wifiSetupFallbackMessage(err) {
   const text = String(err || "");
-  if (text.toLowerCase().includes("timed out waiting for device response")) {
-    return "This firmware does not support USB Wi-Fi setup yet. Flash latest firmware, or use BECA-XXXX and http://192.168.4.1/setup.";
+  const lower = text.toLowerCase();
+  if (lower.includes("bridge is running")) {
+    return "Stop Bridge in Step 4 before Wi-Fi setup.";
+  }
+  if (lower.includes("busy") || lower.includes("access is denied") || lower.includes("permission denied")) {
+    return "Serial port is busy. Close Arduino Serial Monitor/other serial apps, stop Bridge, wait 3 seconds, then retry.";
+  }
+  if (lower.includes("no control response")) {
+    return "BECA is rebooting or did not accept serial setup command yet. Wait 10 seconds, then retry.";
+  }
+  if (lower.includes("timed out waiting for device response")) {
+    return "No serial setup response yet. If firmware is old, flash latest; otherwise wait 10 seconds and retry.";
   }
   return `Wi-Fi setup command failed: ${text}`;
 }
@@ -74,6 +96,10 @@ async function refreshWifiNetworks(preferredSsid = "") {
     resetWifiSection();
     return;
   }
+
+  if (state.wifiOpInFlight) return;
+  state.wifiOpInFlight = true;
+  setWifiControlsEnabled(false);
 
   try {
     const list = await invoke("scan_wifi_networks", { serialPort: state.selectedPort });
@@ -101,6 +127,9 @@ async function refreshWifiNetworks(preferredSsid = "") {
   } catch (err) {
     addLog(`Wi-Fi scan failed: ${err}`);
     setWifiStatus(wifiSetupFallbackMessage(err), "error");
+  } finally {
+    state.wifiOpInFlight = false;
+    setWifiControlsEnabled(Boolean(state.selectedPort) && !state.flashInProgress);
   }
 }
 
@@ -109,6 +138,10 @@ async function refreshWifiInfo() {
     resetWifiSection();
     return null;
   }
+
+  if (state.wifiOpInFlight) return null;
+  state.wifiOpInFlight = true;
+  setWifiControlsEnabled(false);
 
   try {
     const info = await invoke("get_wifi_setup_info", { serialPort: state.selectedPort });
@@ -128,6 +161,9 @@ async function refreshWifiInfo() {
     addLog(`Wi-Fi info failed: ${err}`);
     setWifiStatus(wifiSetupFallbackMessage(err), "error");
     return null;
+  } finally {
+    state.wifiOpInFlight = false;
+    setWifiControlsEnabled(Boolean(state.selectedPort) && !state.flashInProgress);
   }
 }
 
@@ -138,7 +174,14 @@ async function refreshWifiSection() {
   }
 
   const info = await refreshWifiInfo();
-  await refreshWifiNetworks(info?.ssid || "");
+  if (info?.ssid && !el.wifiSsid.value) {
+    const option = document.createElement("option");
+    option.value = info.ssid;
+    option.textContent = info.ssid;
+    el.wifiSsid.innerHTML = "";
+    el.wifiSsid.appendChild(option);
+    el.wifiSsid.value = info.ssid;
+  }
 }
 
 async function refreshDevice() {
@@ -164,6 +207,7 @@ async function refreshDevice() {
     }
 
     addLog(`Device scan result: ${JSON.stringify(result)}`);
+    setWifiControlsEnabled(Boolean(state.selectedPort) && !state.flashInProgress && !state.wifiOpInFlight);
     await refreshWifiSection();
   } catch (err) {
     addLog(`Device scan failed: ${err}`);
@@ -214,6 +258,8 @@ async function doFlash() {
     return;
   }
 
+  state.flashInProgress = true;
+  setWifiControlsEnabled(false);
   const version = el.firmwareSelect.value;
   el.flashProgress.value = 5;
   el.flashStatus.textContent = "Preparing flash...";
@@ -227,11 +273,16 @@ async function doFlash() {
     el.flashProgress.value = 100;
     el.flashStatus.textContent = "Firmware flashed successfully.";
     addLog("Flash succeeded.");
-    setWifiStatus("Firmware updated. You can now set Wi-Fi in Step 3.");
-    await refreshWifiSection();
+    setWifiStatus("Firmware flashed. Wait for BECA reboot, then click Rescan Networks.", "ok");
+    setTimeout(() => {
+      refreshWifiSection().catch((err) => addLog(`Wi-Fi info refresh after flash failed: ${err}`));
+    }, 9000);
   } catch (err) {
     el.flashStatus.textContent = `Flash failed: ${err}`;
     addLog(`Flash failed: ${err}`);
+  } finally {
+    state.flashInProgress = false;
+    setWifiControlsEnabled(Boolean(state.selectedPort) && !state.wifiOpInFlight);
   }
 }
 
@@ -260,6 +311,10 @@ async function doRestore() {
 }
 
 async function scanWifi() {
+  if (state.flashInProgress) {
+    setWifiStatus("Firmware is flashing. Wait for completion, then retry.", "error");
+    return;
+  }
   await refreshWifiNetworks(el.wifiSsid.value || "");
 }
 
@@ -274,7 +329,10 @@ async function saveWifi() {
     setWifiStatus("Choose a Wi-Fi network first.", "error");
     return;
   }
+  if (state.flashInProgress || state.wifiOpInFlight) return;
 
+  state.wifiOpInFlight = true;
+  setWifiControlsEnabled(false);
   setWifiStatus("Saving Wi-Fi and testing connection. This can take up to 15 seconds.");
   addLog(`Wi-Fi save requested for SSID ${ssid}`);
 
@@ -308,6 +366,9 @@ async function saveWifi() {
   } catch (err) {
     setWifiStatus(wifiSetupFallbackMessage(err), "error");
     addLog(`Wi-Fi save command failed: ${err}`);
+  } finally {
+    state.wifiOpInFlight = false;
+    setWifiControlsEnabled(Boolean(state.selectedPort) && !state.flashInProgress);
   }
 }
 
@@ -316,7 +377,10 @@ async function forgetWifi() {
     setWifiStatus("Connect BECA first.", "error");
     return;
   }
+  if (state.flashInProgress || state.wifiOpInFlight) return;
 
+  state.wifiOpInFlight = true;
+  setWifiControlsEnabled(false);
   try {
     const result = await invoke("forget_wifi_credentials", { serialPort: state.selectedPort });
     setWifiStatus(`${result.msg}${result.hint ? ` ${result.hint}` : ""}`, result.ok ? "ok" : "error");
@@ -327,6 +391,9 @@ async function forgetWifi() {
   } catch (err) {
     setWifiStatus(wifiSetupFallbackMessage(err), "error");
     addLog(`Wi-Fi forget failed: ${err}`);
+  } finally {
+    state.wifiOpInFlight = false;
+    setWifiControlsEnabled(Boolean(state.selectedPort) && !state.flashInProgress);
   }
 }
 

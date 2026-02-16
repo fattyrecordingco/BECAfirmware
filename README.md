@@ -514,7 +514,7 @@ If something fails, start here first.
 2. Click `Rescan Device` in Step 1.
 3. Try flash again in Step 2.
 4. If your board has a `BOOT` button, hold it as flash starts.
-5. If error mentions `unexpected argument '--port'`, install BECA Setup `0.1.2` or newer.
+5. If error mentions `unexpected argument '--port'`, install BECA Setup `0.1.3` or newer.
 
 ### Problem: BECA Setup opens, but firmware list does not load
 
@@ -529,6 +529,14 @@ If something fails, start here first.
 2. Stop bridge, wait 3 seconds, start bridge again.
 3. Unplug/replug BECA if needed.
 4. Keep only one app connected to BECA serial at a time.
+
+### Problem: Step 3 Wi-Fi scan/info times out or says serial port busy
+
+1. After flashing in Step 2, wait at least 10 seconds before running Step 3.
+2. Stop bridge in Step 4 before scanning/saving Wi-Fi.
+3. Close Arduino Serial Monitor and any other serial tools.
+4. Click `Rescan Device`, then `Rescan Networks`.
+5. If still failing, flash latest firmware again and retry.
 
 ### Problem: DAW gets no notes in SERIAL mode
 

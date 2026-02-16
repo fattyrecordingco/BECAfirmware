@@ -1853,8 +1853,9 @@ const uint32_t WIFI_CHECK_MS = 1000;
 const uint32_t WIFI_RECONNECT_MS = 5000;
 const uint32_t WIFI_RESET_MS = 30000;
 const uint32_t WIFI_RESET_COOLDOWN_MS = 60000;
-char gSerialCtrlBuf[320];
+char gSerialCtrlBuf[192];
 uint16_t gSerialCtrlLen = 0;
+bool gSerialCtrlCollect = false;
 
 static inline bool setupPortalActive() {
   wifi_mode_t mode = WiFi.getMode();
@@ -1950,43 +1951,12 @@ static inline void sendCaptiveRedirect(const String &target = "/setup") {
   }
 }
 
-static inline void appendJsonEscaped(String &out, const String &in) {
-  for (size_t i = 0; i < in.length(); ++i) {
-    const char c = in.charAt(i);
-    switch (c) {
-      case '\"': out += "\\\""; break;
-      case '\\': out += "\\\\"; break;
-      case '\b': out += "\\b";  break;
-      case '\f': out += "\\f";  break;
-      case '\n': out += "\\n";  break;
-      case '\r': out += "\\r";  break;
-      case '\t': out += "\\t";  break;
-      default:
-        if ((uint8_t)c < 0x20) {
-          char code[7];
-          snprintf(code, sizeof(code), "\\u%04X", (unsigned)((uint8_t)c));
-          out += code;
-        } else {
-          out += c;
-        }
-        break;
-    }
-  }
-}
-
-static inline String jsonQuoted(const String &in) {
-  String out = "\"";
-  appendJsonEscaped(out, in);
-  out += "\"";
-  return out;
-}
-
 static inline String buildWifiScanJson() {
   int n = WiFi.scanNetworks();
   String json = "{\"list\":[";
   for (int i = 0; i < n; i++) {
     if (i) json += ',';
-    json += jsonQuoted(WiFi.SSID(i));
+    json += '\"'; json += WiFi.SSID(i); json += '\"';
     delay(0);
   }
   json += "]}";
@@ -1995,55 +1965,18 @@ static inline String buildWifiScanJson() {
 
 static inline String buildApiInfoJson() {
   String json = "{";
-  json += "\"mode\":";         json += jsonQuoted(setupPortalActive() ? "ap" : "sta"); json += ",";
-  json += "\"ip\":";           json += jsonQuoted(gIsSta ? WiFi.localIP().toString() : gApIP.toString()); json += ",";
-  json += "\"name\":";         json += jsonQuoted(gDeviceName); json += ",";
-  json += "\"ssid\":";         json += jsonQuoted(gStaSsid); json += ",";
-  json += "\"wifi_error\":";   json += jsonQuoted(gWifiLastError); json += ",";
-  json += "\"wifi_hint\":";    json += jsonQuoted(gWifiLastHint); json += ",";
-  json += "\"midimode\":";     json += (outputModeIsSerial() ? 1 : 0); json += ",";
-  json += "\"outputmode\":";   json += jsonQuoted(outputModeName(gOutputMode)); json += ",";
-  json += "\"io_muted\":";     json += (ioMuteActive() ? 1 : 0); json += ",";
+  json += "\"mode\":\"";   json += (setupPortalActive() ? "ap" : "sta"); json += "\",";
+  json += "\"ip\":\"";     json += (gIsSta ? WiFi.localIP().toString() : gApIP.toString()); json += "\",";
+  json += "\"name\":\"";   json += gDeviceName; json += "\",";
+  json += "\"ssid\":\"";   json += gStaSsid;    json += "\",";
+  json += "\"wifi_error\":\""; json += gWifiLastError; json += "\",";
+  json += "\"wifi_hint\":\"";  json += gWifiLastHint;  json += "\",";
+  json += "\"midimode\":"; json += (outputModeIsSerial() ? 1 : 0); json += ",";
+  json += "\"outputmode\":\""; json += outputModeName(gOutputMode); json += "\",";
+  json += "\"io_muted\":"; json += (ioMuteActive() ? 1 : 0); json += ",";
   json += "\"ble_connected\":"; json += (gMidiConnected ? 1 : 0);
   json += "}";
   return json;
-}
-
-static inline int hexNibble(char c) {
-  if (c >= '0' && c <= '9') return c - '0';
-  if (c >= 'a' && c <= 'f') return c - 'a' + 10;
-  if (c >= 'A' && c <= 'F') return c - 'A' + 10;
-  return -1;
-}
-
-static inline String urlDecodeComponent(const String &in) {
-  String out;
-  out.reserve(in.length());
-  for (size_t i = 0; i < in.length(); ++i) {
-    char c = in.charAt(i);
-    if (c == '+') {
-      out += ' ';
-      continue;
-    }
-    if (c == '%' && (i + 2) < in.length()) {
-      int hi = hexNibble(in.charAt(i + 1));
-      int lo = hexNibble(in.charAt(i + 2));
-      if (hi >= 0 && lo >= 0) {
-        out += (char)((hi << 4) | lo);
-        i += 2;
-        continue;
-      }
-    }
-    out += c;
-  }
-  return out;
-}
-
-static inline void serialReplyJson(const char *tag, const String &json) {
-  Serial.print("@R ");
-  Serial.print(tag);
-  Serial.print(" ");
-  Serial.println(json);
 }
 
 const char SETUP_HTML[] PROGMEM = R"HTML(
@@ -2180,7 +2113,7 @@ static inline bool applyWifiProvisioning(
   String &hint
 ) {
   gDeviceName = nextName;
-  const bool ok = testStaFromPortal(nextSsid, nextPass, msg, hint);
+  bool ok = testStaFromPortal(nextSsid, nextPass, msg, hint);
   if (ok) {
     gStaSsid = nextSsid;
     gStaPass = nextPass;
@@ -2200,6 +2133,17 @@ static inline bool applyWifiProvisioning(
   prefs.putString("name", gDeviceName);
   prefs.end();
   return false;
+}
+
+static inline void clearSavedWifiCredentials() {
+  prefs.begin("beca", false);
+  prefs.remove("ssid");
+  prefs.remove("pass");
+  prefs.end();
+  gStaSsid = "";
+  gStaPass = "";
+  gWifiLastError = "No Wi-Fi saved yet.";
+  gWifiLastHint = "Pick a 2.4GHz Wi-Fi network to continue.";
 }
 
 static inline void handleWifiSave() {
@@ -2225,19 +2169,8 @@ static inline void handleWifiSave() {
     return;
   }
 
-  String errJson = "{\"ok\":0,\"msg\":" + jsonQuoted(msg) + ",\"hint\":" + jsonQuoted(hint) + "}";
+  String errJson = "{\"ok\":0,\"msg\":\"" + msg + "\",\"hint\":\"" + hint + "\"}";
   server.send(200, "application/json", errJson);
-}
-
-static inline void clearSavedWifiCredentials() {
-  prefs.begin("beca", false);
-  prefs.remove("ssid");
-  prefs.remove("pass");
-  prefs.end();
-  gStaSsid = "";
-  gStaPass = "";
-  gWifiLastError = "No Wi-Fi saved yet.";
-  gWifiLastHint = "Pick a 2.4GHz Wi-Fi network to continue.";
 }
 
 static inline void handleWifiForget() {
@@ -2253,111 +2186,89 @@ static inline void handleReboot() {
   ESP.restart();
 }
 
-static inline void parseWifiSavePayload(const String &payload, String &nameOut, String &ssidOut, String &passOut) {
-  int start = 0;
-  while (start <= payload.length()) {
-    int amp = payload.indexOf('&', start);
-    String token = (amp >= 0) ? payload.substring(start, amp) : payload.substring(start);
-    int eq = token.indexOf('=');
-    if (eq > 0) {
-      String key = token.substring(0, eq);
-      String val = urlDecodeComponent(token.substring(eq + 1));
-      key.trim();
-      key.toLowerCase();
-      if (key == "name") nameOut = val;
-      else if (key == "ssid") ssidOut = val;
-      else if (key == "pass") passOut = val;
-    }
-    if (amp < 0) break;
-    start = amp + 1;
-  }
+static inline void serialCtrlReply(const char *tag, const String &jsonPayload) {
+  Serial.print("@R ");
+  Serial.print(tag);
+  Serial.print(" ");
+  Serial.println(jsonPayload);
 }
 
-static inline String wifiResultJson(bool ok, const String &msg, const String &hint) {
+static inline String wifiResultJsonRaw(bool ok, const String &msg, const String &hint) {
   String out = "{\"ok\":";
   out += (ok ? "1" : "0");
-  out += ",\"msg\":";
-  out += jsonQuoted(msg);
-  out += ",\"hint\":";
-  out += jsonQuoted(hint);
-  out += "}";
+  out += ",\"msg\":\"";
+  out += msg;
+  out += "\",\"hint\":\"";
+  out += hint;
+  out += "\"}";
   return out;
 }
 
-static inline void handleSerialControlCommand(const String &line) {
-  String cmd = line;
-  cmd.trim();
-  if (!cmd.startsWith("@C ")) return;
+static inline void handleSerialControlLine(const char *line) {
+  if (!line || strncmp(line, "@C ", 3) != 0) return;
+  const char *cmd = line + 3;
 
-  cmd = cmd.substring(3);
-  cmd.trim();
-  if (cmd.length() == 0) return;
-
-  int split = cmd.indexOf(' ');
-  String verb = (split >= 0) ? cmd.substring(0, split) : cmd;
-  String args = (split >= 0) ? cmd.substring(split + 1) : "";
-  verb.trim();
-  args.trim();
-  verb.toUpperCase();
-
-  if (verb == "PING") {
-    serialReplyJson("PING", "{\"ok\":1}");
+  if (strcmp(cmd, "PING") == 0) {
+    serialCtrlReply("PING", "{\"ok\":1}");
     return;
   }
 
-  if (verb == "WIFI_SCAN") {
-    serialReplyJson("WIFI_SCAN", buildWifiScanJson());
+  if (strcmp(cmd, "WIFI_SCAN") == 0) {
+    serialCtrlReply("WIFI_SCAN", buildWifiScanJson());
     return;
   }
 
-  if (verb == "WIFI_INFO") {
-    serialReplyJson("WIFI_INFO", buildApiInfoJson());
+  if (strcmp(cmd, "WIFI_INFO") == 0) {
+    serialCtrlReply("WIFI_INFO", buildApiInfoJson());
     return;
   }
 
-  if (verb == "WIFI_SAVE") {
-    String nextName = gDeviceName;
-    String nextSsid = "";
-    String nextPass = "";
-    parseWifiSavePayload(args, nextName, nextSsid, nextPass);
+  if (strncmp(cmd, "WIFI_SAVE", 9) == 0) {
+    const char *payload = cmd + 9;
+    if (*payload == ' ') payload++;
+    String packed = String(payload);
+    int t1 = packed.indexOf('\t');
+    int t2 = (t1 >= 0) ? packed.indexOf('\t', t1 + 1) : -1;
+    if (t1 <= 0 || t2 <= t1) {
+      serialCtrlReply("WIFI_SAVE", "{\"ok\":0,\"msg\":\"Malformed WIFI_SAVE payload.\",\"hint\":\"Retry from setup app.\"}");
+      return;
+    }
+
+    String nextName = packed.substring(0, t1);
+    String nextSsid = packed.substring(t1 + 1, t2);
+    String nextPass = packed.substring(t2 + 1);
     nextName.trim();
     nextSsid.trim();
     if (nextName.length() == 0) nextName = "beca-" + shortChipId();
     if (nextSsid.length() == 0) {
-      serialReplyJson(
-        "WIFI_SAVE",
-        wifiResultJson(false, "Please choose a Wi-Fi network first.", "Pick a 2.4GHz Wi-Fi and retry.")
-      );
+      serialCtrlReply("WIFI_SAVE", "{\"ok\":0,\"msg\":\"Please choose a Wi-Fi network first.\",\"hint\":\"Pick a 2.4GHz Wi-Fi and retry.\"}");
       return;
     }
 
     String msg, hint;
     bool ok = applyWifiProvisioning(nextName, nextSsid, nextPass, msg, hint);
-    serialReplyJson("WIFI_SAVE", wifiResultJson(ok, msg, hint));
+    serialCtrlReply("WIFI_SAVE", wifiResultJsonRaw(ok, msg, hint));
     return;
   }
 
-  if (verb == "WIFI_FORGET") {
+  if (strcmp(cmd, "WIFI_FORGET") == 0) {
     clearSavedWifiCredentials();
-    serialReplyJson(
-      "WIFI_FORGET",
-      wifiResultJson(true, "Saved Wi-Fi removed.", "BECA is rebooting into setup mode.")
-    );
+    serialCtrlReply("WIFI_FORGET", "{\"ok\":1,\"msg\":\"Saved Wi-Fi removed.\",\"hint\":\"BECA is rebooting into setup mode.\"}");
     Serial.flush();
     delay(80);
     ESP.restart();
     return;
   }
 
-  if (verb == "REBOOT") {
-    serialReplyJson("REBOOT", wifiResultJson(true, "Rebooting now.", ""));
+  if (strcmp(cmd, "REBOOT") == 0) {
+    serialCtrlReply("REBOOT", "{\"ok\":1,\"msg\":\"Rebooting now.\",\"hint\":\"\"}");
     Serial.flush();
     delay(80);
     ESP.restart();
     return;
   }
 
-  serialReplyJson("ERR", "{\"ok\":0,\"msg\":\"unknown command\"}");
+  serialCtrlReply("ERR", "{\"ok\":0,\"msg\":\"unknown command\"}");
 }
 
 static inline void serviceSerialControlCommands() {
@@ -2368,20 +2279,27 @@ static inline void serviceSerialControlCommands() {
 
     if (ch == '\r') continue;
     if (ch == '\n') {
-      if (gSerialCtrlLen > 0) {
+      if (gSerialCtrlCollect && gSerialCtrlLen > 0) {
         gSerialCtrlBuf[gSerialCtrlLen] = '\0';
-        String line = String(gSerialCtrlBuf);
-        gSerialCtrlLen = 0;
-        handleSerialControlCommand(line);
+        handleSerialControlLine(gSerialCtrlBuf);
       }
+      gSerialCtrlCollect = false;
+      gSerialCtrlLen = 0;
       continue;
+    }
+
+    if (!gSerialCtrlCollect) {
+      if (ch != '@') continue;
+      gSerialCtrlCollect = true;
+      gSerialCtrlLen = 0;
     }
 
     if (gSerialCtrlLen < (sizeof(gSerialCtrlBuf) - 1)) {
       gSerialCtrlBuf[gSerialCtrlLen++] = ch;
     } else {
+      gSerialCtrlCollect = false;
       gSerialCtrlLen = 0;
-      serialReplyJson("ERR", "{\"ok\":0,\"msg\":\"command too long\"}");
+      serialCtrlReply("ERR", "{\"ok\":0,\"msg\":\"command too long\"}");
     }
   }
 }
