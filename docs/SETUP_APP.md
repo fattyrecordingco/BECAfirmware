@@ -33,7 +33,7 @@ Current setup app version baseline in this branch:
 
 - Windows installer (`.exe` / NSIS bundle)
 - macOS disk image (`.dmg`)
-- Linux bundle (`.AppImage`, optional `.deb`)
+- Linux installer bundle is temporarily paused while CI packaging is stabilized.
 - Embedded firmware flasher flow (no Arduino IDE required)
 - Embedded native bridge binary (no Python/pip install path)
 - Hidden logs with expandable diagnostics panel and export zip

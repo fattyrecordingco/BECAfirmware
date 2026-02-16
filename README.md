@@ -26,12 +26,11 @@ If your OS installer is missing there, use `Releases` as fallback.
 1. First check inside the extracted ZIP:
 - `apps/beca-setup/dist-installer/windows/`
 - `apps/beca-setup/dist-installer/macos/`
-- `apps/beca-setup/dist-installer/linux/`
 2. Download exactly one file for your OS:
 - Windows: `BECA Setup_*_x64-setup.exe`
 - macOS: `BECA Setup_*.dmg`
-- Linux: `BECA Setup_*.AppImage`
 3. If your OS file is not present in ZIP, open GitHub `Releases` and download the same OS file there.
+4. Linux installers are temporarily paused while CI packaging is stabilized.
 
 ### Step B: Install by operating system
 
@@ -53,19 +52,8 @@ macOS:
 5. If BECA is not detected, reconnect cable and close other serial apps.
 
 Linux:
-1. Make AppImage executable:
-```bash
-chmod +x BECA\ Setup_*.AppImage
-```
-2. Run AppImage:
-```bash
-./BECA\ Setup_*.AppImage
-```
-3. If serial permission is denied:
-```bash
-sudo usermod -aG dialout $USER
-```
-4. Log out and log back in, then retry.
+1. Installer packaging is temporarily paused.
+2. Use source build instructions in this README until Linux installer builds return.
 
 ### Step C: In-app setup (same on all OS)
 
