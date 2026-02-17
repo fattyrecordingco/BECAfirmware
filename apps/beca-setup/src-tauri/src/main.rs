@@ -111,8 +111,9 @@ async fn detect_beca_device() -> Result<DeviceDetectionResult, String> {
     let candidate = select_best_port(&ports).filter(|port| port.likely_beca);
 
     let response = if let Some(port) = candidate {
+        let preferred_port = prefer_serial_port_for_platform(&port.port_name);
         DeviceDetectionResult {
-            port_name: Some(port.port_name),
+            port_name: Some(preferred_port),
             description: port.description,
             fixes: vec![],
         }
@@ -174,6 +175,7 @@ async fn flash_firmware(
     serial_port: String,
     firmware_version: String,
 ) -> Result<(), String> {
+    let serial_port = prefer_serial_port_for_platform(&serial_port);
     ensure_bridge_not_running(&state).await?;
     let _serial_guard = state.serial_op_lock.lock().await;
     emit_flash_progress(&app, 10, "Loading firmware manifest...");
@@ -248,6 +250,7 @@ async fn backup_settings(
     state: State<'_, RuntimeState>,
     serial_port: String,
 ) -> Result<String, String> {
+    let serial_port = prefer_serial_port_for_platform(&serial_port);
     ensure_bridge_not_running(&state).await?;
     let _serial_guard = state.serial_op_lock.lock().await;
     let esptool_path = resolve_named_tool_for_app(&app, "esptool").ok_or_else(|| {
@@ -279,6 +282,7 @@ async fn restore_settings(
     state: State<'_, RuntimeState>,
     serial_port: String,
 ) -> Result<String, String> {
+    let serial_port = prefer_serial_port_for_platform(&serial_port);
     ensure_bridge_not_running(&state).await?;
     let _serial_guard = state.serial_op_lock.lock().await;
     let esptool_path = resolve_named_tool_for_app(&app, "esptool").ok_or_else(|| {
@@ -310,6 +314,7 @@ async fn scan_wifi_networks(
     state: State<'_, RuntimeState>,
     serial_port: String,
 ) -> Result<Vec<String>, String> {
+    let serial_port = prefer_serial_port_for_platform(&serial_port);
     ensure_bridge_not_running(&state).await?;
     let _serial_guard = state.serial_op_lock.lock().await;
     tokio::task::spawn_blocking(move || {
@@ -336,6 +341,7 @@ async fn get_wifi_setup_info(
     state: State<'_, RuntimeState>,
     serial_port: String,
 ) -> Result<WifiSetupInfo, String> {
+    let serial_port = prefer_serial_port_for_platform(&serial_port);
     ensure_bridge_not_running(&state).await?;
     let _serial_guard = state.serial_op_lock.lock().await;
     tokio::task::spawn_blocking(move || {
@@ -364,6 +370,7 @@ async fn save_wifi_credentials(
     ssid: String,
     pass: String,
 ) -> Result<WifiProvisionResult, String> {
+    let serial_port = prefer_serial_port_for_platform(&serial_port);
     ensure_bridge_not_running(&state).await?;
     let _serial_guard = state.serial_op_lock.lock().await;
     tokio::task::spawn_blocking(move || {
@@ -399,6 +406,7 @@ async fn forget_wifi_credentials(
     state: State<'_, RuntimeState>,
     serial_port: String,
 ) -> Result<WifiProvisionResult, String> {
+    let serial_port = prefer_serial_port_for_platform(&serial_port);
     ensure_bridge_not_running(&state).await?;
     let _serial_guard = state.serial_op_lock.lock().await;
     tokio::task::spawn_blocking(move || {
@@ -427,6 +435,7 @@ async fn reboot_device(
     state: State<'_, RuntimeState>,
     serial_port: String,
 ) -> Result<(), String> {
+    let serial_port = prefer_serial_port_for_platform(&serial_port);
     ensure_bridge_not_running(&state).await?;
     let _serial_guard = state.serial_op_lock.lock().await;
     tokio::task::spawn_blocking(move || {
@@ -445,6 +454,7 @@ async fn start_bridge(
     serial_port: String,
     midi_port: String,
 ) -> Result<(), String> {
+    let serial_port = prefer_serial_port_for_platform(&serial_port);
     let bridge_path = resolve_binary_for_app(&app, "beca-bridge").map_err(err_to_string)?;
 
     let decision = resolve_bridge_runtime(&BridgeRuntimeInput {
@@ -584,6 +594,19 @@ fn default_fix_suggestions() -> Vec<String> {
     fixes
 }
 
+fn prefer_serial_port_for_platform(port_name: &str) -> String {
+    #[cfg(target_os = "macos")]
+    {
+        if let Some(suffix) = port_name.strip_prefix("/dev/tty.") {
+            let cu_port = format!("/dev/cu.{suffix}");
+            if std::path::Path::new(&cu_port).exists() {
+                return cu_port;
+            }
+        }
+    }
+    port_name.to_string()
+}
+
 async fn load_manifest(app: &AppHandle, state: &State<'_, RuntimeState>) -> anyhow::Result<FirmwareManifest> {
     {
         let cache = state.manifest_cache.lock().await;
@@ -681,7 +704,15 @@ fn run_serial_command_json(
     timeout_ms: u64,
     max_attempts: u8,
 ) -> anyhow::Result<Value> {
-    let attempts = max_attempts.max(1);
+    let requested_port = serial_port.to_string();
+    let preferred_port = prefer_serial_port_for_platform(serial_port);
+    let serial_port = preferred_port.as_str();
+    let attempts = if cfg!(target_os = "macos") {
+        // Re-opening macOS serial devices repeatedly can re-trigger ESP32 auto-reset on some USB bridges.
+        1
+    } else {
+        max_attempts.max(1)
+    };
     let total_deadline = Instant::now() + Duration::from_millis(timeout_ms);
     let is_wifi_scan_command = command.trim_start().starts_with("@C WIFI_SCAN");
     let mut per_attempt_timeout_ms = (timeout_ms / attempts as u64).max(2_200);
@@ -704,7 +735,6 @@ fn run_serial_command_json(
         {
             Ok(mut p) => {
                 let _ = p.write_data_terminal_ready(false);
-                let _ = p.write_request_to_send(false);
                 p
             }
             Err(err) => {
@@ -819,18 +849,24 @@ fn run_serial_command_json(
     }
 
     if saw_any_line {
-        return Err(anyhow!(
-            "No control response for {expected_tag}. Device may still be rebooting or running older firmware."
-        ));
+        return Err(anyhow!(format_serial_timeout_hint(
+            expected_tag,
+            &requested_port,
+            serial_port,
+            "No control response"
+        )));
     }
 
     if let Some(err) = last_error {
         return Err(anyhow!(err));
     }
 
-    Err(anyhow!(
-        "Timed out waiting for device response ({expected_tag}). Wait 10 seconds after flash, then retry."
-    ))
+    Err(anyhow!(format_serial_timeout_hint(
+        expected_tag,
+        &requested_port,
+        serial_port,
+        "Timed out waiting for device response"
+    )))
 }
 
 fn is_port_busy_text(input: &str) -> bool {
@@ -839,6 +875,15 @@ fn is_port_busy_text(input: &str) -> bool {
         || txt.contains("permission denied")
         || txt.contains("resource busy")
         || txt.contains("port is busy")
+}
+
+fn format_serial_timeout_hint(expected_tag: &str, requested_port: &str, active_port: &str, prefix: &str) -> String {
+    if requested_port == active_port {
+        return format!("{prefix} for {expected_tag} on {active_port}. Wait 10 seconds and retry.");
+    }
+    format!(
+        "{prefix} for {expected_tag} on {active_port} (requested {requested_port}). Wait 10 seconds and retry."
+    )
 }
 
 fn json_flag(payload: &Value, key: &str) -> bool {

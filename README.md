@@ -527,6 +527,7 @@ If something fails, start here first.
 5. Click `Rescan Device`, then `Rescan Networks`.
 6. If controls are temporarily disabled after flash/save/forget, wait for reboot cooldown to finish.
 7. If still failing, flash latest firmware again and retry.
+8. On macOS, use the latest BECA Setup build so Wi-Fi setup commands prefer `/dev/cu.*` (avoids reset-prone `/dev/tty.*` behavior on some USB bridges).
 
 ### Problem: DAW gets no notes in SERIAL mode
 
