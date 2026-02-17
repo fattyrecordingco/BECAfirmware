@@ -200,19 +200,46 @@ async fn flash_firmware(
     emit_flash_progress(&app, 65, "Preparing flash tool...");
     let (tool, tool_path) = resolve_flash_tool_for_app(&app)?;
 
-    let config = FlashCommandConfig {
-        tool,
-        tool_path,
-        port: serial_port,
-        baud: 460800,
-        firmware_path: binary_path,
-        offset: "0x0".to_string(),
+    let baud_plan: &[u32] = if cfg!(target_os = "windows") {
+        &[460_800, 230_400, 115_200]
+    } else {
+        &[460_800, 230_400]
     };
 
-    emit_flash_progress(&app, 85, "Flashing firmware. Do not unplug BECA...");
-    run_flash(&config).await.map_err(err_to_string)?;
-    emit_flash_progress(&app, 100, "Flash complete.");
-    Ok(())
+    let mut last_error: Option<String> = None;
+    for (idx, baud) in baud_plan.iter().enumerate() {
+        let message = if idx == 0 {
+            format!("Flashing firmware at {} baud. Do not unplug BECA...", baud)
+        } else {
+            format!("Flash retry at {} baud for stability...", baud)
+        };
+        emit_flash_progress(&app, 85, &message);
+
+        let config = FlashCommandConfig {
+            tool: tool.clone(),
+            tool_path: tool_path.clone(),
+            port: serial_port.clone(),
+            baud: *baud,
+            firmware_path: binary_path.clone(),
+            offset: "0x0".to_string(),
+        };
+
+        match run_flash(&config).await {
+            Ok(_) => {
+                emit_flash_progress(&app, 100, "Flash complete.");
+                return Ok(());
+            }
+            Err(err) => {
+                last_error = Some(err_to_string(err));
+                if idx + 1 < baud_plan.len() {
+                    emit_flash_progress(&app, 82, "Retrying flash with safer serial settings...");
+                    std::thread::sleep(Duration::from_millis(1200));
+                }
+            }
+        }
+    }
+
+    Err(last_error.unwrap_or_else(|| "Firmware flash failed.".to_string()))
 }
 
 #[tauri::command]
@@ -656,6 +683,12 @@ fn run_serial_command_json(
 ) -> anyhow::Result<Value> {
     let attempts = max_attempts.max(1);
     let total_deadline = Instant::now() + Duration::from_millis(timeout_ms);
+    let is_wifi_scan_command = command.trim_start().starts_with("@C WIFI_SCAN");
+    let mut per_attempt_timeout_ms = (timeout_ms / attempts as u64).max(2_200);
+    if is_wifi_scan_command {
+        per_attempt_timeout_ms = per_attempt_timeout_ms.max(7_000);
+    }
+    let port_settle_ms = if cfg!(target_os = "macos") { 1_500 } else { 1_200 };
     let mut last_error: Option<String> = None;
     let mut saw_any_line = false;
 
@@ -694,8 +727,8 @@ fn run_serial_command_json(
             }
         };
 
-        std::thread::sleep(Duration::from_millis(250));
-        let _ = port.clear(serialport::ClearBuffer::All);
+        std::thread::sleep(Duration::from_millis(port_settle_ms));
+        let _ = port.clear(serialport::ClearBuffer::Input);
         port.write_all(command.as_bytes())
             .with_context(|| format!("failed writing command to {serial_port}"))?;
         port.write_all(b"\n")
@@ -705,7 +738,11 @@ fn run_serial_command_json(
 
         let mut line = Vec::<u8>::with_capacity(320);
         let mut byte = [0u8; 1];
-        let attempt_deadline = Instant::now() + Duration::from_millis(2200);
+        let remaining_ms = total_deadline
+            .saturating_duration_since(Instant::now())
+            .as_millis() as u64;
+        let attempt_deadline = Instant::now()
+            + Duration::from_millis(per_attempt_timeout_ms.min(remaining_ms.max(1)));
 
         while Instant::now() < total_deadline && Instant::now() < attempt_deadline {
             match port.read(&mut byte) {

@@ -62,11 +62,13 @@ Named baseline for this cycle:
 - `Latest Stable` is selected by default.
 - Firmware binary is downloaded and SHA256 verified before flash.
 - Flash uses bundled `espflash` (or `esptool` if provided).
+- Flash now retries with safer baud rates when high-speed flashing fails (improves CH340/CP210x reliability on Windows/macOS/Linux).
 
 3. **Set Wi-Fi**
 - Scans nearby Wi-Fi SSIDs through a USB serial command channel.
 - Saves device name + SSID + password using firmware provisioning logic.
 - Supports `Forget Wi-Fi` and controlled reboot from the app.
+- Step 3 controls enter a short cooldown after flash/save/forget so serial commands are not sent while BECA is rebooting.
 - AP setup page (`BECA-XXXX` + `http://192.168.4.1/setup`) remains as fallback.
 
 4. **Start Bridge**
