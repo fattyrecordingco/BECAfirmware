@@ -11,6 +11,7 @@ const el = {
   wifiStatus: document.querySelector("#wifi-status"),
   wifiName: document.querySelector("#wifi-name"),
   wifiSsid: document.querySelector("#wifi-ssid"),
+  wifiSsidManual: document.querySelector("#wifi-ssid-manual"),
   wifiPass: document.querySelector("#wifi-pass"),
   midiSelect: document.querySelector("#midi-select"),
   bridgeStatus: document.querySelector("#bridge-status"),
@@ -18,6 +19,7 @@ const el = {
   logView: document.querySelector("#log-view"),
   btnScan: document.querySelector("#btn-scan"),
   btnFlash: document.querySelector("#btn-flash"),
+  btnFlashWifi: document.querySelector("#btn-flash-wifi"),
   btnBackup: document.querySelector("#btn-backup"),
   btnRestore: document.querySelector("#btn-restore"),
   btnWifiScan: document.querySelector("#btn-wifi-scan"),
@@ -62,8 +64,10 @@ function setWifiControlsEnabled(enabled) {
   el.btnWifiScan.disabled = !ready;
   el.btnWifiSave.disabled = !ready;
   el.btnWifiForget.disabled = !ready;
+  el.btnFlashWifi.disabled = !ready;
   el.wifiName.disabled = !ready;
   el.wifiSsid.disabled = !ready;
+  el.wifiSsidManual.disabled = !ready;
   el.wifiPass.disabled = !ready;
 }
 
@@ -93,6 +97,7 @@ function resetWifiSection() {
   state.wifiCooldownUntil = 0;
   el.wifiName.value = "";
   el.wifiPass.value = "";
+  el.wifiSsidManual.value = "";
   el.wifiSsid.innerHTML = '<option value="">Connect BECA first</option>';
   setWifiControlsEnabled(Boolean(state.selectedPort) && !state.flashInProgress && !state.wifiOpInFlight);
   setWifiStatus("Connect BECA first to configure Wi-Fi over USB.");
@@ -111,9 +116,79 @@ function wifiSetupFallbackMessage(err) {
     return "BECA is rebooting or did not accept serial setup command yet. Wait 10 seconds, then retry.";
   }
   if (lower.includes("timed out waiting for device response")) {
-    return "No serial setup response yet. If firmware is old, flash latest; otherwise wait 10 seconds and retry.";
+    return "No serial setup response yet. Wait 10 seconds and retry. On macOS, use manual SSID entry + Flash + Save Wi-Fi.";
   }
   return `Wi-Fi setup command failed: ${text}`;
+}
+
+function currentSsidSelection() {
+  const manual = (el.wifiSsidManual.value || "").trim();
+  if (manual) return manual;
+  return (el.wifiSsid.value || "").trim();
+}
+
+function currentWifiPayload() {
+  return {
+    name: (el.wifiName.value || "").trim(),
+    ssid: currentSsidSelection(),
+    pass: el.wifiPass.value || ""
+  };
+}
+
+async function sendWifiSave(payload, { skipCooldownCheck = false } = {}) {
+  if (!state.selectedPort) {
+    setWifiStatus("Connect BECA first.", "error");
+    return false;
+  }
+  if (!payload.ssid) {
+    setWifiStatus("Choose or type a Wi-Fi network first.", "error");
+    return false;
+  }
+  if (!skipCooldownCheck && requireWifiReady("saving Wi-Fi")) return false;
+  if (state.flashInProgress || state.wifiOpInFlight) return false;
+
+  state.wifiOpInFlight = true;
+  setWifiControlsEnabled(false);
+  setWifiStatus("Saving Wi-Fi and testing connection. This can take up to 15 seconds.");
+  addLog(`Wi-Fi save requested for SSID ${payload.ssid}`);
+
+  try {
+    const result = await invoke("save_wifi_credentials", {
+      serialPort: state.selectedPort,
+      name: payload.name,
+      ssid: payload.ssid,
+      pass: payload.pass
+    });
+
+    if (!result.ok) {
+      setWifiStatus(`${result.msg}${result.hint ? ` ${result.hint}` : ""}`, "error");
+      addLog(`Wi-Fi save failed: ${JSON.stringify(result)}`);
+      return false;
+    }
+
+    setWifiStatus(`${result.msg}${result.hint ? ` ${result.hint}` : ""}`, "ok");
+    addLog("Wi-Fi save succeeded. Sending reboot command.");
+
+    try {
+      await invoke("reboot_device", { serialPort: state.selectedPort });
+      addLog("Reboot command sent.");
+    } catch (err) {
+      addLog(`Reboot command failed: ${err}`);
+    }
+
+    setWifiCooldown(7000, "Wi-Fi saved. Waiting for BECA reboot.");
+    setTimeout(() => {
+      refreshDevice().catch((err) => addLog(`Post-reboot rescan failed: ${err}`));
+    }, 7000);
+    return true;
+  } catch (err) {
+    setWifiStatus(wifiSetupFallbackMessage(err), "error");
+    addLog(`Wi-Fi save command failed: ${err}`);
+    return false;
+  } finally {
+    state.wifiOpInFlight = false;
+    setWifiControlsEnabled(Boolean(state.selectedPort) && !state.flashInProgress);
+  }
 }
 
 async function refreshWifiNetworks(preferredSsid = "") {
@@ -279,7 +354,7 @@ async function refreshMidiOutputs() {
   }
 }
 
-async function doFlash() {
+async function doFlash({ provisionAfterFlash = false } = {}) {
   if (!state.selectedPort) {
     el.flashStatus.textContent = "Connect BECA first.";
     return;
@@ -292,9 +367,20 @@ async function doFlash() {
   state.flashInProgress = true;
   setWifiControlsEnabled(false);
   const version = el.firmwareSelect.value;
+  const wifiPayload = currentWifiPayload();
+  if (provisionAfterFlash && !wifiPayload.ssid) {
+    el.flashStatus.textContent = "Choose or type Wi-Fi SSID before Flash + Save Wi-Fi.";
+    state.flashInProgress = false;
+    setWifiControlsEnabled(Boolean(state.selectedPort) && !state.wifiOpInFlight);
+    return;
+  }
   el.flashProgress.value = 5;
   el.flashStatus.textContent = "Preparing flash...";
-  addLog(`Flash requested for ${version} on ${state.selectedPort}`);
+  addLog(
+    provisionAfterFlash
+      ? `Flash + Wi-Fi requested for ${version} on ${state.selectedPort}`
+      : `Flash requested for ${version} on ${state.selectedPort}`
+  );
 
   try {
     await invoke("flash_firmware", {
@@ -302,12 +388,24 @@ async function doFlash() {
       firmwareVersion: version
     });
     el.flashProgress.value = 100;
-    el.flashStatus.textContent = "Firmware flashed successfully.";
+    el.flashStatus.textContent = provisionAfterFlash
+      ? "Firmware flashed. Preparing Wi-Fi provisioning..."
+      : "Firmware flashed successfully.";
     addLog("Flash succeeded.");
-    setWifiCooldown(12000, "Firmware flashed. Waiting for BECA reboot before Wi-Fi setup.");
+    const cooldownMs = provisionAfterFlash ? 16000 : 12000;
+    setWifiCooldown(cooldownMs, "Firmware flashed. Waiting for BECA reboot before Wi-Fi setup.");
+
+    if (provisionAfterFlash) {
+      setTimeout(() => {
+        sendWifiSave(wifiPayload, { skipCooldownCheck: true }).catch((err) =>
+          addLog(`Flash + Wi-Fi provisioning failed: ${err}`)
+        );
+      }, cooldownMs + 500);
+    }
+
     setTimeout(() => {
       refreshWifiSection().catch((err) => addLog(`Wi-Fi info refresh after flash failed: ${err}`));
-    }, 12500);
+    }, cooldownMs + 500);
   } catch (err) {
     el.flashStatus.textContent = `Flash failed: ${err}`;
     addLog(`Flash failed: ${err}`);
@@ -315,6 +413,23 @@ async function doFlash() {
     state.flashInProgress = false;
     setWifiControlsEnabled(Boolean(state.selectedPort) && !state.wifiOpInFlight);
   }
+}
+
+async function refreshBackupAvailability() {
+  try {
+    const available = await invoke("backup_restore_available");
+    if (!available) {
+      el.btnBackup.disabled = true;
+      el.btnRestore.disabled = true;
+      addLog("Backup/Restore disabled: esptool sidecar is not bundled in this installer build.");
+    }
+  } catch (err) {
+    addLog(`Backup tool check failed: ${err}`);
+  }
+}
+
+async function doFlashAndWifi() {
+  await doFlash({ provisionAfterFlash: true });
 }
 
 async function doBackup() {
@@ -351,60 +466,7 @@ async function scanWifi() {
 }
 
 async function saveWifi() {
-  if (!state.selectedPort) {
-    setWifiStatus("Connect BECA first.", "error");
-    return;
-  }
-
-  const ssid = (el.wifiSsid.value || "").trim();
-  if (!ssid) {
-    setWifiStatus("Choose a Wi-Fi network first.", "error");
-    return;
-  }
-  if (requireWifiReady("saving Wi-Fi")) return;
-  if (state.flashInProgress || state.wifiOpInFlight) return;
-
-  state.wifiOpInFlight = true;
-  setWifiControlsEnabled(false);
-  setWifiStatus("Saving Wi-Fi and testing connection. This can take up to 15 seconds.");
-  addLog(`Wi-Fi save requested for SSID ${ssid}`);
-
-  try {
-    const result = await invoke("save_wifi_credentials", {
-      serialPort: state.selectedPort,
-      name: (el.wifiName.value || "").trim(),
-      ssid,
-      pass: el.wifiPass.value || ""
-    });
-
-    if (!result.ok) {
-      setWifiStatus(`${result.msg}${result.hint ? ` ${result.hint}` : ""}`, "error");
-      addLog(`Wi-Fi save failed: ${JSON.stringify(result)}`);
-      return;
-    }
-
-    setWifiStatus(`${result.msg}${result.hint ? ` ${result.hint}` : ""}`, "ok");
-    addLog("Wi-Fi save succeeded. Sending reboot command.");
-
-    try {
-      await invoke("reboot_device", { serialPort: state.selectedPort });
-      addLog("Reboot command sent.");
-    } catch (err) {
-      addLog(`Reboot command failed: ${err}`);
-    }
-
-    setWifiCooldown(7000, "Wi-Fi saved. Waiting for BECA reboot.");
-
-    setTimeout(() => {
-      refreshDevice().catch((err) => addLog(`Post-reboot rescan failed: ${err}`));
-    }, 7000);
-  } catch (err) {
-    setWifiStatus(wifiSetupFallbackMessage(err), "error");
-    addLog(`Wi-Fi save command failed: ${err}`);
-  } finally {
-    state.wifiOpInFlight = false;
-    setWifiControlsEnabled(Boolean(state.selectedPort) && !state.flashInProgress);
-  }
+  await sendWifiSave(currentWifiPayload());
 }
 
 async function forgetWifi() {
@@ -517,6 +579,7 @@ async function bindEvents() {
 
 el.btnScan.addEventListener("click", refreshDevice);
 el.btnFlash.addEventListener("click", doFlash);
+el.btnFlashWifi.addEventListener("click", doFlashAndWifi);
 el.btnBackup.addEventListener("click", doBackup);
 el.btnRestore.addEventListener("click", doRestore);
 el.btnWifiScan.addEventListener("click", scanWifi);
@@ -533,6 +596,7 @@ async function init() {
   await bindEvents();
   await refreshDevice();
   await refreshFirmwareOptions();
+  await refreshBackupAvailability();
   await refreshMidiOutputs();
 }
 

@@ -62,8 +62,9 @@ Linux:
 3. In Step 2, keep `Latest Stable` selected and click `Flash Selected Firmware`.
 4. Wait for success message (`Flash complete`).
 5. In Step 3, choose your Wi-Fi network, enter password, and click `Save and Reboot`.
-6. In Step 4, choose MIDI output and click `Start Bridge`.
-7. Click `Test Note` and check your DAW receives MIDI.
+6. macOS fallback: if scan/info is unreliable, type SSID manually and use `Flash + Save Wi-Fi`.
+7. In Step 4, choose MIDI output and click `Start Bridge`.
+8. Click `Test Note` and check your DAW receives MIDI.
 
 ### Step D: Open BECA control page in browser
 
@@ -345,6 +346,8 @@ Windows notes:
 macOS notes:
 - If serial access is denied, close any app already using the serial port.
 - Keep BECA Setup and DAW open while bridging in `SERIAL` mode.
+- If Gatekeeper keeps blocking launch, install to `Applications` and run once:
+  `xattr -dr com.apple.quarantine "/Applications/BECA Setup.app"`
 
 ### Linux install and first run
 
@@ -523,11 +526,12 @@ If something fails, start here first.
 1. After flashing in Step 2, wait at least 10 seconds before running Step 3.
 2. Stop bridge in Step 4 before scanning/saving Wi-Fi.
 3. Close Arduino Serial Monitor and any other serial tools.
-4. After clicking `Rescan Networks`, allow up to 8 seconds for scan response before retrying.
+4. After clicking `Rescan Networks`, allow up to 20 seconds for scan response before retrying.
 5. Click `Rescan Device`, then `Rescan Networks`.
 6. If controls are temporarily disabled after flash/save/forget, wait for reboot cooldown to finish.
-7. If still failing, flash latest firmware again and retry.
-8. On macOS, use the latest BECA Setup build so Wi-Fi setup commands prefer `/dev/cu.*` (avoids reset-prone `/dev/tty.*` behavior on some USB bridges).
+7. On macOS, if scan/info keeps timing out, type SSID manually and use `Flash + Save Wi-Fi`.
+8. If USB serial provisioning still fails, use AP fallback: connect to `BECA-XXXX` then open `http://192.168.4.1/setup`.
+9. If still failing, flash latest firmware again and retry.
 
 ### Problem: DAW gets no notes in SERIAL mode
 

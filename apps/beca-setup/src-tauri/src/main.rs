@@ -111,9 +111,8 @@ async fn detect_beca_device() -> Result<DeviceDetectionResult, String> {
     let candidate = select_best_port(&ports).filter(|port| port.likely_beca);
 
     let response = if let Some(port) = candidate {
-        let preferred_port = prefer_serial_port_for_platform(&port.port_name);
         DeviceDetectionResult {
-            port_name: Some(preferred_port),
+            port_name: Some(port.port_name),
             description: port.description,
             fixes: vec![],
         }
@@ -175,7 +174,6 @@ async fn flash_firmware(
     serial_port: String,
     firmware_version: String,
 ) -> Result<(), String> {
-    let serial_port = prefer_serial_port_for_platform(&serial_port);
     ensure_bridge_not_running(&state).await?;
     let _serial_guard = state.serial_op_lock.lock().await;
     emit_flash_progress(&app, 10, "Loading firmware manifest...");
@@ -250,11 +248,10 @@ async fn backup_settings(
     state: State<'_, RuntimeState>,
     serial_port: String,
 ) -> Result<String, String> {
-    let serial_port = prefer_serial_port_for_platform(&serial_port);
     ensure_bridge_not_running(&state).await?;
     let _serial_guard = state.serial_op_lock.lock().await;
     let esptool_path = resolve_named_tool_for_app(&app, "esptool").ok_or_else(|| {
-        "Bundled esptool is missing. Backup requires esptool sidecar in app binaries.".to_string()
+        "Backup tool is missing in this installer build (esptool sidecar not bundled). Flash/Wi-Fi setup still works.".to_string()
     })?;
 
     let backup_dir = app_data_dir(&app)?.join("backups");
@@ -282,11 +279,10 @@ async fn restore_settings(
     state: State<'_, RuntimeState>,
     serial_port: String,
 ) -> Result<String, String> {
-    let serial_port = prefer_serial_port_for_platform(&serial_port);
     ensure_bridge_not_running(&state).await?;
     let _serial_guard = state.serial_op_lock.lock().await;
     let esptool_path = resolve_named_tool_for_app(&app, "esptool").ok_or_else(|| {
-        "Bundled esptool is missing. Restore requires esptool sidecar in app binaries.".to_string()
+        "Restore tool is missing in this installer build (esptool sidecar not bundled). Flash/Wi-Fi setup still works.".to_string()
     })?;
 
     let latest = latest_backup_file(&app, &state)
@@ -310,11 +306,15 @@ async fn list_midi_outputs() -> Result<Vec<MidiOutOption>, String> {
 }
 
 #[tauri::command]
+fn backup_restore_available(app: AppHandle) -> bool {
+    resolve_named_tool_for_app(&app, "esptool").is_some()
+}
+
+#[tauri::command]
 async fn scan_wifi_networks(
     state: State<'_, RuntimeState>,
     serial_port: String,
 ) -> Result<Vec<String>, String> {
-    let serial_port = prefer_serial_port_for_platform(&serial_port);
     ensure_bridge_not_running(&state).await?;
     let _serial_guard = state.serial_op_lock.lock().await;
     tokio::task::spawn_blocking(move || {
@@ -341,11 +341,10 @@ async fn get_wifi_setup_info(
     state: State<'_, RuntimeState>,
     serial_port: String,
 ) -> Result<WifiSetupInfo, String> {
-    let serial_port = prefer_serial_port_for_platform(&serial_port);
     ensure_bridge_not_running(&state).await?;
     let _serial_guard = state.serial_op_lock.lock().await;
     tokio::task::spawn_blocking(move || {
-        let payload = run_serial_command_json(&serial_port, "@C WIFI_INFO", "WIFI_INFO", 8_000, 3)?;
+        let payload = run_serial_command_json(&serial_port, "@C WIFI_INFO", "WIFI_INFO", 18_000, 3)?;
         let info: SerialWifiInfo =
             serde_json::from_value(payload).context("invalid WIFI_INFO payload from device")?;
         Ok::<WifiSetupInfo, anyhow::Error>(WifiSetupInfo {
@@ -370,7 +369,6 @@ async fn save_wifi_credentials(
     ssid: String,
     pass: String,
 ) -> Result<WifiProvisionResult, String> {
-    let serial_port = prefer_serial_port_for_platform(&serial_port);
     ensure_bridge_not_running(&state).await?;
     let _serial_guard = state.serial_op_lock.lock().await;
     tokio::task::spawn_blocking(move || {
@@ -406,7 +404,6 @@ async fn forget_wifi_credentials(
     state: State<'_, RuntimeState>,
     serial_port: String,
 ) -> Result<WifiProvisionResult, String> {
-    let serial_port = prefer_serial_port_for_platform(&serial_port);
     ensure_bridge_not_running(&state).await?;
     let _serial_guard = state.serial_op_lock.lock().await;
     tokio::task::spawn_blocking(move || {
@@ -435,7 +432,6 @@ async fn reboot_device(
     state: State<'_, RuntimeState>,
     serial_port: String,
 ) -> Result<(), String> {
-    let serial_port = prefer_serial_port_for_platform(&serial_port);
     ensure_bridge_not_running(&state).await?;
     let _serial_guard = state.serial_op_lock.lock().await;
     tokio::task::spawn_blocking(move || {
@@ -454,7 +450,6 @@ async fn start_bridge(
     serial_port: String,
     midi_port: String,
 ) -> Result<(), String> {
-    let serial_port = prefer_serial_port_for_platform(&serial_port);
     let bridge_path = resolve_binary_for_app(&app, "beca-bridge").map_err(err_to_string)?;
 
     let decision = resolve_bridge_runtime(&BridgeRuntimeInput {
@@ -594,17 +589,24 @@ fn default_fix_suggestions() -> Vec<String> {
     fixes
 }
 
-fn prefer_serial_port_for_platform(port_name: &str) -> String {
+fn serial_port_candidates(port_name: &str) -> Vec<String> {
     #[cfg(target_os = "macos")]
     {
+        let mut ports = vec![port_name.to_string()];
         if let Some(suffix) = port_name.strip_prefix("/dev/tty.") {
-            let cu_port = format!("/dev/cu.{suffix}");
-            if std::path::Path::new(&cu_port).exists() {
-                return cu_port;
+            ports.push(format!("/dev/cu.{suffix}"));
+        } else if let Some(suffix) = port_name.strip_prefix("/dev/cu.") {
+            ports.push(format!("/dev/tty.{suffix}"));
+        }
+        let mut uniq = Vec::with_capacity(ports.len());
+        for item in ports {
+            if !uniq.iter().any(|v| v == &item) {
+                uniq.push(item);
             }
         }
+        return uniq;
     }
-    port_name.to_string()
+    vec![port_name.to_string()]
 }
 
 async fn load_manifest(app: &AppHandle, state: &State<'_, RuntimeState>) -> anyhow::Result<FirmwareManifest> {
@@ -705,146 +707,148 @@ fn run_serial_command_json(
     max_attempts: u8,
 ) -> anyhow::Result<Value> {
     let requested_port = serial_port.to_string();
-    let preferred_port = prefer_serial_port_for_platform(serial_port);
-    let serial_port = preferred_port.as_str();
-    let attempts = if cfg!(target_os = "macos") {
-        // Re-opening macOS serial devices repeatedly can re-trigger ESP32 auto-reset on some USB bridges.
-        1
-    } else {
-        max_attempts.max(1)
-    };
+    let ports = serial_port_candidates(serial_port);
+    let attempts = max_attempts.max(1);
     let total_deadline = Instant::now() + Duration::from_millis(timeout_ms);
     let is_wifi_scan_command = command.trim_start().starts_with("@C WIFI_SCAN");
+    let allow_resend = matches!(expected_tag, "WIFI_INFO" | "WIFI_SCAN" | "PING");
     let mut per_attempt_timeout_ms = (timeout_ms / attempts as u64).max(2_200);
     if is_wifi_scan_command {
         per_attempt_timeout_ms = per_attempt_timeout_ms.max(7_000);
     }
-    let port_settle_ms = if cfg!(target_os = "macos") { 1_500 } else { 1_200 };
+    let port_settle_ms = if cfg!(target_os = "macos") { 2_200 } else { 1_200 };
+    let resend_interval_ms = if cfg!(target_os = "macos") { 1_300 } else { 900 };
     let mut last_error: Option<String> = None;
+    let mut last_port = requested_port.clone();
     let mut saw_any_line = false;
 
-    for attempt in 1..=attempts {
-        if Instant::now() >= total_deadline {
-            break;
-        }
-
-        let mut port = match serialport::new(serial_port, SERIAL_CTRL_BAUD)
-            .dtr_on_open(false)
-            .timeout(Duration::from_millis(250))
-            .open()
-        {
-            Ok(mut p) => {
-                let _ = p.write_data_terminal_ready(false);
-                p
+    for active_port in ports {
+        for attempt in 1..=attempts {
+            if Instant::now() >= total_deadline {
+                break;
             }
-            Err(err) => {
-                let msg = format!("failed to open serial port {serial_port}: {err}");
-                last_error = Some(msg.clone());
-                if is_port_busy_text(&msg) {
-                    if attempt < attempts {
-                        std::thread::sleep(Duration::from_millis(450));
-                        continue;
-                    }
-                    return Err(anyhow!(
-                        "serial port {serial_port} is busy. Close Arduino Serial Monitor and stop BECA Bridge before Wi-Fi setup."
-                    ));
-                }
-                if attempt < attempts {
-                    std::thread::sleep(Duration::from_millis(300));
-                    continue;
-                }
-                return Err(anyhow!(msg));
-            }
-        };
+            last_port = active_port.clone();
 
-        std::thread::sleep(Duration::from_millis(port_settle_ms));
-        let _ = port.clear(serialport::ClearBuffer::Input);
-        port.write_all(command.as_bytes())
-            .with_context(|| format!("failed writing command to {serial_port}"))?;
-        port.write_all(b"\n")
-            .with_context(|| format!("failed writing newline to {serial_port}"))?;
-        port.flush()
-            .with_context(|| format!("failed flushing command to {serial_port}"))?;
-
-        let mut line = Vec::<u8>::with_capacity(320);
-        let mut byte = [0u8; 1];
-        let remaining_ms = total_deadline
-            .saturating_duration_since(Instant::now())
-            .as_millis() as u64;
-        let attempt_deadline = Instant::now()
-            + Duration::from_millis(per_attempt_timeout_ms.min(remaining_ms.max(1)));
-
-        while Instant::now() < total_deadline && Instant::now() < attempt_deadline {
-            match port.read(&mut byte) {
-                Ok(0) => continue,
-                Ok(_) => {
-                    let b = byte[0];
-                    if b == b'\r' {
-                        continue;
-                    }
-                    if b != b'\n' {
-                        if line.len() < 4096 {
-                            line.push(b);
-                        } else {
-                            line.clear();
-                        }
-                        continue;
-                    }
-                    if line.is_empty() {
-                        continue;
-                    }
-
-                    let raw = String::from_utf8_lossy(&line).trim().to_string();
-                    line.clear();
-                    if raw.is_empty() {
-                        continue;
-                    }
-                    saw_any_line = true;
-
-                    if let Some(rest) = raw.strip_prefix("@R ") {
-                        let mut split = rest.splitn(2, ' ');
-                        let tag = split.next().unwrap_or("").trim();
-                        let payload = split.next().unwrap_or("{}").trim();
-                        if tag.eq_ignore_ascii_case(expected_tag) {
-                            let value: Value = serde_json::from_str(payload).with_context(|| {
-                                format!("invalid JSON payload for {expected_tag}: {payload}")
-                            })?;
-                            return Ok(value);
-                        }
-                        if tag.eq_ignore_ascii_case("ERR") {
-                            let value: Value = serde_json::from_str(payload).unwrap_or_else(|_| {
-                                serde_json::json!({"ok":0,"msg":"device returned malformed error payload"})
-                            });
-                            let msg = value
-                                .get("msg")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("device returned an error");
-                            return Err(anyhow!(msg.to_string()));
-                        }
-                    }
-                }
+            let mut port = match serialport::new(&active_port, SERIAL_CTRL_BAUD)
+                .timeout(Duration::from_millis(250))
+                .open()
+            {
+                Ok(p) => p,
                 Err(err) => {
-                    if matches!(err.kind(), ErrorKind::TimedOut | ErrorKind::WouldBlock) {
-                        continue;
-                    }
-                    let msg = format!("serial read failed on {serial_port}: {err}");
+                    let msg = format!("failed to open serial port {active_port}: {err}");
                     last_error = Some(msg.clone());
-                    if is_port_busy_text(&msg) && attempt < attempts {
-                        std::thread::sleep(Duration::from_millis(350));
-                        break;
-                    }
                     if is_port_busy_text(&msg) {
+                        if attempt < attempts {
+                            std::thread::sleep(Duration::from_millis(450));
+                            continue;
+                        }
                         return Err(anyhow!(
-                            "serial port {serial_port} became busy. Close Serial Monitor/Bridge, wait 3 seconds, and retry."
+                            "serial port {active_port} is busy. Close Arduino Serial Monitor and stop BECA Bridge before Wi-Fi setup."
                         ));
                     }
-                    return Err(anyhow!(msg));
+                    if attempt < attempts {
+                        std::thread::sleep(Duration::from_millis(300));
+                        continue;
+                    }
+                    break;
+                }
+            };
+
+            std::thread::sleep(Duration::from_millis(port_settle_ms));
+            let _ = port.clear(serialport::ClearBuffer::Input);
+            let mut line = Vec::<u8>::with_capacity(320);
+            let mut byte = [0u8; 1];
+            let remaining_ms = total_deadline
+                .saturating_duration_since(Instant::now())
+                .as_millis() as u64;
+            let attempt_deadline = Instant::now()
+                + Duration::from_millis(per_attempt_timeout_ms.min(remaining_ms.max(1)));
+            let mut sent_once = false;
+            let mut next_send_at = Instant::now();
+
+            while Instant::now() < total_deadline && Instant::now() < attempt_deadline {
+                if !sent_once || (allow_resend && Instant::now() >= next_send_at) {
+                    port.write_all(command.as_bytes())
+                        .with_context(|| format!("failed writing command to {active_port}"))?;
+                    port.write_all(b"\n")
+                        .with_context(|| format!("failed writing newline to {active_port}"))?;
+                    port.flush()
+                        .with_context(|| format!("failed flushing command to {active_port}"))?;
+                    sent_once = true;
+                    next_send_at = Instant::now() + Duration::from_millis(resend_interval_ms);
+                }
+
+                match port.read(&mut byte) {
+                    Ok(0) => continue,
+                    Ok(_) => {
+                        let b = byte[0];
+                        if b == b'\r' {
+                            continue;
+                        }
+                        if b != b'\n' {
+                            if line.len() < 4096 {
+                                line.push(b);
+                            } else {
+                                line.clear();
+                            }
+                            continue;
+                        }
+                        if line.is_empty() {
+                            continue;
+                        }
+
+                        let raw = String::from_utf8_lossy(&line).trim().to_string();
+                        line.clear();
+                        if raw.is_empty() {
+                            continue;
+                        }
+                        saw_any_line = true;
+
+                        if let Some(rest) = raw.strip_prefix("@R ") {
+                            let mut split = rest.splitn(2, ' ');
+                            let tag = split.next().unwrap_or("").trim();
+                            let payload = split.next().unwrap_or("{}").trim();
+                            if tag.eq_ignore_ascii_case(expected_tag) {
+                                let value: Value = serde_json::from_str(payload).with_context(|| {
+                                    format!("invalid JSON payload for {expected_tag}: {payload}")
+                                })?;
+                                return Ok(value);
+                            }
+                            if tag.eq_ignore_ascii_case("ERR") {
+                                let value: Value = serde_json::from_str(payload).unwrap_or_else(|_| {
+                                    serde_json::json!({"ok":0,"msg":"device returned malformed error payload"})
+                                });
+                                let msg = value
+                                    .get("msg")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("device returned an error");
+                                return Err(anyhow!(msg.to_string()));
+                            }
+                        }
+                    }
+                    Err(err) => {
+                        if matches!(err.kind(), ErrorKind::TimedOut | ErrorKind::WouldBlock) {
+                            continue;
+                        }
+                        let msg = format!("serial read failed on {active_port}: {err}");
+                        last_error = Some(msg.clone());
+                        if is_port_busy_text(&msg) && attempt < attempts {
+                            std::thread::sleep(Duration::from_millis(350));
+                            break;
+                        }
+                        if is_port_busy_text(&msg) {
+                            return Err(anyhow!(
+                                "serial port {active_port} became busy. Close Serial Monitor/Bridge, wait 3 seconds, and retry."
+                            ));
+                        }
+                        return Err(anyhow!(msg));
+                    }
                 }
             }
-        }
 
-        if attempt < attempts {
-            std::thread::sleep(Duration::from_millis(350));
+            if attempt < attempts {
+                std::thread::sleep(Duration::from_millis(350));
+            }
         }
     }
 
@@ -852,7 +856,7 @@ fn run_serial_command_json(
         return Err(anyhow!(format_serial_timeout_hint(
             expected_tag,
             &requested_port,
-            serial_port,
+            &last_port,
             "No control response"
         )));
     }
@@ -864,7 +868,7 @@ fn run_serial_command_json(
     Err(anyhow!(format_serial_timeout_hint(
         expected_tag,
         &requested_port,
-        serial_port,
+        &last_port,
         "Timed out waiting for device response"
     )))
 }
@@ -1042,6 +1046,7 @@ pub fn run() {
             flash_firmware,
             backup_settings,
             restore_settings,
+            backup_restore_available,
             list_midi_outputs,
             scan_wifi_networks,
             get_wifi_setup_info,

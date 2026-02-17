@@ -60,12 +60,16 @@
           </select>
           <button id="btn-wifi-scan">Rescan Networks</button>
         </div>
+        <label for="wifi-ssid-manual">Wi-Fi Network (manual entry)</label>
+        <input id="wifi-ssid-manual" type="text" placeholder="Type SSID if scan is unreliable on macOS" />
         <label for="wifi-pass">Password</label>
         <input id="wifi-pass" type="password" placeholder="********" />
         <div class="row">
+          <button id="btn-flash-wifi">Flash + Save Wi-Fi</button>
           <button id="btn-wifi-save" class="primary">Save and Reboot</button>
           <button id="btn-wifi-forget">Forget Wi-Fi</button>
         </div>
+        <p class="hint">macOS fallback: if scan/info keeps timing out, type SSID manually and use Flash + Save Wi-Fi.</p>
       </section>
 
       <section class="card" id="step-bridge">
