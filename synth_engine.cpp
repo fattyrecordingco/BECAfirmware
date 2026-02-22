@@ -8,10 +8,12 @@ namespace beca {
 namespace {
 
 const char* kPresetNames[SynthEngine::kPresetCount] = {
-    "Fatty Neon Lead",  "Glass Reed Lead",  "Verdant Pad",      "Forest Choir",    "Jivari Strings",
-    "Pulse Arp 1",      "Pulse Arp 2",      "Rhythm Gate",      "Thick Mono Bass", "Rubber Bass",
-    "Amber Bloom Pad",  "Dawn Mist Keys",   "Velvet Hollow",    "Moon Tape Choir", "Aero Bell Wash",
-    "Soft Grain Pluck", "Low Tide Organ",   "Warm Drift Mono",
+    "Fatty Neon Lead",
+    "Prism Poly Lead",
+    "Verdant Pad",
+    "Forest Choir Pad",
+    "Thick Mono Bass",
+    "Rubber Bass",
 };
 
 }  // namespace
@@ -85,7 +87,7 @@ void SynthEngine::presetDefaults(uint8_t index, SynthParams& out) {
   out.drumKit = 0;
 
   switch (idx) {
-    case 0:  // Fatty Neon Lead
+    case 0:  // Fatty Neon Lead (mono lead)
       out.waveA = 0;
       out.waveB = 1;
       out.oscMix = 0.45f;
@@ -105,25 +107,25 @@ void SynthEngine::presetDefaults(uint8_t index, SynthParams& out) {
       out.master = 0.60f;
       out.detuneCents = 4.0f;
       break;
-    case 1:  // Glass Reed Lead
+    case 1:  // Prism Poly Lead (poly lead)
       out.waveA = 2;
       out.waveB = 3;
-      out.oscMix = 0.28f;
-      out.mono = 1;
-      out.maxVoices = 1;
-      out.attack = 0.018f;
-      out.decay = 0.44f;
-      out.sustain = 0.52f;
-      out.release = 0.42f;
-      out.cutoffHz = 4200.0f;
-      out.resonance = 1.05f;
+      out.oscMix = 0.30f;
+      out.mono = 0;
+      out.maxVoices = 6;
+      out.attack = 0.012f;
+      out.decay = 0.36f;
+      out.sustain = 0.56f;
+      out.release = 0.36f;
+      out.cutoffHz = 4600.0f;
+      out.resonance = 1.10f;
       out.reverb = 0.16f;
       out.delayMs = 150.0f;
-      out.delayFeedback = 0.18f;
-      out.delayMix = 0.10f;
-      out.distDrive = 0.04f;
+      out.delayFeedback = 0.16f;
+      out.delayMix = 0.09f;
+      out.distDrive = 0.05f;
       out.master = 0.54f;
-      out.detuneCents = 1.2f;
+      out.detuneCents = 1.4f;
       out.gainTrim = 0.88f;
       break;
     case 2:  // Verdant Pad
@@ -146,7 +148,7 @@ void SynthEngine::presetDefaults(uint8_t index, SynthParams& out) {
       out.master = 0.57f;
       out.detuneCents = 5.0f;
       break;
-    case 3:  // Forest Choir
+    case 3:  // Forest Choir Pad
       out.waveA = 3;
       out.waveB = 2;
       out.oscMix = 0.52f;
@@ -164,89 +166,7 @@ void SynthEngine::presetDefaults(uint8_t index, SynthParams& out) {
       out.detuneCents = 1.5f;
       out.gainTrim = 0.82f;
       break;
-    case 4:  // Jivari Strings
-      out.waveA = 2;
-      out.waveB = 1;
-      out.oscMix = 0.35f;
-      out.attack = 0.34f;
-      out.decay = 0.96f;
-      out.sustain = 0.62f;
-      out.release = 1.32f;
-      out.filterType = SYNTH_FILTER_BANDPASS;
-      out.cutoffHz = 108.0f;
-      out.resonance = 4.59f;
-      out.reverb = 0.22f;
-      out.delayMs = 170.0f;
-      out.delayFeedback = 0.12f;
-      out.delayMix = 0.08f;
-      out.master = 0.48f;
-      out.detuneCents = 0.9f;
-      out.gainTrim = 0.74f;
-      break;
-    case 5:  // Pulse Arp 1
-      out.waveA = 1;
-      out.waveB = 0;
-      out.oscMix = 0.22f;
-      out.mono = 1;
-      out.maxVoices = 2;
-      out.attack = 0.003f;
-      out.decay = 0.12f;
-      out.sustain = 0.34f;
-      out.release = 0.18f;
-      out.filterType = SYNTH_FILTER_BANDPASS;
-      out.cutoffHz = 2100.0f;
-      out.resonance = 1.8f;
-      out.reverb = 0.10f;
-      out.delayMs = 90.0f;
-      out.delayFeedback = 0.21f;
-      out.delayMix = 0.12f;
-      out.distDrive = 0.16f;
-      out.master = 0.59f;
-      out.detuneCents = 2.0f;
-      break;
-    case 6:  // Pulse Arp 2
-      out.waveA = 0;
-      out.waveB = 1;
-      out.oscMix = 0.58f;
-      out.mono = 1;
-      out.maxVoices = 2;
-      out.attack = 0.002f;
-      out.decay = 0.09f;
-      out.sustain = 0.30f;
-      out.release = 0.14f;
-      out.filterType = SYNTH_FILTER_HIGHPASS;
-      out.cutoffHz = 900.0f;
-      out.resonance = 1.3f;
-      out.reverb = 0.05f;
-      out.delayMs = 75.0f;
-      out.delayFeedback = 0.18f;
-      out.delayMix = 0.10f;
-      out.distDrive = 0.22f;
-      out.master = 0.58f;
-      out.detuneCents = 1.5f;
-      break;
-    case 7:  // Rhythm Gate
-      out.waveA = 1;
-      out.waveB = 2;
-      out.oscMix = 0.35f;
-      out.mono = 0;
-      out.maxVoices = 6;
-      out.attack = 0.0015f;
-      out.decay = 0.07f;
-      out.sustain = 0.22f;
-      out.release = 0.11f;
-      out.filterType = SYNTH_FILTER_BANDPASS;
-      out.cutoffHz = 1600.0f;
-      out.resonance = 2.2f;
-      out.reverb = 0.08f;
-      out.delayMs = 130.0f;
-      out.delayFeedback = 0.24f;
-      out.delayMix = 0.14f;
-      out.distDrive = 0.20f;
-      out.master = 0.57f;
-      out.detuneCents = 1.2f;
-      break;
-    case 8:  // Thick Mono Bass
+    case 4:  // Thick Mono Bass
       out.waveA = 0;
       out.waveB = 1;
       out.oscMix = 0.64f;
@@ -268,7 +188,7 @@ void SynthEngine::presetDefaults(uint8_t index, SynthParams& out) {
       out.detuneCents = 2.0f;
       out.gainTrim = 0.88f;
       break;
-    case 9:  // Rubber Bass
+    case 5:  // Rubber Bass
       out.waveA = 2;
       out.waveB = 1;
       out.oscMix = 0.41f;
@@ -289,182 +209,6 @@ void SynthEngine::presetDefaults(uint8_t index, SynthParams& out) {
       out.master = 0.54f;
       out.detuneCents = 1.1f;
       out.gainTrim = 0.84f;
-      break;
-    case 10:  // Amber Bloom Pad
-      out.waveA = 3;
-      out.waveB = 2;
-      out.oscMix = 0.40f;
-      out.mono = 0;
-      out.maxVoices = 6;
-      out.attack = 0.62f;
-      out.decay = 1.22f;
-      out.sustain = 0.64f;
-      out.release = 1.95f;
-      out.filterType = SYNTH_FILTER_LOWPASS;
-      out.cutoffHz = 2400.0f;
-      out.resonance = 0.60f;
-      out.reverb = 0.34f;
-      out.delayMs = 340.0f;
-      out.delayFeedback = 0.24f;
-      out.delayMix = 0.14f;
-      out.distDrive = 0.02f;
-      out.master = 0.44f;
-      out.detuneCents = 1.8f;
-      out.gainTrim = 0.76f;
-      break;
-    case 11:  // Dawn Mist Keys
-      out.waveA = 2;
-      out.waveB = 3;
-      out.oscMix = 0.35f;
-      out.mono = 0;
-      out.maxVoices = 6;
-      out.attack = 0.028f;
-      out.decay = 0.54f;
-      out.sustain = 0.58f;
-      out.release = 0.68f;
-      out.filterType = SYNTH_FILTER_LOWPASS;
-      out.cutoffHz = 3200.0f;
-      out.resonance = 0.90f;
-      out.reverb = 0.16f;
-      out.delayMs = 175.0f;
-      out.delayFeedback = 0.14f;
-      out.delayMix = 0.09f;
-      out.distDrive = 0.02f;
-      out.master = 0.50f;
-      out.detuneCents = 0.8f;
-      out.gainTrim = 0.82f;
-      break;
-    case 12:  // Velvet Hollow
-      out.waveA = 3;
-      out.waveB = 1;
-      out.oscMix = 0.40f;
-      out.mono = 0;
-      out.maxVoices = 5;
-      out.attack = 0.14f;
-      out.decay = 0.70f;
-      out.sustain = 0.54f;
-      out.release = 1.10f;
-      out.filterType = SYNTH_FILTER_BANDPASS;
-      out.cutoffHz = 1380.0f;
-      out.resonance = 0.95f;
-      out.reverb = 0.22f;
-      out.delayMs = 200.0f;
-      out.delayFeedback = 0.16f;
-      out.delayMix = 0.10f;
-      out.distDrive = 0.03f;
-      out.master = 0.48f;
-      out.detuneCents = 1.1f;
-      out.gainTrim = 0.80f;
-      break;
-    case 13:  // Moon Tape Choir
-      out.waveA = 3;
-      out.waveB = 0;
-      out.oscMix = 0.56f;
-      out.mono = 0;
-      out.maxVoices = 6;
-      out.attack = 0.76f;
-      out.decay = 1.08f;
-      out.sustain = 0.68f;
-      out.release = 2.10f;
-      out.filterType = SYNTH_FILTER_LOWPASS;
-      out.cutoffHz = 1950.0f;
-      out.resonance = 0.68f;
-      out.reverb = 0.38f;
-      out.delayMs = 360.0f;
-      out.delayFeedback = 0.24f;
-      out.delayMix = 0.16f;
-      out.distDrive = 0.02f;
-      out.master = 0.42f;
-      out.detuneCents = 1.7f;
-      out.gainTrim = 0.72f;
-      break;
-    case 14:  // Aero Bell Wash
-      out.waveA = 2;
-      out.waveB = 3;
-      out.oscMix = 0.20f;
-      out.mono = 0;
-      out.maxVoices = 5;
-      out.attack = 0.09f;
-      out.decay = 0.82f;
-      out.sustain = 0.46f;
-      out.release = 1.70f;
-      out.filterType = SYNTH_FILTER_HIGHPASS;
-      out.cutoffHz = 450.0f;
-      out.resonance = 0.85f;
-      out.reverb = 0.32f;
-      out.delayMs = 275.0f;
-      out.delayFeedback = 0.23f;
-      out.delayMix = 0.14f;
-      out.distDrive = 0.02f;
-      out.master = 0.47f;
-      out.detuneCents = 0.7f;
-      out.gainTrim = 0.78f;
-      break;
-    case 15:  // Soft Grain Pluck
-      out.waveA = 1;
-      out.waveB = 3;
-      out.oscMix = 0.18f;
-      out.mono = 0;
-      out.maxVoices = 4;
-      out.attack = 0.004f;
-      out.decay = 0.24f;
-      out.sustain = 0.30f;
-      out.release = 0.38f;
-      out.filterType = SYNTH_FILTER_LOWPASS;
-      out.cutoffHz = 3800.0f;
-      out.resonance = 1.35f;
-      out.reverb = 0.12f;
-      out.delayMs = 145.0f;
-      out.delayFeedback = 0.17f;
-      out.delayMix = 0.08f;
-      out.distDrive = 0.04f;
-      out.master = 0.49f;
-      out.detuneCents = 0.7f;
-      out.gainTrim = 0.82f;
-      break;
-    case 16:  // Low Tide Organ
-      out.waveA = 3;
-      out.waveB = 2;
-      out.oscMix = 0.50f;
-      out.mono = 0;
-      out.maxVoices = 5;
-      out.attack = 0.035f;
-      out.decay = 0.62f;
-      out.sustain = 0.74f;
-      out.release = 0.92f;
-      out.filterType = SYNTH_FILTER_LOWPASS;
-      out.cutoffHz = 2100.0f;
-      out.resonance = 0.74f;
-      out.reverb = 0.19f;
-      out.delayMs = 210.0f;
-      out.delayFeedback = 0.15f;
-      out.delayMix = 0.09f;
-      out.distDrive = 0.03f;
-      out.master = 0.47f;
-      out.detuneCents = 0.9f;
-      out.gainTrim = 0.80f;
-      break;
-    case 17:  // Warm Drift Mono
-      out.waveA = 0;
-      out.waveB = 3;
-      out.oscMix = 0.32f;
-      out.mono = 1;
-      out.maxVoices = 1;
-      out.attack = 0.015f;
-      out.decay = 0.26f;
-      out.sustain = 0.63f;
-      out.release = 0.44f;
-      out.filterType = SYNTH_FILTER_LOWPASS;
-      out.cutoffHz = 2200.0f;
-      out.resonance = 1.05f;
-      out.reverb = 0.09f;
-      out.delayMs = 95.0f;
-      out.delayFeedback = 0.14f;
-      out.delayMix = 0.08f;
-      out.distDrive = 0.06f;
-      out.master = 0.48f;
-      out.detuneCents = 1.0f;
-      out.gainTrim = 0.80f;
       break;
   }
 }

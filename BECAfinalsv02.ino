@@ -33,6 +33,7 @@ BLEMIDI_CREATE_INSTANCE("BECA BLE-MIDI", MIDI);
 #include <ESPmDNS.h>
 
 #include <esp_wifi.h>
+#include <esp_system.h>
 
 #include "logo_svg.h"
 #include "index_html.h"
@@ -92,6 +93,12 @@ static inline uint32_t auxSwitchWaitMs() {
 }
 static inline bool drumsAllowedForCurrentOutput();
 static inline void enforceAuxDrumGuard();
+static inline bool isValidDen(uint8_t d);
+static inline void recalcTransport(bool resetPhase);
+
+extern Preferences prefs;
+extern float restProb;
+extern bool avoidRepeats;
 
 static inline void serialMidiSend3(uint8_t st, uint8_t d1, uint8_t d2) {
   char line[24];
@@ -410,6 +417,81 @@ struct Transport {
 };
 Transport T;
 
+// -------------------- DAW Sync --------------------
+volatile bool gDawSyncEnabled = false;
+volatile bool gDawClockRunning = false;
+volatile uint8_t gDawClockPulseAcc = 0;
+volatile uint8_t gDawStepPending = 0;
+volatile uint32_t gDawLastPulseMs = 0;
+const uint32_t DAW_SYNC_TIMEOUT_MS = 1000;
+
+static inline uint8_t dawPulsesPerStep();
+static inline bool dawSyncLocked(uint32_t nowMs = 0);
+static inline void applyDawSyncEnabled(bool enabled);
+static inline void onMidiClock();
+static inline void onMidiStart();
+static inline void onMidiStop();
+static inline void onMidiContinue();
+static inline bool resetReasonIsCrash(esp_reset_reason_t reason);
+static inline const char* resetReasonName(esp_reset_reason_t reason);
+
+// -------------------- Runtime Recovery --------------------
+static const uint32_t RUNTIME_STATE_MAGIC = 0x42454341UL;  // "BECA"
+static const uint8_t RUNTIME_STATE_VER = 1;
+const uint32_t RUNTIME_SAVE_DEBOUNCE_MS = 1400;
+const uint32_t RUNTIME_SAVE_MIN_INTERVAL_MS = 7000;
+
+struct RuntimeStateBlob {
+  uint32_t magic;
+  uint8_t version;
+  uint8_t outputmode;
+  uint8_t io_muted;
+  uint8_t daw_sync;
+  uint8_t mode;
+  uint8_t clock;
+  uint8_t scale;
+  uint8_t root;
+  uint16_t bpm;
+  uint8_t swing;
+  uint8_t bright;
+  uint8_t lo;
+  uint8_t hi;
+  uint8_t fx;
+  uint8_t pal;
+  uint8_t vs;
+  uint8_t vi;
+  uint8_t nr;
+  uint8_t beats;
+  uint8_t den;
+  uint8_t drumsel;
+  float sens;
+  float rest;
+  beca::SynthParams synth;
+};
+
+volatile bool gRecoveringFromCrash = false;
+uint8_t gCrashCount = 0;
+uint8_t gLastResetReasonCode = 0;
+uint32_t gLastRuntimeSig = 0;
+uint32_t gLastRuntimeProbeMs = 0;
+uint32_t gLastRuntimeSaveMs = 0;
+uint32_t gRuntimeDirtySinceMs = 0;
+bool gRuntimeSigInit = false;
+bool gRuntimeDirty = false;
+bool gSoftRestartPending = false;
+uint32_t gSoftRestartAtMs = 0;
+uint8_t gUnderrunHighStreak = 0;
+
+static inline uint32_t hashBytesFnv1a(uint32_t h, const void* data, size_t len);
+static inline uint32_t runtimeStateSignature();
+static inline void captureRuntimeState(RuntimeStateBlob& out);
+static inline bool loadRuntimeStateFromOpenPrefs(RuntimeStateBlob& out);
+static inline bool runtimeStateValid(const RuntimeStateBlob& in);
+static inline void applyRuntimeState(const RuntimeStateBlob& in, bool applyOutputMode, bool applyMute);
+static inline void saveRuntimeStateNow();
+static inline void serviceRuntimeAutoSave(uint32_t nowMs);
+static inline void requestSoftRestart(const char* reason);
+
 // -------------------- Music theory --------------------
 enum Mode { MODE_NOTE = 0, MODE_ARP = 1, MODE_CHORD = 2, MODE_DRUM = 3 };
 Mode gMode = MODE_CHORD;
@@ -661,6 +743,178 @@ const char PALETTES_JSON[] PROGMEM = R"JSON({"list":[
 "Heat Soft","Vintage","Pastel","Retro","Mojito","Tea Rose"
 ]})JSON";
 
+static inline bool resetReasonIsCrash(esp_reset_reason_t reason) {
+  return reason == ESP_RST_PANIC ||
+         reason == ESP_RST_INT_WDT ||
+         reason == ESP_RST_TASK_WDT ||
+         reason == ESP_RST_WDT ||
+         reason == ESP_RST_BROWNOUT;
+}
+
+static inline const char* resetReasonName(esp_reset_reason_t reason) {
+  switch (reason) {
+    case ESP_RST_UNKNOWN:   return "unknown";
+    case ESP_RST_POWERON:   return "poweron";
+    case ESP_RST_EXT:       return "ext";
+    case ESP_RST_SW:        return "software";
+    case ESP_RST_PANIC:     return "panic";
+    case ESP_RST_INT_WDT:   return "int_wdt";
+    case ESP_RST_TASK_WDT:  return "task_wdt";
+    case ESP_RST_WDT:       return "wdt";
+    case ESP_RST_DEEPSLEEP: return "deepsleep";
+    case ESP_RST_BROWNOUT:  return "brownout";
+    case ESP_RST_SDIO:      return "sdio";
+    default:                return "other";
+  }
+}
+
+static inline uint32_t hashBytesFnv1a(uint32_t h, const void* data, size_t len) {
+  const uint8_t* p = (const uint8_t*)data;
+  for (size_t i = 0; i < len; ++i) {
+    h ^= p[i];
+    h *= 16777619u;
+  }
+  return h;
+}
+
+static inline void captureRuntimeState(RuntimeStateBlob& out) {
+  memset(&out, 0, sizeof(out));
+  out.magic = RUNTIME_STATE_MAGIC;
+  out.version = RUNTIME_STATE_VER;
+  out.outputmode = (uint8_t)constrain((int)gOutputMode, 0, 2);
+  out.io_muted = ioMuteActive() ? 1 : 0;
+  out.daw_sync = gDawSyncEnabled ? 1 : 0;
+  out.mode = (uint8_t)gMode;
+  out.clock = (uint8_t)gClock;
+  out.scale = (uint8_t)gScale;
+  out.root = (uint8_t)(rootMidi % 12);
+  out.bpm = (uint16_t)constrain((int)bpm, 20, 240);
+  out.swing = (uint8_t)constrain((int)swingPct, 0, 60);
+  out.bright = gBrightness;
+  out.lo = (uint8_t)constrain((int)lowOct, 1, 9);
+  out.hi = (uint8_t)constrain((int)highOct, 1, 9);
+  out.fx = (uint8_t)fxMode;
+  out.pal = (uint8_t)constrain((int)currentPaletteIndex, 0, (int)(NUM_BUILTIN + NUM_CUSTOM - 1));
+  out.vs = visSpeed;
+  out.vi = visIntensity;
+  out.nr = avoidRepeats ? 1 : 0;
+  out.beats = (uint8_t)constrain((int)gTS.beats, 1, 16);
+  out.den = isValidDen(gTS.noteVal) ? gTS.noteVal : 4;
+  out.drumsel = (uint8_t)drumSelMask;
+  out.sens = clampf(sens, 0.0f, 0.5f);
+  out.rest = clampf(restProb, 0.0f, 0.8f);
+  gSynth.getParams(out.synth);
+}
+
+static inline bool runtimeStateValid(const RuntimeStateBlob& in) {
+  if (in.magic != RUNTIME_STATE_MAGIC) return false;
+  if (in.version != RUNTIME_STATE_VER) return false;
+  if (in.outputmode > 2) return false;
+  if (in.mode > 3) return false;
+  if (in.clock > 1) return false;
+  if (in.scale > 14) return false;
+  if (in.root > 11) return false;
+  if (in.bpm < 20 || in.bpm > 240) return false;
+  if (in.swing > 60) return false;
+  if (in.lo < 1 || in.lo > 9) return false;
+  if (in.hi < 1 || in.hi > 9) return false;
+  if (in.fx >= (uint8_t)FX_COUNT) return false;
+  if (in.pal >= (uint8_t)(NUM_BUILTIN + NUM_CUSTOM)) return false;
+  if (!isValidDen(in.den)) return false;
+  return true;
+}
+
+static inline bool loadRuntimeStateFromOpenPrefs(RuntimeStateBlob& out) {
+  if (!prefs.isKey("rt_state")) return false;
+  size_t n = prefs.getBytesLength("rt_state");
+  if (n != sizeof(RuntimeStateBlob)) return false;
+  if (prefs.getBytes("rt_state", &out, sizeof(RuntimeStateBlob)) != sizeof(RuntimeStateBlob)) return false;
+  return runtimeStateValid(out);
+}
+
+static inline void applyRuntimeState(const RuntimeStateBlob& in, bool applyOutputMode, bool applyMute) {
+  gMode = (Mode)constrain((int)in.mode, 0, 3);
+  gClock = (ClockMode)constrain((int)in.clock, 0, 1);
+  gScale = (ScaleType)constrain((int)in.scale, 0, 14);
+  rootMidi = (uint8_t)(60 + (in.root % 12));
+  bpm = (uint16_t)constrain((int)in.bpm, 20, 240);
+  swingPct = (uint8_t)constrain((int)in.swing, 0, 60);
+  gBrightness = (uint8_t)constrain((int)in.bright, 10, 255);
+  lowOct = (uint8_t)constrain((int)in.lo, 1, 9);
+  highOct = (uint8_t)constrain((int)in.hi, 1, 9);
+  if (highOct < lowOct) highOct = lowOct;
+  fxMode = (EffectMode)constrain((int)in.fx, 0, (int)FX_COUNT - 1);
+  currentPaletteIndex = (uint8_t)constrain((int)in.pal, 0, (int)(NUM_BUILTIN + NUM_CUSTOM - 1));
+  visSpeed = in.vs;
+  visIntensity = in.vi;
+  sens = clampf(in.sens, 0.0f, 0.5f);
+  restProb = clampf(in.rest, 0.0f, 0.8f);
+  avoidRepeats = (in.nr != 0);
+  gTS.beats = (uint8_t)constrain((int)in.beats, 1, 16);
+  gTS.noteVal = isValidDen(in.den) ? in.den : 4;
+  gTS.triplet = false;
+  drumSelMask = in.drumsel;
+  applyDawSyncEnabled(in.daw_sync != 0);
+  if (applyOutputMode) gOutputMode = (uint8_t)constrain((int)in.outputmode, 0, 2);
+  if (applyMute) gIoMuted = in.io_muted ? 1 : 0;
+  gSynth.setParams(in.synth);
+  enforceAuxDrumGuard();
+  recalcTransport(true);
+}
+
+static inline uint32_t runtimeStateSignature() {
+  RuntimeStateBlob snap;
+  captureRuntimeState(snap);
+  uint32_t h = 2166136261u;
+  h = hashBytesFnv1a(h, &snap, sizeof(snap));
+  return h;
+}
+
+static inline void saveRuntimeStateNow() {
+  RuntimeStateBlob snap;
+  captureRuntimeState(snap);
+  prefs.begin("beca", false);
+  prefs.putBytes("rt_state", &snap, sizeof(snap));
+  prefs.putUChar("outputmode", snap.outputmode);
+  prefs.putUChar("midimode", snap.outputmode == OUTPUT_SERIAL ? 1 : 0);  // legacy compatibility
+  prefs.end();
+  gLastRuntimeSaveMs = millis();
+  gRuntimeDirty = false;
+}
+
+static inline void serviceRuntimeAutoSave(uint32_t nowMs) {
+  if ((int32_t)(nowMs - gLastRuntimeProbeMs) < 450) return;
+  gLastRuntimeProbeMs = nowMs;
+
+  const uint32_t sig = runtimeStateSignature();
+  if (!gRuntimeSigInit) {
+    gLastRuntimeSig = sig;
+    gRuntimeSigInit = true;
+    gLastRuntimeSaveMs = nowMs;
+    return;
+  }
+
+  if (sig != gLastRuntimeSig) {
+    gLastRuntimeSig = sig;
+    gRuntimeDirty = true;
+    gRuntimeDirtySinceMs = nowMs;
+  }
+
+  if (gRuntimeDirty &&
+      (int32_t)(nowMs - gRuntimeDirtySinceMs) >= (int32_t)RUNTIME_SAVE_DEBOUNCE_MS &&
+      (int32_t)(nowMs - gLastRuntimeSaveMs) >= (int32_t)RUNTIME_SAVE_MIN_INTERVAL_MS) {
+    saveRuntimeStateNow();
+  }
+}
+
+static inline void requestSoftRestart(const char* reason) {
+  if (gSoftRestartPending) return;
+  saveRuntimeStateNow();
+  gSoftRestartPending = true;
+  gSoftRestartAtMs = millis() + 140;
+  Serial.printf("@W SOFT RESTART %s\n", reason);
+}
+
 static inline void addGlitter(uint8_t chance, uint8_t v = 200) {
   if (random8() < chance) leds[random8(LED_COUNT)] += CHSV(0, 0, v);
 }
@@ -780,8 +1034,8 @@ static inline void renderLEDs() {
 }
 
 static inline void startupAnim() {
-  fill_solid(leds, LED_COUNT, CRGB::Green); FastLED.show(); delay(60);
-  fill_solid(leds, LED_COUNT, CRGB::Black); FastLED.show(); delay(40);
+  fill_solid(leds, LED_COUNT, CRGB::Green); FastLED.show(); delay(35);
+  fill_solid(leds, LED_COUNT, CRGB::Black); FastLED.show(); delay(20);
   delay(0);
 }
 
@@ -825,6 +1079,70 @@ static inline void recalcTransport(bool resetPhase = true) {
     T.swingOdd   = false;
     T.nextTickMs = millis() + T.stepMs;
   }
+}
+
+static inline uint8_t dawPulsesPerStep() {
+  uint8_t den = isValidDen(gTS.noteVal) ? gTS.noteVal : 4;
+  uint8_t pulses = (uint8_t)(96 / den);  // 24 PPQN * quarter ratio
+  return pulses ? pulses : 1;
+}
+
+static inline bool dawSyncLocked(uint32_t nowMs) {
+  if (!gDawSyncEnabled || !gDawClockRunning) return false;
+  if (nowMs == 0) nowMs = millis();
+  uint32_t last = gDawLastPulseMs;
+  if (last == 0) return false;
+  return (int32_t)(nowMs - last) <= (int32_t)DAW_SYNC_TIMEOUT_MS;
+}
+
+static inline void applyDawSyncEnabled(bool enabled) {
+  if ((bool)gDawSyncEnabled == enabled) return;
+  gDawSyncEnabled = enabled;
+  gDawClockRunning = false;
+  gDawClockPulseAcc = 0;
+  gDawStepPending = 0;
+  gDawLastPulseMs = 0;
+  if (!enabled) T.nextTickMs = millis() + T.stepMs;
+}
+
+static inline void onMidiClock() {
+  if (!gDawSyncEnabled) return;
+
+  const uint32_t nowMs = millis();
+  gDawLastPulseMs = nowMs;
+
+  if (!gDawClockRunning) return;
+
+  uint8_t acc = (uint8_t)(gDawClockPulseAcc + 1);
+  const uint8_t pulsesPerStep = dawPulsesPerStep();
+  while (acc >= pulsesPerStep) {
+    acc = (uint8_t)(acc - pulsesPerStep);
+    if (gDawStepPending < 8) gDawStepPending++;
+  }
+  gDawClockPulseAcc = acc;
+}
+
+static inline void onMidiStart() {
+  if (!gDawSyncEnabled) return;
+  gDawClockRunning = true;
+  gDawClockPulseAcc = 0;
+  gDawStepPending = 0;
+  gDawLastPulseMs = millis();
+  T.stepInBar = 0;
+  T.swingOdd = false;
+}
+
+static inline void onMidiStop() {
+  if (!gDawSyncEnabled) return;
+  gDawClockRunning = false;
+  gDawClockPulseAcc = 0;
+  gDawStepPending = 0;
+}
+
+static inline void onMidiContinue() {
+  if (!gDawSyncEnabled) return;
+  gDawClockRunning = true;
+  gDawLastPulseMs = millis();
 }
 
 // -------------------- Encoder --------------------
@@ -1261,6 +1579,8 @@ struct LastState {
   uint8_t  midimode;
   uint8_t  outputmode;
   uint8_t  io_muted;
+  uint8_t  daw_sync;
+  uint8_t  daw_lock;
   uint8_t  clock;
   uint8_t  mode;
   uint8_t  scale;
@@ -1349,6 +1669,8 @@ static inline bool stateChanged() {
   if (LS.midimode != (uint8_t)(outputModeIsSerial() ? 1 : 0)) return true;
   if (LS.outputmode != (uint8_t)gOutputMode) return true;
   if (LS.io_muted != (ioMuteActive() ? 1 : 0)) return true;
+  if (LS.daw_sync != (gDawSyncEnabled ? 1 : 0)) return true;
+  if (LS.daw_lock != (dawSyncLocked(0) ? 1 : 0)) return true;
   if (LS.clock != (uint8_t)gClock) return true;
   if (LS.mode  != (uint8_t)gMode) return true;
   if (LS.scale != (uint8_t)gScale) return true;
@@ -1380,6 +1702,8 @@ static inline void captureState() {
   LS.midimode = (uint8_t)(outputModeIsSerial() ? 1 : 0);
   LS.outputmode = (uint8_t)gOutputMode;
   LS.io_muted = ioMuteActive() ? 1 : 0;
+  LS.daw_sync = gDawSyncEnabled ? 1 : 0;
+  LS.daw_lock = dawSyncLocked(0) ? 1 : 0;
   LS.clock = (uint8_t)gClock;
   LS.mode  = (uint8_t)gMode;
   LS.scale = (uint8_t)gScale;
@@ -1412,7 +1736,7 @@ static inline void pushStateIfChanged(bool force=false) {
   captureState();
   stateVersion++;
 
-  char buf[840];
+  char buf[920];
   snprintf(buf, sizeof(buf),
     "{\"ver\":%u,"
     "\"ble\":%u,"
@@ -1420,6 +1744,8 @@ static inline void pushStateIfChanged(bool force=false) {
     "\"outputmode\":%u,"
     "\"outputname\":\"%s\","
     "\"io_muted\":%u,"
+    "\"daw_sync\":%u,"
+    "\"daw_lock\":%u,"
     "\"clock\":%u,"
     "\"mode\":%u,"
     "\"scale\":%u,"
@@ -1450,6 +1776,8 @@ static inline void pushStateIfChanged(bool force=false) {
     LS.outputmode,
     outputModeName(LS.outputmode),
     LS.io_muted,
+    LS.daw_sync,
+    LS.daw_lock,
     LS.clock,
     LS.mode,
     LS.scale,
@@ -1590,10 +1918,7 @@ static inline void setRest()    { if (server.hasArg("v")) restProb = clampf(serv
 static inline void setNoRep()   { if (server.hasArg("v")) avoidRepeats = (server.arg("v").toInt() != 0); pushStateIfChanged(true); server.send(200,"text/plain","OK"); }
 
 static inline void saveOutputModePref() {
-  prefs.begin("beca", false);
-  prefs.putUChar("outputmode", gOutputMode);
-  prefs.putUChar("midimode", outputModeIsSerial() ? 1 : 0); // legacy key for compatibility
-  prefs.end();
+  saveRuntimeStateNow();
 }
 
 static inline void setMidiMode() {
@@ -1668,6 +1993,24 @@ static inline bool parseOnOffArg(const String& in, bool& outOn) {
   if (v == "1" || v == "on" || v == "true")  { outOn = true; return true; }
   if (v == "0" || v == "off" || v == "false") { outOn = false; return true; }
   return false;
+}
+
+static inline void handleApiSyncPost() {
+  bool nextSync = gDawSyncEnabled;
+  bool ok = false;
+
+  if (server.hasArg("v")) ok = parseOnOffArg(server.arg("v"), nextSync);
+  else if (server.hasArg("sync")) ok = parseOnOffArg(server.arg("sync"), nextSync);
+  else if (server.hasArg("plain")) ok = parseOnOffArg(server.arg("plain"), nextSync);
+
+  if (!ok) {
+    server.send(400, "application/json", "{\"ok\":0,\"err\":\"sync flag required\"}");
+    return;
+  }
+
+  applyDawSyncEnabled(nextSync);
+  pushStateIfChanged(true);
+  server.send(200, "application/json", "{\"ok\":1}");
 }
 
 static inline void handleApiMuteGet() {
@@ -1974,7 +2317,10 @@ static inline String buildApiInfoJson() {
   json += "\"midimode\":"; json += (outputModeIsSerial() ? 1 : 0); json += ",";
   json += "\"outputmode\":\""; json += outputModeName(gOutputMode); json += "\",";
   json += "\"io_muted\":"; json += (ioMuteActive() ? 1 : 0); json += ",";
-  json += "\"ble_connected\":"; json += (gMidiConnected ? 1 : 0);
+  json += "\"ble_connected\":"; json += (gMidiConnected ? 1 : 0); json += ",";
+  json += "\"last_reset\":\""; json += resetReasonName((esp_reset_reason_t)gLastResetReasonCode); json += "\",";
+  json += "\"recovering\":"; json += (gRecoveringFromCrash ? 1 : 0); json += ",";
+  json += "\"crash_count\":"; json += gCrashCount;
   json += "}";
   return json;
 }
@@ -2304,7 +2650,7 @@ static inline void serviceSerialControlCommands() {
   }
 }
 
-static inline bool tryConnectSTA(const String &ssid, const String &pass, uint32_t timeoutMs = 12000) {
+static inline bool tryConnectSTA(const String &ssid, const String &pass, uint32_t timeoutMs = 9000) {
   // Force clean STA start (prevents half-connected states + 0.0.0.0)
   WiFi.disconnect(true, true);
   delay(100);
@@ -2321,7 +2667,7 @@ static inline bool tryConnectSTA(const String &ssid, const String &pass, uint32_
   uint32_t t0 = millis();
   while ((WiFi.status() != WL_CONNECTED || WiFi.localIP() == IPAddress(0,0,0,0)) &&
          (millis() - t0) < timeoutMs) {
-    delay(250);
+    delay(200);
     delay(0);
     Serial.print(".");
   }
@@ -2389,15 +2735,15 @@ static inline void startAPPortal() {
 const uint32_t PLANT_INTERVAL_MS = 8;    // ~125 Hz
 const uint32_t LED_INTERVAL_MS   = 34;   // ~29 FPS
 const uint32_t SSE_SCOPE_MS      = 100;  // 10 fps scope (plant only)
-const uint32_t SSE_NOTE_MS       = 60;   // ~16 fps note grid
-const uint32_t SSE_DRUM_MS       = 50;   // ~20 fps drum UI
+const uint32_t SSE_NOTE_MS       = 72;   // ~14 fps note grid
+const uint32_t SSE_DRUM_MS       = 66;   // ~15 fps drum UI
 bool     gWarmupDone = false;
 uint32_t gWarmupEndMs = 0;
 
 // -------------------- setup() --------------------
 void setup() {
   Serial.begin(SERIAL_MIDI_BAUD);
-  delay(1000);
+  delay(240);
   Serial.println();
   Serial.println("=== BECA booting ===");
   randomSeed(esp_random());
@@ -2408,6 +2754,10 @@ void setup() {
   BLEMIDI.setHandleConnected(onBleMidiConnect);
   BLEMIDI.setHandleDisconnected(onBleMidiDisconnect);
   MIDI.begin(MIDI_CHANNEL_OMNI);
+  MIDI.setHandleClock(onMidiClock);
+  MIDI.setHandleStart(onMidiStart);
+  MIDI.setHandleStop(onMidiStop);
+  MIDI.setHandleContinue(onMidiContinue);
 
   // LEDs
   FastLED.addLeds<LED_TYPE, LED_PIN, LED_COLOR_ORDER>(leds, LED_COUNT);
@@ -2421,17 +2771,38 @@ void setup() {
   ema1 = base1 = analogRead(PLANT1_PIN);
   ema2 = base2 = analogRead(PLANT2_PIN);
   setupEncoder();
-  warmupPlant(120);
+  warmupPlant(60);
   gWarmupDone = false;
   gWarmupEndMs = millis() + 1600;
 
-  // Wi-Fi provisioning boot
-  prefs.begin("beca", true);
+  // Wi-Fi provisioning + runtime recovery boot
+  prefs.begin("beca", false);
+  const esp_reset_reason_t resetReason = esp_reset_reason();
+  gLastResetReasonCode = (uint8_t)resetReason;
+  gRecoveringFromCrash = resetReasonIsCrash(resetReason);
+  const uint8_t prevCrashCount = prefs.getUChar("crashcnt", 0);
+  gCrashCount = gRecoveringFromCrash
+                  ? (uint8_t)constrain((int)prevCrashCount + 1, 0, 250)
+                  : 0;
+  prefs.putUChar("lastrst", gLastResetReasonCode);
+  prefs.putUChar("crashcnt", gCrashCount);
+
   gDeviceName = prefs.getString("name", "");
   gStaSsid    = prefs.getString("ssid", "");
   gStaPass    = prefs.getString("pass", "");
   const uint8_t legacyMidiMode = (uint8_t)constrain((int)prefs.getUChar("midimode", 0), 0, 1);
   uint8_t storedOutput = prefs.getUChar("outputmode", 255);
+  bool bootMute = false;
+
+  RuntimeStateBlob bootState;
+  const bool hasBootState = loadRuntimeStateFromOpenPrefs(bootState);
+  if (hasBootState) {
+    applyRuntimeState(bootState, false, false);
+    storedOutput = bootState.outputmode;
+    bootMute = (bootState.io_muted != 0);
+    Serial.println("@I RUNTIME STATE RESTORED");
+  }
+
   if (storedOutput > 2) {
     storedOutput = legacyMidiMode;
   }
@@ -2442,6 +2813,10 @@ void setup() {
                   outputModeName(bootOutput), (unsigned long)AUX_STARTUP_LOCK_MS);
   }
   gOutputMode = bootOutput;
+  gIoMuted = bootMute ? 1 : 0;
+
+  Serial.printf("@I RESET %s crash_count=%u\n", resetReasonName(resetReason), (unsigned)gCrashCount);
+
   prefs.end();
   if (gDeviceName.length() == 0) gDeviceName = "beca-" + shortChipId();
 
@@ -2498,6 +2873,7 @@ void setup() {
   server.on("/api/outputmode", HTTP_POST, handleApiOutputModePost);
   server.on("/api/mute",       HTTP_GET,  handleApiMuteGet);
   server.on("/api/mute",       HTTP_POST, handleApiMutePost);
+  server.on("/api/sync",       HTTP_POST, handleApiSyncPost);
   server.on("/api/synth",      HTTP_GET,  handleApiSynthGet);
   server.on("/api/synth",      HTTP_POST, handleApiSynthPost);
   server.on("/api/synth/test", HTTP_GET,  handleApiSynthTest);
@@ -2576,24 +2952,53 @@ void loop() {
     plantPerformerTick();
   }
 
+  // Process incoming BLE-MIDI realtime clock/messages.
+  MIDI.read();
+
   // Transport tick
-  if ((int32_t)(now - T.nextTickMs) >= 0) {
-    uint8_t maxCatch = 4;
-    do {
-      uint32_t base = T.stepMs;
-      uint32_t swingAdd = 0;
+  if (gDawSyncEnabled && gDawClockRunning) {
+    uint32_t lastPulse = gDawLastPulseMs;
+    if (lastPulse == 0 || (int32_t)(now - lastPulse) > (int32_t)DAW_SYNC_TIMEOUT_MS) {
+      gDawClockRunning = false;
+      gDawClockPulseAcc = 0;
+      gDawStepPending = 0;
+    }
+  }
 
-      T.swingOdd = !T.swingOdd;
-      if (swingPct && T.swingOdd) swingAdd = (base * swingPct) / 100;
-
-      T.nextTickMs += base + swingAdd;
-      transportTick();
-
-      if (--maxCatch == 0) break;
-    } while ((int32_t)(now - T.nextTickMs) >= 0);
-
-    if ((int32_t)(now - T.nextTickMs) > (int32_t)T.stepMs * 8) {
+  static bool wasDawLocked = false;
+  const bool dawLocked = dawSyncLocked(now);
+  if (dawLocked) {
+    if (!wasDawLocked) T.nextTickMs = now + T.stepMs;
+    wasDawLocked = true;
+    uint8_t pending = gDawStepPending;
+    if (pending > 0) {
+      if (pending > 6) pending = 6;
+      gDawStepPending = (uint8_t)(gDawStepPending - pending);
+      while (pending--) transportTick();
+    }
+  } else {
+    if (wasDawLocked) {
       T.nextTickMs = now + T.stepMs;
+      wasDawLocked = false;
+    }
+    if ((int32_t)(now - T.nextTickMs) >= 0) {
+      uint8_t maxCatch = 4;
+      do {
+        uint32_t base = T.stepMs;
+        uint32_t swingAdd = 0;
+
+        T.swingOdd = !T.swingOdd;
+        if (swingPct && T.swingOdd) swingAdd = (base * swingPct) / 100;
+
+        T.nextTickMs += base + swingAdd;
+        transportTick();
+
+        if (--maxCatch == 0) break;
+      } while ((int32_t)(now - T.nextTickMs) >= 0);
+
+      if ((int32_t)(now - T.nextTickMs) > (int32_t)T.stepMs * 8) {
+        T.nextTickMs = now + T.stepMs;
+      }
     }
   }
 
@@ -2621,8 +3026,16 @@ void loop() {
     if (u > 0) {
       Serial.printf("@W I2S UNDERRUN %lu\n", (unsigned long)u);
     }
+    if (u >= 40) {
+      if (gUnderrunHighStreak < 255) gUnderrunHighStreak++;
+    } else if (gUnderrunHighStreak > 0) {
+      gUnderrunHighStreak--;
+    }
+    if (gUnderrunHighStreak >= 5) {
+      requestSoftRestart("audio_underrun");
+      gUnderrunHighStreak = 0;
+    }
   }
-
 
   // SSE maintenance
   if (sseConnected) {
@@ -2633,7 +3046,7 @@ void loop() {
       sseConnected = false;
     } else {
       // State diff push
-      if ((int32_t)(now - lastStatePushMs) >= 120) {
+      if ((int32_t)(now - lastStatePushMs) >= 140) {
         lastStatePushMs = now;
         pushStateIfChanged(false);
       }
@@ -2700,8 +3113,25 @@ void loop() {
     }
   }
 
+  serviceRuntimeAutoSave(now);
+
   serviceNoteOffs();
-  if (!ioMuteActive()) MIDI.read();
+
+  if (gRecoveringFromCrash && now > 45000) {
+    gRecoveringFromCrash = false;
+    gCrashCount = 0;
+    prefs.begin("beca", false);
+    prefs.putUChar("crashcnt", 0);
+    prefs.end();
+    Serial.println("@I RECOVERY STABLE");
+  }
+
+  if (gSoftRestartPending && (int32_t)(now - gSoftRestartAtMs) >= 0) {
+    Serial.println("@I RESTARTING");
+    Serial.flush();
+    delay(20);
+    ESP.restart();
+  }
 }
 
 

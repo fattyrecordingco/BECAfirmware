@@ -299,6 +299,22 @@ Notes:
 - `Mute I/O` is a global mute: it silences AUX and blocks outgoing MIDI.
 - For stability, after reboot BECA may come up in `BLE` or `SERIAL`; reselect `AUX OUT` in the UI if needed.
 
+### DAW Sync Button (Bottom Bar)
+
+Use the `DAW Sync` toggle in the bottom bar (between output mode and `Mute I/O`) when you need BECA locked to DAW transport tempo.
+
+1. Connect your DAW to `BECA BLE-MIDI`.
+2. Enable MIDI Clock output from your DAW to that BLE MIDI destination.
+3. Toggle `DAW Sync` ON in BECA UI.
+4. Wait for the sync state to change from `ARM` to `LOCK` (clock detected and running).
+5. Keep BECA `Time Signature` set to the same signature as your DAW project.
+
+Notes:
+- `ARM` means sync is enabled but clock is not currently running.
+- `LOCK` means BECA is following incoming DAW clock tempo.
+- If DAW clock stops/disconnects, BECA safely falls back to internal timing.
+- Sync is intentionally low-overhead: BECA follows incoming realtime clock and does not flood extra sync traffic.
+
 ## 9) BLE MIDI Setup (Simple)
 
 1. In BECA UI, set `Output Mode` to `BLE`.
@@ -469,6 +485,14 @@ Test:
 2. Open `http://<beca-ip>/api/synth/test`.
 3. Confirm you hear a short test tone/chord.
 
+Onboard synth preset bank (reduced for stability):
+- `Fatty Neon Lead` (mono lead)
+- `Prism Poly Lead` (poly lead)
+- `Verdant Pad`
+- `Forest Choir Pad`
+- `Thick Mono Bass`
+- `Rubber Bass`
+
 ## 15) Operating Rules (Avoid Common Problems)
 
 - Do not run Serial Monitor and Serial MIDI bridge at the same time.
@@ -476,6 +500,9 @@ Test:
 - If bridge shows `Access is denied`, another app owns the COM port.
 - Use 2.4 GHz Wi-Fi for setup and normal operation.
 - If using BLE only, bridge tool is not required.
+- BECA now auto-saves runtime settings in the background (debounced) so reboot recovery restores last known state.
+- If severe audio underruns are detected repeatedly, firmware performs a soft auto-restart and reloads saved state.
+- Startup was tuned for smoother boot: shorter fixed boot delays and faster STA connect fallback window.
 
 ## 16) Troubleshooting
 
@@ -540,6 +567,21 @@ If something fails, start here first.
 3. Enable the same MIDI port in DAW settings.
 4. Arm/record-enable a track.
 5. Press `Test Note` in BECA Setup to confirm routing.
+
+### Problem: DAW Sync shows ARM and never reaches LOCK
+
+1. Connect DAW MIDI to `BECA BLE-MIDI`.
+2. In DAW settings, enable MIDI Clock output to that BLE destination.
+3. Start DAW playback (LOCK appears only while transport clock is running).
+4. Keep BECA `Time Signature` matched to the DAW project signature.
+5. If it still does not lock, disconnect/reconnect BLE MIDI and retry.
+
+### Problem: Device reboots after lag or underrun spikes
+
+1. Wait for reboot to finish; runtime settings should restore automatically.
+2. Check `/api/info` and look at `last_reset`, `recovering`, and `crash_count`.
+3. In `AUX OUT`, reduce extreme FX or master gain if underruns remain frequent.
+4. If repeated restarts continue, reflash firmware and retest with default settings once.
 
 ### Problem: BECA web page does not open
 

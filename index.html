@@ -762,7 +762,7 @@
       body.ui-muted .utility-bar {
         pointer-events: auto;
       }
-      body.ui-muted .utility-bar .toggle:not(.mute-toggle):not(.transport-toggle),
+      body.ui-muted .utility-bar .toggle:not(.mute-toggle):not(.transport-toggle):not(.sync-toggle),
       body.ui-muted #rnd {
         opacity: 0.4;
         pointer-events: none;
@@ -1050,23 +1050,11 @@
             <div class="label">Preset</div>
             <select id="synthPreset">
               <option value="0">Fatty Neon Lead</option>
-              <option value="1">Glass Reed Lead</option>
+              <option value="1">Prism Poly Lead</option>
               <option value="2">Verdant Pad</option>
-              <option value="3">Forest Choir</option>
-              <option value="4">Jivari Strings</option>
-              <option value="5">Pulse Arp 1</option>
-              <option value="6">Pulse Arp 2</option>
-              <option value="7">Rhythm Gate</option>
-              <option value="8">Thick Mono Bass</option>
-              <option value="9">Rubber Bass</option>
-              <option value="10">Amber Bloom Pad</option>
-              <option value="11">Dawn Mist Keys</option>
-              <option value="12">Velvet Hollow</option>
-              <option value="13">Moon Tape Choir</option>
-              <option value="14">Aero Bell Wash</option>
-              <option value="15">Soft Grain Pluck</option>
-              <option value="16">Low Tide Organ</option>
-              <option value="17">Warm Drift Mono</option>
+              <option value="3">Forest Choir Pad</option>
+              <option value="4">Thick Mono Bass</option>
+              <option value="5">Rubber Bass</option>
             </select>
             <div class="stack" style="margin-top:10px;">
               <button id="presetReset" class="btn">Preset Reset</button>
@@ -1234,6 +1222,24 @@
         <button id="outAux" class="mode-btn" type="button">AUX OUT</button>
       </div>
 
+      <label class="toggle sync-toggle module module-mint">
+        <input id="sync" type="checkbox" />
+        <span class="switch"></span>
+        <span class="toggle-label">
+          <span class="icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 4v4" />
+              <path d="M12 16v4" />
+              <path d="M4 12h4" />
+              <path d="M16 12h4" />
+              <circle cx="12" cy="12" r="3.2" />
+            </svg>
+          </span>
+          DAW Sync
+        </span>
+        <span class="toggle-val mono" id="syncVal">OFF</span>
+      </label>
+
       <label class="toggle mute-toggle module module-rose">
         <input id="mute" type="checkbox" />
         <span class="switch"></span>
@@ -1294,6 +1300,8 @@
       const outBle = $("outBle");
       const outSerial = $("outSerial");
       const outAux = $("outAux");
+      const sync = $("sync");
+      const syncVal = $("syncVal");
       const mute = $("mute");
       const muteVal = $("muteVal");
       const synthPanel = $("synthPanel");
@@ -1342,6 +1350,8 @@
       let currentOutputMode = 0;
       let auxReady = true;
       let auxWaitMs = 0;
+      let dawSyncEnabled = false;
+      let dawSyncLocked = false;
       let lastNoteEventMs = 0;
       let lastNoteState = { list: [], vel: 96, held: false };
       let synthState = {};
@@ -2108,6 +2118,28 @@
         else if (status.textContent === "muted") status.textContent = "ok";
       }
 
+      function setDawSyncUi(on, locked = false) {
+        dawSyncEnabled = !!on;
+        dawSyncLocked = !!locked;
+        if (sync) sync.checked = dawSyncEnabled;
+        setVal(syncVal, !dawSyncEnabled ? "OFF" : (dawSyncLocked ? "LOCK" : "ARM"));
+      }
+
+      async function setDawSyncRemote(on) {
+        const prevOn = dawSyncEnabled;
+        const prevLocked = dawSyncLocked;
+        setDawSyncUi(!!on, false);
+        try {
+          const res = await postForm("/api/sync", { v: on ? 1 : 0 });
+          if (!res.ok) {
+            setDawSyncUi(prevOn, prevLocked);
+            return;
+          }
+        } catch (e) {
+          setDawSyncUi(prevOn, prevLocked);
+        }
+      }
+
       async function setMuteRemote(on) {
         const prev = uiMuted;
         setUiMuted(!!on);
@@ -2205,12 +2237,15 @@
         const outMode = typeof j.outputmode !== "undefined" ? (j.outputmode | 0) : (((j.midimode | 0) === 1) ? 1 : 0);
         const auxReadyState = typeof j.aux_ready !== "undefined" ? ((j.aux_ready | 0) === 1) : true;
         const auxWaitState = typeof j.aux_wait_ms !== "undefined" ? (j.aux_wait_ms | 0) : 0;
+        const dawSyncOn = (j.daw_sync | 0) === 1;
+        const dawLockedState = (j.daw_lock | 0) === 1;
         setAuxAvailability(auxReadyState, auxWaitState);
+        setDawSyncUi(dawSyncOn, dawLockedState);
         const guardedMode = (outMode === 2 && (j.mode | 0) === 3) ? 0 : (j.mode | 0);
         currentMode = guardedMode;
         const midiSerial = outMode === 1;
         const bleVal = outMode === 2 ? "aux out" : (midiSerial ? "serial bridge" : (j.ble ? "connected" : "--"));
-        const clockVal = j.clock ? "Plant" : "Internal";
+        const clockVal = dawLockedState ? "DAW Lock" : (j.clock ? "Plant" : "Internal");
         const modeName = MODE_NAMES[guardedMode] || "--";
         const scaleName = SCALE_NAMES[j.scale] || "--";
         const rootName = NOTE_NAMES[j.root] || "--";
@@ -2462,6 +2497,7 @@
       drv.oninput = (e) => { setVal(drvVal, (+e.target.value).toFixed(2)); postSynthPatch({ drive: e.target.value }, "sdrv", 80); };
       mvol.oninput = (e) => { setVal(mvolVal, (+e.target.value).toFixed(2)); postSynthPatch({ master: e.target.value }, "smvol", 80); };
 
+      sync.onchange = (e) => setDawSyncRemote(e.target.checked);
       mute.onchange = (e) => setMuteRemote(e.target.checked);
     </script>
   </body>
