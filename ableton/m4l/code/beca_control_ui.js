@@ -173,6 +173,30 @@ var engineControls = [
   { id: "drumkit", label: "Drum Kit", type: "slider", source: "synth", key: "drumkit", min: 0, max: 2, step: 1, sendKey: "drumkit" },
 ];
 
+function canvasSize() {
+  var w = 960;
+  var h = 560;
+  try {
+    if (mgraphics.size && mgraphics.size.length >= 2) {
+      w = Number(mgraphics.size[0]) || w;
+      h = Number(mgraphics.size[1]) || h;
+    }
+  } catch (e) {
+    // Ignore and try box rect fallback.
+  }
+  try {
+    if ((w <= 0 || h <= 0) && this.box && this.box.rect && this.box.rect.length >= 4) {
+      w = Number(this.box.rect[2] - this.box.rect[0]) || w;
+      h = Number(this.box.rect[3] - this.box.rect[1]) || h;
+    }
+  } catch (e2) {
+    // Keep defaults.
+  }
+  if (w <= 0) w = 960;
+  if (h <= 0) h = 560;
+  return [w, h];
+}
+
 function clip(v, lo, hi) {
   if (v < lo) return lo;
   if (v > hi) return hi;
@@ -567,9 +591,9 @@ function drawControls(area) {
 function drawAll() {
   ui.hotspots = [];
 
-  var b = box.rect;
-  var w = b[2] - b[0];
-  var h = b[3] - b[1];
+  var sz = canvasSize();
+  var w = sz[0];
+  var h = sz[1];
   fillRect(rect(0, 0, w, h), COLORS.bg);
 
   var pad = 8;
@@ -591,7 +615,23 @@ function drawAll() {
 }
 
 function paint() {
-  drawAll();
+  try {
+    drawAll();
+  } catch (e) {
+    var sz = canvasSize();
+    fillRect(rect(0, 0, sz[0], sz[1]), [0.16, 0.12, 0.12, 1]);
+    drawText("BECA UI script error", 16, 24, 14, [1, 0.78, 0.78, 1], "left");
+    drawText(String(e), 16, 44, 11, [1, 0.86, 0.86, 1], "left");
+    try { post("BECA jsui paint error: " + e + "\n"); } catch (_ignored) {}
+  }
+}
+
+function onresize(w, h) {
+  mgraphics.redraw();
+}
+
+function bang() {
+  mgraphics.redraw();
 }
 
 function onInputField(field) {
