@@ -26,6 +26,79 @@ try {
   ReadlineParserClass = null;
 }
 
+const FALLBACK_PARAMS = {
+  modes: ["Notes", "Arpeggiator", "Chords", "Drum Machine"],
+  scales: [
+    "Major",
+    "Minor",
+    "Dorian",
+    "Lydian",
+    "Mixolydian",
+    "Pent Minor",
+    "Pent Major",
+    "Harm Minor",
+    "Phrygian",
+    "Whole Tone",
+    "Maj7",
+    "Min7",
+    "Dom7",
+    "Sus2",
+    "Sus4",
+  ],
+  time_signatures: ["1-1", "2-2", "2-4", "3-4", "4-4", "5-4", "7-4", "6-8", "9-8", "12-8", "4-8", "4-16", "8-32"],
+  output_modes: ["BLE", "SERIAL", "AUX OUT"],
+  clock_modes: ["Internal", "Plant"],
+  synth_presets: ["Fatty Neon Lead", "Prism Poly Lead", "Verdant Pad", "Forest Choir Pad", "Thick Mono Bass", "Rubber Bass"],
+  ranges: {
+    bpm: [20, 240],
+    swing: [0, 60],
+    sens: [0, 0.5],
+    lo: [1, 9],
+    hi: [1, 9],
+    rest: [0, 0.8],
+    bright: [10, 255],
+    cutoff: [20, 18000],
+    resonance: [0.1, 10],
+    attack: [0, 5],
+    decay: [0, 5],
+    sustain: [0, 1],
+    release: [0.01, 10],
+    delay_ms: [0, 800],
+    delay_feedback: [0, 0.95],
+    delay_mix: [0, 1],
+    drive: [0, 1],
+    master: [0, 1],
+    detune: [0, 8],
+    gain_trim: [0.45, 1],
+  },
+};
+
+const DEFAULT_SYNTH = {
+  preset: 0,
+  preset_name: "Fatty Neon Lead",
+  wave_a: 0,
+  wave_b: 1,
+  osc_mix: 0.5,
+  mono: 1,
+  voices: 1,
+  attack: 0.03,
+  decay: 0.18,
+  sustain: 0.72,
+  release: 0.2,
+  filter: 0,
+  cutoff: 6400,
+  resonance: 1.0,
+  reverb: 0.15,
+  delay_ms: 120,
+  delay_feedback: 0.2,
+  delay_mix: 0.1,
+  drive: 0.2,
+  master: 0.7,
+  detune: 2,
+  gain_trim: 0.95,
+  drumkit: 0,
+};
+
 const runtime = {
   mode: "http",
   ip: "192.168.4.1",
@@ -35,9 +108,13 @@ const runtime = {
   connected: false,
   statePollMs: 250,
   fastPollMs: 40,
+  synthPollMs: 700,
+  paramsPollMs: 3000,
   stateTimer: null,
   fastTimer: null,
   setTimer: null,
+  synthTimer: null,
+  paramsTimer: null,
   mockTimer: null,
   pendingSet: [],
   lastSetSentAt: 0,
@@ -48,10 +125,52 @@ const runtime = {
   serialPort: null,
   serialParser: null,
   serialTelemetryEnabled: false,
+  serialStatusTicker: 0,
+  params: { ...FALLBACK_PARAMS },
+  synth: { ...DEFAULT_SYNTH },
+  mockState: {
+    ver: 0,
+    ble: 1,
+    midimode: 0,
+    outputmode: 0,
+    outputname: "BLE",
+    io_muted: 0,
+    daw_sync: 0,
+    daw_lock: 0,
+    clock: 0,
+    mode: 0,
+    scale: 0,
+    root: 0,
+    bpm: 120,
+    swing: 8,
+    bright: 154,
+    sens: 0.2,
+    lo: 3,
+    hi: 6,
+    fx: 0,
+    fxname: "Gradient Flow",
+    pal: 0,
+    palname: "Rainbow",
+    vs: 160,
+    vi: 210,
+    rest: 0.12,
+    nr: 1,
+    aux_ready: 1,
+    aux_wait_ms: 0,
+    ts: "4/4",
+    last: "60",
+    vel: 96,
+    drumsel: 255,
+  },
 };
 
 function nowMs() {
   return Date.now();
+}
+
+function asNumber(v, fallback) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : fallback;
 }
 
 function emitStatus(state, detail) {
@@ -63,25 +182,25 @@ function emitJson(tag, data) {
 }
 
 function emitPlant(data) {
-  const value = Number(data.value || 0);
-  const raw = Number(data.raw || 0);
-  const raw2 = Number(data.raw2 || 0);
+  const value = asNumber(data.value, 0);
+  const raw = asNumber(data.raw, 0);
+  const raw2 = asNumber(data.raw2, 0);
   maxApi.outlet(["plant", value, raw, raw2]);
 }
 
 function emitMidiStatus(payload) {
-  const note = Number(payload.note || 0);
-  const vel = Number(payload.vel || 0);
-  const ch = Number(payload.ch || 1);
+  const note = asNumber(payload.note, 0);
+  const vel = asNumber(payload.vel, 0);
+  const ch = asNumber(payload.ch, 1);
   const on = !!payload.on;
   maxApi.outlet(["midi_event", on ? 1 : 0, note, vel, ch]);
 }
 
 function emitMidiBytes(on, note, vel, ch) {
-  const chan = Math.max(1, Math.min(16, Number(ch || 1)));
+  const chan = Math.max(1, Math.min(16, asNumber(ch, 1)));
   const status = (on ? 0x90 : 0x80) | ((chan - 1) & 0x0f);
-  const data1 = Math.max(0, Math.min(127, Number(note || 0))) & 0x7f;
-  const data2 = Math.max(0, Math.min(127, Number(vel || 0))) & 0x7f;
+  const data1 = Math.max(0, Math.min(127, asNumber(note, 0))) & 0x7f;
+  const data2 = Math.max(0, Math.min(127, asNumber(vel, 0))) & 0x7f;
   maxApi.outlet(["midi_bytes", status, data1, data2]);
 }
 
@@ -91,13 +210,25 @@ function normalizeMode(mode) {
   return "http";
 }
 
+function safeJsonParse(input) {
+  try {
+    return JSON.parse(String(input || ""));
+  } catch (err) {
+    return null;
+  }
+}
+
 function stopHttpTimers() {
   if (runtime.stateTimer) clearInterval(runtime.stateTimer);
   if (runtime.fastTimer) clearInterval(runtime.fastTimer);
   if (runtime.setTimer) clearInterval(runtime.setTimer);
+  if (runtime.synthTimer) clearInterval(runtime.synthTimer);
+  if (runtime.paramsTimer) clearInterval(runtime.paramsTimer);
   runtime.stateTimer = null;
   runtime.fastTimer = null;
   runtime.setTimer = null;
+  runtime.synthTimer = null;
+  runtime.paramsTimer = null;
 }
 
 function stopMockTimer() {
@@ -164,11 +295,16 @@ function requestJson(method, path, formBody, timeoutMs = 1200) {
             reject(new Error(`HTTP ${res.statusCode}: ${payload || "no body"}`));
             return;
           }
-          try {
-            resolve(payload ? JSON.parse(payload) : {});
-          } catch (err) {
-            reject(new Error(`Invalid JSON from ${path}: ${payload}`));
+          if (!payload) {
+            resolve({});
+            return;
           }
+          const parsed = safeJsonParse(payload);
+          if (!parsed) {
+            reject(new Error(`Invalid JSON from ${path}: ${payload}`));
+            return;
+          }
+          resolve(parsed);
         });
       }
     );
@@ -198,6 +334,26 @@ function sendSerialControl(command) {
   sendSerialTextLine(`@C ${command}`);
 }
 
+function updateParams(paramsLike) {
+  runtime.params = {
+    ...FALLBACK_PARAMS,
+    ...(paramsLike || {}),
+    ranges: {
+      ...FALLBACK_PARAMS.ranges,
+      ...((paramsLike && paramsLike.ranges) || {}),
+    },
+  };
+  emitJson("params", runtime.params);
+}
+
+function updateSynth(synthLike) {
+  runtime.synth = {
+    ...DEFAULT_SYNTH,
+    ...(synthLike || {}),
+  };
+  emitJson("synth", runtime.synth);
+}
+
 function flushPendingSetQueue() {
   if (!runtime.pendingSet.length) return;
   const minGapMs = 66; // ~15 updates/sec max
@@ -209,6 +365,11 @@ function flushPendingSetQueue() {
 
   if (runtime.mode === "serial") {
     sendSerialControl(`SET ${next.key} ${next.value}`);
+    return;
+  }
+
+  if (runtime.mode === "mock") {
+    applyMockParam(next.key, next.value);
     return;
   }
 
@@ -237,7 +398,7 @@ function applyNotesSnapshot(snapshot) {
   const notes = Array.isArray(snapshot.notes)
     ? snapshot.notes.map((n) => Number(n)).filter((n) => Number.isFinite(n))
     : [];
-  const vel = Number(snapshot.vel || snapshot.last_vel || 96);
+  const vel = asNumber(snapshot.vel || snapshot.last_vel, 96);
   const ch = 1;
 
   const nextSet = new Set(notes);
@@ -280,39 +441,64 @@ function parseSerialMidiHex(line) {
 
 function handleSerialResponse(tag, payloadRaw) {
   if (tag === "STATE") {
-    try {
-      const state = JSON.parse(payloadRaw);
-      emitJson("state", state);
-      runtime.connected = true;
-      return;
-    } catch (err) {
+    const parsed = safeJsonParse(payloadRaw);
+    if (!parsed) {
       emitStatus("warn", `Bad STATE JSON: ${payloadRaw}`);
       return;
     }
+    emitJson("state", parsed);
+    runtime.connected = true;
+    return;
+  }
+
+  if (tag === "PARAMS") {
+    const parsed = safeJsonParse(payloadRaw);
+    if (!parsed) {
+      emitStatus("warn", `Bad PARAMS JSON: ${payloadRaw}`);
+      return;
+    }
+    updateParams(parsed);
+    runtime.connected = true;
+    return;
+  }
+
+  if (tag === "SYNTH") {
+    const parsed = safeJsonParse(payloadRaw);
+    if (!parsed) {
+      emitStatus("warn", `Bad SYNTH JSON: ${payloadRaw}`);
+      return;
+    }
+    updateSynth(parsed);
+    runtime.connected = true;
+    return;
   }
 
   if (tag === "PLANT") {
-    try {
-      emitPlant(JSON.parse(payloadRaw));
-      return;
-    } catch (err) {
+    const parsed = safeJsonParse(payloadRaw);
+    if (!parsed) {
       emitStatus("warn", `Bad PLANT JSON: ${payloadRaw}`);
       return;
     }
+    emitPlant(parsed);
+    return;
   }
 
   if (tag === "NOTES") {
-    try {
-      applyNotesSnapshot(JSON.parse(payloadRaw));
-      return;
-    } catch (err) {
+    const parsed = safeJsonParse(payloadRaw);
+    if (!parsed) {
       emitStatus("warn", `Bad NOTES JSON: ${payloadRaw}`);
       return;
     }
+    applyNotesSnapshot(parsed);
+    return;
   }
 
-  if (tag === "SET" && payloadRaw.includes("\"ok\":0")) {
-    emitStatus("warn", payloadRaw);
+  if (tag === "SET") {
+    const parsed = safeJsonParse(payloadRaw);
+    if (parsed && parsed.ok === 0) {
+      emitStatus("warn", payloadRaw);
+    }
+    return;
   }
 }
 
@@ -321,27 +507,35 @@ function handleSerialLine(line) {
   if (!trimmed) return;
 
   if (trimmed.startsWith("{")) {
-    try {
-      const evt = JSON.parse(trimmed);
-      if (evt.type === "plant") {
-        emitPlant(evt);
-        return;
-      }
-      if (evt.type === "midi") {
-        emitMidiStatus(evt);
-        if (runtime.emitMode === "reemit") {
-          emitMidiBytes(!!evt.on, Number(evt.note || 0), Number(evt.on ? evt.vel || 0 : 0), Number(evt.ch || 1));
-        }
-        return;
-      }
-      if (evt.type === "state") {
-        emitJson("state", evt);
-      }
-      return;
-    } catch (err) {
+    const evt = safeJsonParse(trimmed);
+    if (!evt) {
       emitStatus("warn", `Malformed JSON line: ${trimmed}`);
       return;
     }
+    if (evt.type === "plant") {
+      emitPlant(evt);
+      return;
+    }
+    if (evt.type === "midi") {
+      emitMidiStatus(evt);
+      if (runtime.emitMode === "reemit") {
+        emitMidiBytes(!!evt.on, asNumber(evt.note, 0), asNumber(evt.on ? evt.vel : 0, 0), asNumber(evt.ch, 1));
+      }
+      return;
+    }
+    if (evt.type === "state") {
+      emitJson("state", evt);
+      return;
+    }
+    if (evt.type === "synth") {
+      updateSynth(evt);
+      return;
+    }
+    if (evt.type === "params") {
+      updateParams(evt);
+      return;
+    }
+    return;
   }
 
   if (trimmed.startsWith("@R ")) {
@@ -390,7 +584,7 @@ function attachSerialListeners(portObj) {
 function openSerialPort(path, baudRate) {
   return new Promise((resolve, reject) => {
     if (!SerialPortClass) {
-      reject(new Error("serialport module missing. Install in ableton/m4l/code with npm install serialport"));
+      reject(new Error("serialport module missing. Run npm install in ableton/m4l/code"));
       return;
     }
 
@@ -448,10 +642,7 @@ async function pollHttpState() {
 async function pollHttpFast() {
   if (runtime.mode !== "http") return;
   try {
-    const [plant, notes] = await Promise.all([
-      requestJson("GET", "/api/plant", ""),
-      requestJson("GET", "/api/notes", ""),
-    ]);
+    const [plant, notes] = await Promise.all([requestJson("GET", "/api/plant", ""), requestJson("GET", "/api/notes", "")]);
     emitPlant(plant);
     applyNotesSnapshot(notes);
     runtime.connected = true;
@@ -463,20 +654,52 @@ async function pollHttpFast() {
   }
 }
 
+async function pollHttpParams() {
+  if (runtime.mode !== "http") return;
+  try {
+    const params = await requestJson("GET", "/api/params", "");
+    updateParams(params);
+  } catch (err) {
+    emitStatus("warn", `params unavailable: ${err.message}`);
+  }
+}
+
+async function pollHttpSynth() {
+  if (runtime.mode !== "http") return;
+  try {
+    const synth = await requestJson("GET", "/api/synth", "");
+    updateSynth(synth);
+  } catch (err) {
+    emitStatus("warn", `synth unavailable: ${err.message}`);
+  }
+}
+
 function beginHttpMode() {
   stopAllTimers();
   runtime.mode = "http";
-  runtime.connected = true;
+  runtime.connected = false;
   runtime.stateTimer = setInterval(pollHttpState, runtime.statePollMs);
   runtime.fastTimer = setInterval(pollHttpFast, runtime.fastPollMs);
+  runtime.paramsTimer = setInterval(pollHttpParams, runtime.paramsPollMs);
+  runtime.synthTimer = setInterval(pollHttpSynth, runtime.synthPollMs);
   runtime.setTimer = setInterval(flushPendingSetQueue, 25);
   pollHttpState();
   pollHttpFast();
+  pollHttpParams();
+  pollHttpSynth();
+}
+
+function serialSnapshotTick() {
+  runtime.serialStatusTicker += 1;
+  sendSerialControl("STATE");
+  if ((runtime.serialStatusTicker % 10) === 1) sendSerialControl("PARAMS");
+  if ((runtime.serialStatusTicker % 6) === 2) sendSerialControl("SYNTH");
 }
 
 async function beginSerialMode(path, baudRate) {
   stopAllTimers();
   runtime.mode = "serial";
+  runtime.serialStatusTicker = 0;
 
   if (path && path.length) {
     try {
@@ -490,57 +713,98 @@ async function beginSerialMode(path, baudRate) {
   }
 
   runtime.connected = true;
-  runtime.stateTimer = setInterval(() => sendSerialControl("STATE"), runtime.statePollMs);
+  runtime.stateTimer = setInterval(serialSnapshotTick, runtime.statePollMs);
   runtime.fastTimer = setInterval(() => {
     sendSerialControl("PLANT");
     sendSerialControl("NOTES");
   }, runtime.fastPollMs);
+  runtime.synthTimer = setInterval(() => sendSerialControl("SYNTH"), runtime.synthPollMs);
+  runtime.paramsTimer = setInterval(() => sendSerialControl("PARAMS"), runtime.paramsPollMs);
   runtime.setTimer = setInterval(flushPendingSetQueue, 25);
 
   sendSerialControl("STATE");
+  sendSerialControl("PARAMS");
+  sendSerialControl("SYNTH");
+  sendSerialControl("PLANT");
+  sendSerialControl("NOTES");
   if (runtime.serialTelemetryEnabled) sendSerialControl("TELEMETRY 1");
   emitStatus("connected", path ? `serial ${path}` : "serial (external patch transport)");
+}
+
+function applyMockParam(key, value) {
+  const k = String(key || "").toLowerCase();
+  const v = String(value || "");
+  const state = runtime.mockState;
+  const synth = runtime.synth;
+
+  const intV = Math.round(Number(v));
+  const floatV = Number(v);
+
+  if (k === "bpm") state.bpm = Math.max(20, Math.min(240, Number.isFinite(intV) ? intV : state.bpm));
+  else if (k === "swing") state.swing = Math.max(0, Math.min(60, Number.isFinite(intV) ? intV : state.swing));
+  else if (k === "scale") state.scale = Math.max(0, Math.min(14, Number.isFinite(intV) ? intV : state.scale));
+  else if (k === "root") state.root = Math.max(0, Math.min(11, Number.isFinite(intV) ? intV : state.root));
+  else if (k === "mode") state.mode = Math.max(0, Math.min(3, Number.isFinite(intV) ? intV : state.mode));
+  else if (k === "clock") state.clock = Math.max(0, Math.min(1, Number.isFinite(intV) ? intV : state.clock));
+  else if (k === "lo") state.lo = Math.max(1, Math.min(9, Number.isFinite(intV) ? intV : state.lo));
+  else if (k === "hi") state.hi = Math.max(1, Math.min(9, Number.isFinite(intV) ? intV : state.hi));
+  else if (k === "fx") state.fx = Math.max(0, Math.min(9, Number.isFinite(intV) ? intV : state.fx));
+  else if (k === "pal") state.pal = Math.max(0, Math.min(20, Number.isFinite(intV) ? intV : state.pal));
+  else if (k === "vs") state.vs = Math.max(0, Math.min(255, Number.isFinite(intV) ? intV : state.vs));
+  else if (k === "vi") state.vi = Math.max(0, Math.min(255, Number.isFinite(intV) ? intV : state.vi));
+  else if (k === "bright") state.bright = Math.max(10, Math.min(255, Number.isFinite(intV) ? intV : state.bright));
+  else if (k === "rest") state.rest = Math.max(0, Math.min(0.8, Number.isFinite(floatV) ? floatV : state.rest));
+  else if (k === "sens") state.sens = Math.max(0, Math.min(0.5, Number.isFinite(floatV) ? floatV : state.sens));
+  else if (k === "nr") state.nr = intV ? 1 : 0;
+  else if (k === "mute" || k === "io_muted") state.io_muted = intV ? 1 : 0;
+  else if (k === "sync" || k === "daw_sync") state.daw_sync = intV ? 1 : 0;
+  else if (k === "outputmode") {
+    state.outputmode = Math.max(0, Math.min(2, Number.isFinite(intV) ? intV : state.outputmode));
+    state.outputname = state.outputmode === 0 ? "BLE" : state.outputmode === 1 ? "SERIAL" : "AUX";
+  }
+  else if (k === "drumsel") state.drumsel = Math.max(0, Math.min(255, Number.isFinite(intV) ? intV : state.drumsel));
+  else if (k in synth) {
+    synth[k] = Number.isFinite(floatV) ? floatV : v;
+  }
+
+  state.ver = (Number(state.ver) || 0) + 1;
+  emitJson("state", state);
+  updateSynth(synth);
 }
 
 function beginMockMode() {
   stopAllTimers();
   runtime.mode = "mock";
   runtime.connected = true;
+  runtime.activeNotes.clear();
+  updateParams(FALLBACK_PARAMS);
+  updateSynth(runtime.synth);
+
   runtime.mockTimer = setInterval(() => {
     const t = nowMs() / 1000;
     const value = 0.5 + 0.45 * Math.sin(t * 1.7);
     const raw = Math.floor(800 + value * 2500);
     emitPlant({ value, raw, raw2: raw + 32 });
 
-    if (Math.random() < 0.12) {
+    if (Math.random() < 0.1) {
       const note = 48 + Math.floor(Math.random() * 24);
       const vel = 70 + Math.floor(Math.random() * 56);
       const ch = 1;
       if (runtime.emitMode === "reemit") {
         emitMidiBytes(true, note, vel, ch);
-        setTimeout(() => emitMidiBytes(false, note, 0, ch), 180 + Math.floor(Math.random() * 220));
+        setTimeout(() => emitMidiBytes(false, note, 0, ch), 160 + Math.floor(Math.random() * 220));
       }
       emitMidiStatus({ on: true, note, vel, ch });
+      runtime.mockState.last = String(note);
+      runtime.mockState.vel = vel;
+      maxApi.outlet(["note_grid", String(note), vel, ch]);
     }
 
-    emitJson("state", {
-      ver: 0,
-      mode: 0,
-      scale: 0,
-      root: 0,
-      bpm: 120,
-      swing: 8,
-      lo: 3,
-      hi: 6,
-      outputmode: 0,
-      outputname: "BLE",
-      io_muted: 0,
-      daw_sync: 0,
-      daw_lock: 0,
-      aux_ready: 1,
-      aux_wait_ms: 0,
-    });
+    runtime.mockState.ver += 1;
+    emitJson("state", runtime.mockState);
   }, runtime.fastPollMs);
+
+  runtime.setTimer = setInterval(flushPendingSetQueue, 25);
   emitStatus("connected", "mock");
 }
 
@@ -554,8 +818,8 @@ function disconnectAll() {
 }
 
 maxApi.addHandler("connect_http", (ip, port) => {
-  runtime.ip = String(ip || runtime.ip);
-  runtime.port = Number(port || runtime.port);
+  runtime.ip = String(ip || runtime.ip).trim() || runtime.ip;
+  runtime.port = Math.max(1, Number(port || runtime.port) || runtime.port);
   beginHttpMode();
 });
 
@@ -598,6 +862,15 @@ maxApi.addHandler("set_param", (key, value) => {
   queueSet(String(key), String(value));
 });
 
+maxApi.addHandler("manual_note", (on, note, vel, ch) => {
+  const active = Number(on || 0) !== 0;
+  const midiNote = asNumber(note, 60);
+  const midiVel = asNumber(vel, active ? 100 : 0);
+  const midiCh = asNumber(ch, 1);
+  emitMidiStatus({ on: active, note: midiNote, vel: midiVel, ch: midiCh });
+  emitMidiBytes(active, midiNote, midiVel, midiCh);
+});
+
 maxApi.addHandler("serial_line", (line) => {
   // Optional external serial ingest path.
   handleSerialLine(line);
@@ -606,6 +879,7 @@ maxApi.addHandler("serial_line", (line) => {
 maxApi.addHandler("request_state", () => {
   if (runtime.mode === "serial") sendSerialControl("STATE");
   else if (runtime.mode === "http") pollHttpState();
+  else if (runtime.mode === "mock") emitJson("state", runtime.mockState);
 });
 
 maxApi.addHandler("request_fast", () => {
@@ -617,6 +891,18 @@ maxApi.addHandler("request_fast", () => {
   }
 });
 
+maxApi.addHandler("request_params", () => {
+  if (runtime.mode === "serial") sendSerialControl("PARAMS");
+  else if (runtime.mode === "http") pollHttpParams();
+  else emitJson("params", runtime.params);
+});
+
+maxApi.addHandler("request_synth", () => {
+  if (runtime.mode === "serial") sendSerialControl("SYNTH");
+  else if (runtime.mode === "http") pollHttpSynth();
+  else emitJson("synth", runtime.synth);
+});
+
 maxApi.addHandler("enable_serial_telemetry", (flag) => {
   runtime.serialTelemetryEnabled = Number(flag || 0) !== 0;
   if (runtime.mode === "serial") {
@@ -624,4 +910,6 @@ maxApi.addHandler("enable_serial_telemetry", (flag) => {
   }
 });
 
+updateParams(FALLBACK_PARAMS);
+updateSynth(DEFAULT_SYNTH);
 emitStatus("ready", "beca_control_node loaded");
