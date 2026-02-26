@@ -15,7 +15,7 @@
             1120,
             170
         ],
-        "openinpresentation": 1,
+        "openinpresentation": 0,
         "default_fontsize": 12,
         "default_fontface": 0,
         "default_fontname": "Arial",
@@ -676,6 +676,83 @@
                     ],
                     "text": "s beca_ui_events"
                 }
+            },
+            {
+                "box": {
+                    "id": "obj-45",
+                    "maxclass": "comment",
+                    "patching_rect": [
+                        192,
+                        47,
+                        120,
+                        12
+                    ],
+                    "text": "Palette"
+                }
+            },
+            {
+                "box": {
+                    "id": "obj-46",
+                    "maxclass": "number",
+                    "patching_rect": [
+                        192,
+                        59,
+                        120,
+                        18
+                    ]
+                }
+            },
+            {
+                "box": {
+                    "id": "obj-47",
+                    "maxclass": "newobj",
+                    "patching_rect": [
+                        192,
+                        237,
+                        130,
+                        22
+                    ],
+                    "text": "r beca_set_pal"
+                }
+            },
+            {
+                "box": {
+                    "id": "obj-48",
+                    "maxclass": "newobj",
+                    "patching_rect": [
+                        326,
+                        237,
+                        80,
+                        22
+                    ],
+                    "text": "prepend set"
+                }
+            },
+            {
+                "box": {
+                    "id": "obj-49",
+                    "maxclass": "newobj",
+                    "patching_rect": [
+                        410,
+                        237,
+                        170,
+                        22
+                    ],
+                    "text": "prepend ui_param pal"
+                }
+            },
+            {
+                "box": {
+                    "id": "obj-50",
+                    "maxclass": "newobj",
+                    "patching_rect": [
+                        584,
+                        237,
+                        120,
+                        22
+                    ],
+                    "text": "s beca_ui_events"
+                }
             }
         ],
         "lines": [
@@ -1011,6 +1088,54 @@
                     ],
                     "destination": [
                         "obj-44",
+                        0
+                    ]
+                }
+            },
+            {
+                "patchline": {
+                    "source": [
+                        "obj-47",
+                        0
+                    ],
+                    "destination": [
+                        "obj-48",
+                        0
+                    ]
+                }
+            },
+            {
+                "patchline": {
+                    "source": [
+                        "obj-48",
+                        0
+                    ],
+                    "destination": [
+                        "obj-46",
+                        0
+                    ]
+                }
+            },
+            {
+                "patchline": {
+                    "source": [
+                        "obj-46",
+                        0
+                    ],
+                    "destination": [
+                        "obj-49",
+                        0
+                    ]
+                }
+            },
+            {
+                "patchline": {
+                    "source": [
+                        "obj-49",
+                        0
+                    ],
+                    "destination": [
+                        "obj-50",
                         0
                     ]
                 }

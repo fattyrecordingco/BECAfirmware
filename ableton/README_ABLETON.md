@@ -7,12 +7,13 @@ This folder adds an optional Ableton workflow. It does not replace the BECA web 
 - `ableton/m4l/BECA Control.maxproj`
 - `ableton/m4l/BECA Control.maxpat` (editable source)
 - `ableton/m4l/BECA Control.amxd` (device file)
-- `ableton/m4l/pages/*.maxpat` (native section pages)
-- `ableton/m4l/beca_control_ui.js` (root `jsui` script target for M4L load reliability)
-- `ableton/m4l/beca_native_controller.js` (root native controller path for M4L load reliability)
+- `ableton/m4l/pages/*.maxpat` (legacy native section pages)
+- `ableton/m4l/beca_control_ui.js` (full `jsui` control surface; root copy for M4L load reliability)
+- `ableton/m4l/beca_control_node.js` (root Node bootstrap for reliable `node.script` resolution)
+- `ableton/m4l/beca_native_controller.js` (legacy native routing helper copy)
 - `ableton/m4l/code/beca_control_node.js` (transport + protocol layer)
-- `ableton/m4l/code/beca_native_controller.js` (native UI controller + router)
-- `ableton/m4l/code/beca_control_ui.js` (legacy `jsui` control surface source)
+- `ableton/m4l/code/beca_native_controller.js` (legacy native routing helper source)
+- `ableton/m4l/code/beca_control_ui.js` (full control surface source)
 - `ableton/m4l/code/package.json`
 - `tools/mock_beca/mock_beca_server.py` (optional test server)
 
@@ -35,9 +36,11 @@ This also syncs:
 - `ableton/m4l/assets/`
 - `ableton/m4l/pages/`
 - root `beca_control_ui.js` helper
-- root `beca_native_controller.js` helper
+- root `beca_control_node.js` bootstrap helper
+- root `beca_native_controller.js` helper (legacy compatibility)
 - both device names: `BECA Control.amxd` and `BECA Control v2.amxd`
 - `BECA Control Native.amxd` (cache-busting alias for forced fresh load)
+- `BECA Control Fresh.amxd` (additional fresh-load alias)
 
 into the same Ableton User Library folder.
 
@@ -66,19 +69,31 @@ The Ableton UI now includes:
   - `mode`, `scale`, `root`, `clock`
   - `bpm`, `swing`, `sens`, `lo`, `hi`
   - `preset`, `outputmode`, `mute`, `sync`
-  - `fx`, `vs`, `vi`, `rest`, `nr`, `drumsel`
+  - `fx`, `pal`, `vs`, `vi`, `rest`, `nr`, `drumsel`
 - Engine controls mapped to firmware synth params:
   - `wave_a`, `wave_b`, `osc_mix`, `mono`, `voices`
   - `attack`, `decay`, `sustain`, `release`
   - `filter`, `cutoff`, `resonance`
   - `reverb`, `delay_ms`, `delay_feedback`, `delay_mix`
-  - `drive`, `master`, `detune`, `gain_trim`, `drumkit`
-- Native section page model (non-`jsui` interaction path):
-  - `Input`, `Output`, `Theory`, `LED FX`, `Engine`
-  - page selection from section menu in the device
-  - controls are standard Max UI objects for reliable clicking/dragging in Live device panel
+  - `drive`, `master`, `detune`, `gain_trim`, `drumkit`, `preset_reset`
+- Full single-surface `jsui` model:
+  - one integrated BECA panel in presentation
+  - all control groups (`Input`, `Output`, `Theory`, `LED FX`, `Engine`) from the BECA web model
+  - auto-connect controls (`IP/Host`, `Port`, `Device`, `.local`, `Connect .local`)
 
-## Connection Modes
+## Connection and Auto-Connect
+
+### Zero-Config Auto Connect
+
+- On device load, backend auto-discovery starts immediately in HTTP mode.
+- Discovery probes, in order:
+  - last known BECA host
+  - current host field value
+  - `<device>.local` and `<device>`
+  - common defaults (`beca.local`, `beca`, `beca-blk.local`, `beca-blk`, `192.168.4.1`)
+  - local private subnet candidates (best-effort)
+- If BECA is found, the backend updates host and connects automatically.
+- Manual `Connect`/`Refresh` controls remain available as fallback.
 
 ### HTTP via IP
 
@@ -119,6 +134,52 @@ Use `connect_mock` for UI testing without hardware.
 
 - Full parameter mapping through `POST /api/set` / serial `SET` keys.
 - UI labels are intentionally kept close to web-UI naming.
+
+## Exact Test Checklist
+
+1. Build and sync:
+   - Run: `python ableton/m4l/build_amxd.py --copy-user-library`
+   - Confirm all variants are updated in repo and User Library:
+     - `BECA Control.amxd`
+     - `BECA Control v2.amxd`
+     - `BECA Control Native.amxd`
+     - `BECA Control Fresh.amxd`
+     - `BECA Control Pro.amxd` (cache-busting alias)
+2. Force fresh load in Live:
+   - Remove all old BECA devices from the track.
+   - Drag `BECA Control Pro` from User Library (cache-busting alias).
+   - Confirm header shows `BECA Control` with a target signifier (`<device> @ <host>`).
+3. Auto-discovery and signifier:
+   - On load, confirm status goes through `ready/discovering/identified/connecting` to `connected`.
+   - Confirm header shows `CONNECTED <host>:80` and device signifier `<device> @ <host>`.
+   - In Max Console, confirm no `node.script` file-load error for `beca_control_node.js`.
+   - Disconnect BECA network briefly; confirm status drops and auto-recovers back to `connected`.
+4. Single-page layout and monitors:
+   - In taller lanes (about `250+ px`), confirm `Input`, `Output`, `Theory`, `LED FX`, `Engine` render together in one dashboard page.
+   - In shorter lanes, confirm adaptive fallback (tabs + paged controls) has no overlap/clipping.
+   - Confirm plant graph updates continuously.
+   - Confirm MIDI monitor (last note/velocity + activity bars) updates in real time.
+   - If layout is cramped, use a taller device lane (target about `280-320 px`).
+5. Control interaction semantics:
+   - Encoders drag vertically and send live values.
+   - Toggle controls act as on/off buttons.
+   - Dropdown-style controls (`Mode`, `Output`, `Scale`, `Root`, `Clock`, `Time Sig`, `Preset`) change discrete options.
+6. Output routing control:
+   - Use top-row `BLE / SERIAL / AUX` buttons.
+   - Confirm BECA output mode switches immediately and persists in returned state.
+7. Full key mapping verification (`/api/set` and serial `SET`):
+   - `mode`, `sens`, `lo`, `hi`
+   - `outputmode`, `mute`, `sync`
+   - `scale`, `root`, `clock`, `ts`, `bpm`, `swing`
+   - `fx`, `pal`, `vs`, `vi`, `bright`, `rest`, `nr`, `drumsel`
+   - `preset`, `preset_reset`, `wave_a`, `wave_b`, `osc_mix`, `mono`, `voices`
+   - `attack`, `decay`, `sustain`, `release`
+   - `filter`, `cutoff`, `resonance`
+   - `reverb`, `delay_ms`, `delay_feedback`, `delay_mix`
+   - `drive`, `master`, `detune`, `gain_trim`, `drumkit`
+8. Stress test:
+   - Sweep multiple controls for 10+ seconds.
+   - Confirm no UI lockup, no status thrash, and continuous plant/MIDI updates.
 
 ## HTTP Endpoints Used
 
@@ -164,6 +225,18 @@ Inbound to M4L from BECA:
 
 - No HTTP connection: verify BECA IP, same network, and firewall.
 - No serial connection: close Arduino Serial Monitor/other apps using the same port.
+- If the old compact native UI still appears, Live has loaded a stale device cache:
+  - remove existing BECA devices from the track
+  - remove stale `BECA Control.v2.amxd` if present
+  - drag `BECA Control Pro.amxd` again from User Library
+- Auto-connect misses BECA host:
+  - verify BECA and Ableton machine are on the same network
+  - set `Device` to your BECA mDNS name (without `.local`) and wait one discovery cycle
+  - use `Connect .local` once; this also seeds future auto-connect host memory
+- If status shows legacy mode warning:
+  - backend detected firmware profile where `/api/state` redirects
+  - device still auto-connects using `/api/info` + `/events` stream and adopts BECA-reported IP automatically
+  - update firmware if you want full `/api/state`/`/api/params` polling path
 - No MIDI output: ensure `Emit Mode = Reemit` and device is before instrument.
 - External hardware silent: check Ableton track `MIDI To` target + channel.
 - Missing serial ports in dropdown: install Node dependency (`npm install`) and refresh.
@@ -171,8 +244,9 @@ Inbound to M4L from BECA:
 - If Ableton shows an older/non-interactive UI:
   1. Remove existing BECA devices from the track.
   2. Run `python ableton/m4l/build_amxd.py --copy-user-library`.
-  3. Drag `BECA Control` again from User Library.
-  4. Confirm native controls respond: section menu switches pages, and `Connect`/`Refresh`/toggles are clickable.
+  3. Delete stale `BECA Control.v2.amxd` if it exists in User Library.
+  4. Drag `BECA Control Pro` again from User Library.
+  5. Confirm the header reads `BECA Control` and controls respond.
 
 ## Optional Mock Server
 

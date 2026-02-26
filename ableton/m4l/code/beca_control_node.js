@@ -13,6 +13,8 @@ try {
 
 const http = require("http");
 const https = require("https");
+const os = require("os");
+const dns = require("dns");
 const { URLSearchParams } = require("url");
 
 let SerialPortClass = null;
@@ -101,21 +103,43 @@ const DEFAULT_SYNTH = {
 
 const runtime = {
   mode: "http",
-  ip: "192.168.4.1",
+  ip: "beca-blk.local",
+  deviceName: "beca-blk",
   port: 80,
   autoReconnect: true,
   emitMode: "reemit", // reemit | monitor
   connected: false,
+  httpLegacy: false,
+  legacySseReq: null,
+  legacySseRes: null,
+  legacySseBuffer: "",
+  legacySseEvent: "message",
+  legacySseData: [],
+  legacySseRestartTimer: null,
+  lastConnectedHost: "",
+  lastStatusToken: "",
+  infoTick: 0,
   statePollMs: 250,
   fastPollMs: 40,
-  synthPollMs: 700,
+  synthPollMs: 2500,
   paramsPollMs: 3000,
+  discoveryCooldownMs: 2000,
+  discoveryTimeoutMs: 1400,
   stateTimer: null,
   fastTimer: null,
   setTimer: null,
   synthTimer: null,
   paramsTimer: null,
   mockTimer: null,
+  discoveryTimer: null,
+  discoveryInFlight: false,
+  lastDiscoveryAt: 0,
+  pollInFlight: {
+    state: false,
+    fast: false,
+    params: false,
+    synth: false,
+  },
   pendingSet: [],
   lastSetSentAt: 0,
   lastHttpError: "",
@@ -173,8 +197,202 @@ function asNumber(v, fallback) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+function normalizeHostValue(input) {
+  let host = String(input || "").trim();
+  if (!host) return "";
+
+  if (host.startsWith("http://")) host = host.substring(7);
+  else if (host.startsWith("https://")) host = host.substring(8);
+
+  const slashIdx = host.indexOf("/");
+  if (slashIdx >= 0) host = host.substring(0, slashIdx);
+
+  const colonIdx = host.indexOf(":");
+  if (colonIdx >= 0) host = host.substring(0, colonIdx);
+
+  return host.trim();
+}
+
+function normalizeDeviceName(input) {
+  let name = String(input || "").trim();
+  if (!name) return "";
+  if (name.endsWith(".local")) name = name.slice(0, -6);
+  return name.trim();
+}
+
+function isPrivateIpv4(ip) {
+  const parts = String(ip || "").split(".").map((v) => Number(v));
+  if (parts.length !== 4 || parts.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) return false;
+  if (parts[0] === 10) return true;
+  if (parts[0] === 192 && parts[1] === 168) return true;
+  if (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) return true;
+  return false;
+}
+
+function isIpv4Host(host) {
+  const parts = String(host || "").split(".");
+  if (parts.length !== 4) return false;
+  return parts.every((part) => {
+    const n = Number(part);
+    return Number.isInteger(n) && n >= 0 && n <= 255;
+  });
+}
+
+function buildDiscoveryCandidates(ipHints) {
+  const candidates = [];
+  const seen = new Set();
+  const add = (value) => {
+    const host = normalizeHostValue(value);
+    if (!host || seen.has(host)) return;
+    seen.add(host);
+    candidates.push(host);
+  };
+
+  add(runtime.lastConnectedHost);
+  add(runtime.ip);
+
+  if (Array.isArray(ipHints)) {
+    ipHints.forEach((hint) => add(hint));
+  }
+
+  const name = normalizeDeviceName(runtime.deviceName);
+  if (name) {
+    add(name);
+    add(`${name}.local`);
+  }
+
+  // Common defaults / aliases.
+  add("beca.local");
+  add("beca");
+  add("beca-blk.local");
+  add("beca-blk");
+  add("192.168.0.11");
+  add("192.168.4.1");
+
+  // Best-effort subnet probing for zero-config DHCP networks.
+  const interfaces = os.networkInterfaces ? os.networkInterfaces() : {};
+  const prefixes = new Set();
+  Object.keys(interfaces || {}).forEach((ifaceName) => {
+    const list = interfaces[ifaceName] || [];
+    list.forEach((entry) => {
+      if (!entry || entry.internal) return;
+      const family = String(entry.family || "");
+      if (family !== "IPv4" && family !== "4") return;
+      if (!isPrivateIpv4(entry.address)) return;
+      const parts = String(entry.address).split(".");
+      if (parts.length !== 4) return;
+      prefixes.add(`${parts[0]}.${parts[1]}.${parts[2]}`);
+    });
+  });
+
+  for (const prefix of prefixes) {
+    add(`${prefix}.1`);
+    for (let i = 2; i <= 254; i += 1) add(`${prefix}.${i}`);
+  }
+
+  // Fallback scanning in case Max's networkInterfaces() is incomplete.
+  const fallbackPrefixes = ["192.168.0", "192.168.1", "192.168.4"];
+  fallbackPrefixes.forEach((prefix) => {
+    add(`${prefix}.1`);
+    for (let i = 2; i <= 120; i += 1) add(`${prefix}.${i}`);
+  });
+
+  return candidates;
+}
+
+function resolveHostIpv4(host, timeoutMs = 650) {
+  const safeHost = normalizeHostValue(host);
+  if (!safeHost.length) return Promise.resolve("");
+  if (isIpv4Host(safeHost)) return Promise.resolve(safeHost);
+
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      resolve(normalizeHostValue(value || ""));
+    };
+    const timer = setTimeout(() => finish(""), Math.max(200, Number(timeoutMs) || 650));
+    dns.lookup(safeHost, { family: 4 }, (err, address) => {
+      clearTimeout(timer);
+      if (err || !address) {
+        finish("");
+        return;
+      }
+      finish(address);
+    });
+  });
+}
+
+async function discoveryIpHints() {
+  const out = [];
+  const seen = new Set();
+  const add = (value) => {
+    const ip = normalizeHostValue(value);
+    if (!ip.length || seen.has(ip)) return;
+    seen.add(ip);
+    out.push(ip);
+  };
+
+  const name = normalizeDeviceName(runtime.deviceName);
+  const localName = name ? `${name}.local` : "";
+  const names = [runtime.ip, runtime.lastConnectedHost, localName, "beca-blk.local", "beca.local"];
+
+  for (const host of names) {
+    const safeHost = normalizeHostValue(host);
+    if (!safeHost.length) continue;
+    if (isIpv4Host(safeHost)) {
+      add(safeHost);
+      continue;
+    }
+    // eslint-disable-next-line no-await-in-loop
+    const resolved = await resolveHostIpv4(safeHost, 550);
+    if (resolved.length) add(resolved);
+  }
+
+  return out;
+}
+
+function looksLikeBecaState(payload) {
+  if (!payload || typeof payload !== "object") return false;
+  const keys = ["mode", "scale", "root", "bpm", "outputmode"];
+  let score = 0;
+  keys.forEach((key) => {
+    if (Object.prototype.hasOwnProperty.call(payload, key)) score += 1;
+  });
+  return score >= 3;
+}
+
+function looksLikeBecaInfo(payload) {
+  if (!payload || typeof payload !== "object") return false;
+  const maybeName = String(payload.name || "").toLowerCase();
+  const hasIp = !!normalizeHostValue(payload.ip || "");
+  const hasMode = typeof payload.mode !== "undefined";
+  const hasMidiMode = typeof payload.midimode !== "undefined";
+  const hasOutput = typeof payload.outputmode !== "undefined";
+  if (maybeName.includes("beca") && hasIp) return true;
+  if (hasIp && hasMode && (hasMidiMode || hasOutput)) return true;
+  return false;
+}
+
 function emitStatus(state, detail) {
+  const token = `${String(state || "")}|${String(detail || "")}`;
+  if (runtime.lastStatusToken === token) return;
+  runtime.lastStatusToken = token;
   maxApi.outlet(["status", state, detail || ""]);
+  emitTarget();
+}
+
+function emitTarget() {
+  maxApi.outlet([
+    "target",
+    String(runtime.ip || ""),
+    String(runtime.port || ""),
+    String(runtime.deviceName || ""),
+    runtime.connected ? 1 : 0,
+    String(runtime.lastConnectedHost || ""),
+    String(runtime.mode || ""),
+  ]);
 }
 
 function emitJson(tag, data) {
@@ -231,6 +449,38 @@ function stopHttpTimers() {
   runtime.paramsTimer = null;
 }
 
+function clearLegacySseRestartTimer() {
+  if (runtime.legacySseRestartTimer) clearTimeout(runtime.legacySseRestartTimer);
+  runtime.legacySseRestartTimer = null;
+}
+
+function stopLegacyEventStream() {
+  clearLegacySseRestartTimer();
+  runtime.legacySseBuffer = "";
+  runtime.legacySseEvent = "message";
+  runtime.legacySseData = [];
+
+  if (runtime.legacySseRes) {
+    try {
+      runtime.legacySseRes.removeAllListeners();
+      runtime.legacySseRes.destroy();
+    } catch (err) {
+      // no-op
+    }
+  }
+  runtime.legacySseRes = null;
+
+  if (runtime.legacySseReq) {
+    try {
+      runtime.legacySseReq.removeAllListeners();
+      runtime.legacySseReq.destroy();
+    } catch (err) {
+      // no-op
+    }
+  }
+  runtime.legacySseReq = null;
+}
+
 function stopMockTimer() {
   if (runtime.mockTimer) clearInterval(runtime.mockTimer);
   runtime.mockTimer = null;
@@ -260,14 +510,20 @@ function closeSerialPort() {
 function stopAllTimers() {
   stopHttpTimers();
   stopMockTimer();
+  stopLegacyEventStream();
+  if (runtime.discoveryTimer) clearTimeout(runtime.discoveryTimer);
+  runtime.discoveryTimer = null;
+  runtime.discoveryInFlight = false;
+  runtime.pollInFlight.state = false;
+  runtime.pollInFlight.fast = false;
+  runtime.pollInFlight.params = false;
+  runtime.pollInFlight.synth = false;
 }
 
-function baseUrl() {
-  return `http://${runtime.ip}:${runtime.port}`;
-}
-
-function requestJson(method, path, formBody, timeoutMs = 1200) {
-  const url = new URL(path, baseUrl());
+function requestJsonTarget(host, port, method, path, formBody, timeoutMs = 1200) {
+  const safeHost = normalizeHostValue(host) || runtime.ip;
+  const safePort = Math.max(1, Number(port || runtime.port) || runtime.port);
+  const url = new URL(path, `http://${safeHost}:${safePort}`);
   const transport = url.protocol === "https:" ? https : http;
 
   return new Promise((resolve, reject) => {
@@ -318,6 +574,59 @@ function requestJson(method, path, formBody, timeoutMs = 1200) {
   });
 }
 
+function requestJson(method, path, formBody, timeoutMs = 1200) {
+  return requestJsonTarget(runtime.ip, runtime.port, method, path, formBody, timeoutMs);
+}
+
+function requestTextTarget(host, port, method, path, formBody, timeoutMs = 1200) {
+  const safeHost = normalizeHostValue(host) || runtime.ip;
+  const safePort = Math.max(1, Number(port || runtime.port) || runtime.port);
+  const url = new URL(path, `http://${safeHost}:${safePort}`);
+  const transport = url.protocol === "https:" ? https : http;
+
+  return new Promise((resolve, reject) => {
+    const body = formBody || "";
+    const req = transport.request(
+      {
+        hostname: url.hostname,
+        port: url.port,
+        path: url.pathname + url.search,
+        method,
+        timeout: timeoutMs,
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "Content-Length": Buffer.byteLength(body),
+        },
+      },
+      (res) => {
+        let payload = "";
+        res.setEncoding("utf8");
+        res.on("data", (chunk) => {
+          payload += chunk;
+        });
+        res.on("end", () => {
+          if (res.statusCode < 200 || res.statusCode > 299) {
+            reject(new Error(`HTTP ${res.statusCode}: ${payload || "no body"}`));
+            return;
+          }
+          resolve(payload || "");
+        });
+      }
+    );
+
+    req.on("timeout", () => {
+      req.destroy(new Error(`Timeout for ${path}`));
+    });
+    req.on("error", (err) => reject(err));
+    if (body.length) req.write(body);
+    req.end();
+  });
+}
+
+function requestText(method, path, formBody, timeoutMs = 1200) {
+  return requestTextTarget(runtime.ip, runtime.port, method, path, formBody, timeoutMs);
+}
+
 function sendSerialTextLine(line) {
   const msg = `${line}\n`;
   if (runtime.serialPort && runtime.serialPort.isOpen) {
@@ -354,6 +663,270 @@ function updateSynth(synthLike) {
   emitJson("synth", runtime.synth);
 }
 
+function legacyFlag(value) {
+  return Number(value || 0) !== 0 ? 1 : 0;
+}
+
+function buildLegacyGetPath(key, value) {
+  const k = String(key || "").toLowerCase();
+  const v = String(value || "");
+  const n = Math.round(Number(v));
+  const f = Number(v);
+
+  if (k === "mode") return `/mode?i=${Math.max(0, Math.min(3, Number.isFinite(n) ? n : 0))}`;
+  if (k === "clock") return `/clock?v=${Math.max(0, Math.min(1, Number.isFinite(n) ? n : 0))}`;
+  if (k === "scale") return `/scale?i=${Math.max(0, Math.min(14, Number.isFinite(n) ? n : 0))}`;
+  if (k === "root") return `/root?semi=${Math.max(0, Math.min(11, Number.isFinite(n) ? n : 0))}`;
+  if (k === "bpm") return `/bpm?v=${Math.max(20, Math.min(240, Number.isFinite(n) ? n : 120))}`;
+  if (k === "swing") return `/swing?v=${Math.max(0, Math.min(60, Number.isFinite(n) ? n : 0))}`;
+  if (k === "bright") return `/b?v=${Math.max(10, Math.min(255, Number.isFinite(n) ? n : 154))}`;
+  if (k === "sens") return `/s?v=${Number.isFinite(f) ? f : 0.2}`;
+  if (k === "lo") return `/lo?v=${Math.max(1, Math.min(9, Number.isFinite(n) ? n : 3))}`;
+  if (k === "hi") return `/hi?v=${Math.max(1, Math.min(9, Number.isFinite(n) ? n : 6))}`;
+  if (k === "fx") return `/fxset?i=${Math.max(0, Math.min(9, Number.isFinite(n) ? n : 0))}`;
+  if (k === "pal") return `/pal?i=${Math.max(0, Math.min(31, Number.isFinite(n) ? n : 0))}`;
+  if (k === "vs") return `/visspd?v=${Math.max(0, Math.min(255, Number.isFinite(n) ? n : 160))}`;
+  if (k === "vi") return `/visint?v=${Math.max(0, Math.min(255, Number.isFinite(n) ? n : 200))}`;
+  if (k === "rest") return `/rest?v=${Math.max(0, Math.min(0.8, Number.isFinite(f) ? f : 0.12))}`;
+  if (k === "nr") return `/norep?v=${legacyFlag(v)}`;
+  if (k === "ts") return `/ts?v=${encodeURIComponent(String(v).replace("/", "-"))}`;
+  if (k === "drumsel") return `/drumsel?mask=${Math.max(0, Math.min(255, Number.isFinite(n) ? n : 255))}`;
+  return "";
+}
+
+function isSynthSetKey(key) {
+  const k = String(key || "").toLowerCase();
+  if (k === "preset_reset") return true;
+  if (Object.prototype.hasOwnProperty.call(DEFAULT_SYNTH, k)) return true;
+  return false;
+}
+
+function scheduleLegacySseRestart(reason, delayMs = 800) {
+  if (runtime.mode !== "http" || !runtime.httpLegacy || !runtime.autoReconnect) return;
+  clearLegacySseRestartTimer();
+  runtime.legacySseRestartTimer = setTimeout(() => {
+    runtime.legacySseRestartTimer = null;
+    if (runtime.mode !== "http" || !runtime.httpLegacy) return;
+    emitStatus("connecting", reason || "restarting event stream");
+    startLegacyEventStream();
+  }, Math.max(0, Number(delayMs) || 0));
+}
+
+function dispatchLegacySseEvent(eventName, dataPayload) {
+  const name = String(eventName || "message").trim().toLowerCase();
+  const data = String(dataPayload || "");
+
+  if (name === "hello") {
+    runtime.connected = true;
+    runtime.lastConnectedHost = runtime.ip;
+    emitTarget();
+    emitStatus("connected", `${runtime.ip}:${runtime.port}`);
+    return;
+  }
+
+  if (name === "state") {
+    const parsed = safeJsonParse(data);
+    if (!parsed) return;
+    emitJson("state", parsed);
+    runtime.connected = true;
+    runtime.lastConnectedHost = runtime.ip;
+    emitTarget();
+    return;
+  }
+
+  if (name === "scope") {
+    const cleaned = String(data).trim().replace(/[^0-9eE+\-.]/g, "");
+    if (!cleaned.length) return;
+    const val = Number(cleaned);
+    if (!Number.isFinite(val)) return;
+    emitPlant({ value: val, raw: 0, raw2: 0 });
+    return;
+  }
+
+  if (name === "note") {
+    const parts = data.split("|");
+    const held = Number(parts[0] || 0) === 1;
+    const vel = asNumber(parts[1] || 96, 96);
+    const csv = String(parts[3] || "").trim();
+    const notes = csv.length
+      ? csv
+          .split(",")
+          .map((x) => Number(x))
+          .filter((x) => Number.isFinite(x))
+      : [];
+    applyNotesSnapshot({ notes: held ? notes : [], vel });
+    return;
+  }
+}
+
+function handleLegacySseLine(rawLine) {
+  const line = String(rawLine || "").replace(/\r$/, "");
+  if (!line.length) {
+    const payload = runtime.legacySseData.join("\n");
+    if (payload.length || runtime.legacySseEvent !== "message") {
+      dispatchLegacySseEvent(runtime.legacySseEvent, payload);
+    }
+    runtime.legacySseEvent = "message";
+    runtime.legacySseData = [];
+    return;
+  }
+  if (line.startsWith("event:")) {
+    runtime.legacySseEvent = line.substring(6).trim() || "message";
+    return;
+  }
+  if (line.startsWith("data:")) {
+    runtime.legacySseData.push(line.substring(5).trim());
+  }
+}
+
+function startLegacyEventStream() {
+  if (runtime.mode !== "http" || !runtime.httpLegacy) return;
+  if (runtime.legacySseReq || runtime.legacySseRes) return;
+
+  const host = normalizeHostValue(runtime.ip) || normalizeHostValue(runtime.lastConnectedHost);
+  if (!host) return;
+  const port = Math.max(1, Number(runtime.port || 80) || 80);
+  const url = new URL("/events", `http://${host}:${port}`);
+  const transport = url.protocol === "https:" ? https : http;
+
+  const req = transport.request(
+    {
+      hostname: url.hostname,
+      port: url.port,
+      path: url.pathname + url.search,
+      method: "GET",
+      timeout: 2500,
+      headers: {
+        Accept: "text/event-stream",
+        "Cache-Control": "no-cache",
+      },
+    },
+    (res) => {
+      if (res.statusCode < 200 || res.statusCode > 299) {
+        emitStatus("warn", `events unavailable: HTTP ${res.statusCode}`);
+        try {
+          res.resume();
+        } catch (err) {
+          // no-op
+        }
+        runtime.legacySseReq = null;
+        runtime.legacySseRes = null;
+        scheduleLegacySseRestart("events retry", 1200);
+        return;
+      }
+
+      runtime.legacySseReq = req;
+      runtime.legacySseRes = res;
+      runtime.connected = true;
+      runtime.lastConnectedHost = runtime.ip;
+      emitTarget();
+
+      res.setEncoding("utf8");
+      res.on("data", (chunk) => {
+        runtime.legacySseBuffer += String(chunk || "");
+        let idx = runtime.legacySseBuffer.indexOf("\n");
+        while (idx >= 0) {
+          const line = runtime.legacySseBuffer.slice(0, idx);
+          runtime.legacySseBuffer = runtime.legacySseBuffer.slice(idx + 1);
+          handleLegacySseLine(line);
+          idx = runtime.legacySseBuffer.indexOf("\n");
+        }
+      });
+
+      const onStreamClose = () => {
+        runtime.legacySseReq = null;
+        runtime.legacySseRes = null;
+        runtime.legacySseBuffer = "";
+        if (runtime.mode === "http" && runtime.httpLegacy) {
+          scheduleLegacySseRestart("events reconnect", 900);
+        }
+      };
+
+      res.on("end", onStreamClose);
+      res.on("close", onStreamClose);
+      res.on("error", () => {
+        onStreamClose();
+      });
+    }
+  );
+
+  req.on("timeout", () => {
+    req.destroy(new Error("events timeout"));
+  });
+  req.on("error", (err) => {
+    runtime.legacySseReq = null;
+    runtime.legacySseRes = null;
+    runtime.connected = false;
+    emitTarget();
+    emitStatus("warn", `events error: ${err.message}`);
+    scheduleLegacySseRestart("events retry", 1200);
+  });
+  req.end();
+}
+
+function enableLegacyHttpMode(reason) {
+  if (runtime.mode !== "http") return;
+  if (runtime.httpLegacy) return;
+  runtime.httpLegacy = true;
+  if (runtime.stateTimer) clearInterval(runtime.stateTimer);
+  if (runtime.fastTimer) clearInterval(runtime.fastTimer);
+  if (runtime.paramsTimer) clearInterval(runtime.paramsTimer);
+  runtime.stateTimer = null;
+  runtime.fastTimer = null;
+  runtime.paramsTimer = null;
+  emitStatus("warn", reason || "legacy HTTP profile active");
+  startLegacyEventStream();
+  refreshHttpInfo();
+  pollHttpSynth();
+}
+
+async function sendLegacySet(key, value) {
+  const k = String(key || "").toLowerCase();
+  const v = String(value || "");
+
+  if (k === "outputmode") {
+    const body = new URLSearchParams({ mode: v }).toString();
+    const response = await requestJson("POST", "/api/outputmode", body, 1200);
+    if (typeof response.value !== "undefined") {
+      emitJson("state", { outputmode: asNumber(response.value, 0) });
+    }
+    return;
+  }
+
+  if (k === "mute" || k === "io_muted") {
+    const body = new URLSearchParams({ v: String(legacyFlag(v)) }).toString();
+    const response = await requestJson("POST", "/api/mute", body, 1200);
+    if (typeof response.io_muted !== "undefined") {
+      emitJson("state", { io_muted: asNumber(response.io_muted, 0) });
+    }
+    return;
+  }
+
+  if (k === "sync" || k === "daw_sync") {
+    const body = new URLSearchParams({ v: String(legacyFlag(v)) }).toString();
+    await requestJson("POST", "/api/sync", body, 1200);
+    return;
+  }
+
+  if (isSynthSetKey(k)) {
+    const patch = new URLSearchParams();
+    if (k === "preset_reset") patch.set("reset", legacyFlag(v) ? "1" : "0");
+    else patch.set(k, v);
+    const synth = await requestJson("POST", "/api/synth", patch.toString(), 1200);
+    updateSynth(synth);
+    return;
+  }
+
+  const path = buildLegacyGetPath(k, v);
+  if (path.length) {
+    await requestText("GET", path, "", 1200);
+    return;
+  }
+
+  const body = new URLSearchParams({ key: String(k), value: String(v) }).toString();
+  await requestJson("POST", "/api/set", body, 1200);
+}
+
 function flushPendingSetQueue() {
   if (!runtime.pendingSet.length) return;
   const minGapMs = 66; // ~15 updates/sec max
@@ -375,15 +948,35 @@ function flushPendingSetQueue() {
 
   if (runtime.mode !== "http") return;
 
+  if (runtime.httpLegacy) {
+    sendLegacySet(next.key, next.value)
+      .then(() => {
+        runtime.connected = true;
+        emitTarget();
+      })
+      .catch((err) => {
+        runtime.lastHttpError = err.message;
+        emitStatus("warn", `legacy set failed: ${err.message}`);
+      });
+    return;
+  }
+
   const body = new URLSearchParams({ key: String(next.key), value: String(next.value) }).toString();
   requestJson("POST", "/api/set", body)
     .then((state) => {
       emitJson("state", state);
       runtime.connected = true;
+      emitTarget();
     })
     .catch((err) => {
+      if (String(err.message || "").startsWith("HTTP 302")) {
+        enableLegacyHttpMode("/api/set unavailable, switching to legacy endpoints");
+        sendLegacySet(next.key, next.value).catch(() => {});
+        return;
+      }
       runtime.lastHttpError = err.message;
       runtime.connected = false;
+      emitTarget();
       emitStatus("error", err.message);
     });
 }
@@ -624,60 +1217,264 @@ async function listSerialPorts() {
   }
 }
 
+async function probeHostForBeca(host, port) {
+  const safeHost = normalizeHostValue(host);
+  try {
+    const info = await requestJsonTarget(host, port, "GET", "/api/info", "", runtime.discoveryTimeoutMs);
+    if (!looksLikeBecaInfo(info)) return null;
+    let adoptedHost = normalizeHostValue(info.ip || "");
+    if (!adoptedHost.length && !isIpv4Host(safeHost)) {
+      adoptedHost = await resolveHostIpv4(safeHost, 550);
+    }
+    return {
+      host: safeHost,
+      adoptedHost,
+      source: "info",
+      info,
+    };
+  } catch (err) {
+    // fall through to /api/state probe for firmware that lacks /api/info
+  }
+
+  try {
+    const state = await requestJsonTarget(host, port, "GET", "/api/state", "", runtime.discoveryTimeoutMs);
+    if (looksLikeBecaState(state)) {
+      let adoptedHost = "";
+      if (!isIpv4Host(safeHost)) {
+        adoptedHost = await resolveHostIpv4(safeHost, 550);
+      }
+      return {
+        host: safeHost,
+        adoptedHost,
+        source: "state",
+        info: null,
+      };
+    }
+  } catch (err) {
+    return null;
+  }
+
+  return null;
+}
+
+async function probeCandidateBatch(candidates, port, maxConcurrent) {
+  if (!Array.isArray(candidates) || !candidates.length) return null;
+  const parallel = Math.max(1, Number(maxConcurrent) || 1);
+  let index = 0;
+  let found = null;
+
+  async function worker() {
+    while (!found) {
+      const current = index;
+      index += 1;
+      if (current >= candidates.length) return;
+      const host = candidates[current];
+      // eslint-disable-next-line no-await-in-loop
+      const probe = await probeHostForBeca(host, port);
+      if (probe) {
+        found = probe;
+        return;
+      }
+    }
+  }
+
+  const workers = [];
+  for (let i = 0; i < Math.min(parallel, candidates.length); i += 1) {
+    workers.push(worker());
+  }
+  await Promise.all(workers);
+  return found;
+}
+
+async function findResponsiveHost(candidates, port) {
+  if (!Array.isArray(candidates) || !candidates.length) return null;
+  const headSize = Math.min(20, candidates.length);
+  const head = candidates.slice(0, headSize);
+  const tail = candidates.slice(headSize);
+
+  const quick = await probeCandidateBatch(head, port, 8);
+  if (quick) return quick;
+  if (!tail.length) return null;
+  return probeCandidateBatch(tail, port, 24);
+}
+
+function scheduleDiscovery(reason, delayMs = 120) {
+  if (runtime.mode !== "http" || !runtime.autoReconnect) return;
+  if (runtime.discoveryTimer) clearTimeout(runtime.discoveryTimer);
+  runtime.discoveryTimer = setTimeout(() => {
+    runtime.discoveryTimer = null;
+    discoverAndAdoptHost(reason).catch(() => {});
+  }, Math.max(0, Number(delayMs) || 0));
+}
+
+async function discoverAndAdoptHost(reason) {
+  if (runtime.mode !== "http") return false;
+  if (runtime.connected) return false;
+  if (runtime.discoveryInFlight) return false;
+
+  const elapsed = nowMs() - runtime.lastDiscoveryAt;
+  if (elapsed < runtime.discoveryCooldownMs) return false;
+
+  runtime.discoveryInFlight = true;
+  runtime.lastDiscoveryAt = nowMs();
+  emitStatus("discovering", reason || "searching for BECA");
+
+  try {
+    const hints = await discoveryIpHints();
+    const candidates = buildDiscoveryCandidates(hints);
+    const found = await findResponsiveHost(candidates, runtime.port);
+    if (!found || !found.host) {
+      emitStatus("warn", "auto-discovery did not find BECA");
+      return false;
+    }
+
+    const resolvedHost = normalizeHostValue(found.adoptedHost) || normalizeHostValue(found.host);
+    if (found.info && found.info.name) {
+      const maybeName = normalizeDeviceName(found.info.name);
+      if (maybeName) runtime.deviceName = maybeName;
+    }
+    runtime.ip = resolvedHost;
+    runtime.lastConnectedHost = resolvedHost;
+    emitTarget();
+    if (resolvedHost !== normalizeHostValue(found.host)) {
+      emitStatus("identified", `${found.host} -> ${resolvedHost}:${runtime.port}`);
+    } else {
+      emitStatus("identified", `${resolvedHost}:${runtime.port}`);
+    }
+    emitStatus("connecting", `${resolvedHost}:${runtime.port}`);
+    pollHttpState();
+    pollHttpFast();
+    pollHttpParams();
+    pollHttpSynth();
+    return true;
+  } finally {
+    runtime.discoveryInFlight = false;
+  }
+}
+
+async function refreshHttpInfo() {
+  if (runtime.mode !== "http") return;
+  try {
+    const info = await requestJson("GET", "/api/info", "", 900);
+    if (!looksLikeBecaInfo(info)) return;
+
+    const maybeIp = normalizeHostValue(info.ip || "");
+    if (maybeIp && maybeIp !== runtime.ip) {
+      runtime.ip = maybeIp;
+      runtime.lastConnectedHost = maybeIp;
+      emitTarget();
+      emitStatus("identified", `${maybeIp}:${runtime.port}`);
+    }
+
+    if (info.name) {
+      const maybeName = normalizeDeviceName(info.name);
+      if (maybeName) runtime.deviceName = maybeName;
+    }
+    emitTarget();
+  } catch (err) {
+    // /api/info is optional for older firmware; ignore quietly.
+  }
+}
+
 async function pollHttpState() {
   if (runtime.mode !== "http") return;
+  if (runtime.httpLegacy) return;
+  if (runtime.pollInFlight.state) return;
+  runtime.pollInFlight.state = true;
   try {
     const state = await requestJson("GET", "/api/state", "");
     emitJson("state", state);
     runtime.connected = true;
+    runtime.lastConnectedHost = runtime.ip;
+    emitTarget();
     emitStatus("connected", `${runtime.ip}:${runtime.port}`);
+    runtime.infoTick = (runtime.infoTick + 1) % 16;
+    if (runtime.infoTick === 1) refreshHttpInfo();
   } catch (err) {
+    if (String(err.message || "").startsWith("HTTP 302")) {
+      enableLegacyHttpMode("/api/state unavailable, using event stream");
+      runtime.connected = true;
+      emitTarget();
+      return;
+    }
     runtime.connected = false;
     runtime.lastHttpError = err.message;
+    emitTarget();
     emitStatus("error", err.message);
     if (!runtime.autoReconnect) stopHttpTimers();
+    else scheduleDiscovery("http retry");
+  } finally {
+    runtime.pollInFlight.state = false;
   }
 }
 
 async function pollHttpFast() {
   if (runtime.mode !== "http") return;
+  if (runtime.httpLegacy) return;
+  if (runtime.pollInFlight.fast) return;
+  runtime.pollInFlight.fast = true;
   try {
     const [plant, notes] = await Promise.all([requestJson("GET", "/api/plant", ""), requestJson("GET", "/api/notes", "")]);
     emitPlant(plant);
     applyNotesSnapshot(notes);
     runtime.connected = true;
+    emitTarget();
   } catch (err) {
+    if (String(err.message || "").startsWith("HTTP 302")) {
+      enableLegacyHttpMode("/api/plant or /api/notes unavailable");
+      return;
+    }
     runtime.connected = false;
     runtime.lastHttpError = err.message;
-    emitStatus("error", err.message);
+    emitTarget();
     if (!runtime.autoReconnect) stopHttpTimers();
+  } finally {
+    runtime.pollInFlight.fast = false;
   }
 }
 
 async function pollHttpParams() {
   if (runtime.mode !== "http") return;
+  if (runtime.httpLegacy) return;
+  if (runtime.pollInFlight.params) return;
+  runtime.pollInFlight.params = true;
   try {
     const params = await requestJson("GET", "/api/params", "");
     updateParams(params);
   } catch (err) {
+    if (runtime.httpLegacy) return;
+    if (String(err.message || "").startsWith("HTTP 302")) {
+      enableLegacyHttpMode("/api/params unavailable");
+      return;
+    }
     emitStatus("warn", `params unavailable: ${err.message}`);
+  } finally {
+    runtime.pollInFlight.params = false;
   }
 }
 
 async function pollHttpSynth() {
   if (runtime.mode !== "http") return;
+  if (runtime.pollInFlight.synth) return;
+  runtime.pollInFlight.synth = true;
   try {
     const synth = await requestJson("GET", "/api/synth", "");
     updateSynth(synth);
   } catch (err) {
+    if (runtime.httpLegacy) return;
     emitStatus("warn", `synth unavailable: ${err.message}`);
+  } finally {
+    runtime.pollInFlight.synth = false;
   }
 }
 
 function beginHttpMode() {
   stopAllTimers();
   runtime.mode = "http";
+  runtime.httpLegacy = false;
   runtime.connected = false;
+  runtime.infoTick = 0;
+  emitTarget();
   runtime.stateTimer = setInterval(pollHttpState, runtime.statePollMs);
   runtime.fastTimer = setInterval(pollHttpFast, runtime.fastPollMs);
   runtime.paramsTimer = setInterval(pollHttpParams, runtime.paramsPollMs);
@@ -687,6 +1484,7 @@ function beginHttpMode() {
   pollHttpFast();
   pollHttpParams();
   pollHttpSynth();
+  scheduleDiscovery("http startup", 400);
 }
 
 function serialSnapshotTick() {
@@ -699,7 +1497,9 @@ function serialSnapshotTick() {
 async function beginSerialMode(path, baudRate) {
   stopAllTimers();
   runtime.mode = "serial";
+  runtime.httpLegacy = false;
   runtime.serialStatusTicker = 0;
+  emitTarget();
 
   if (path && path.length) {
     try {
@@ -707,12 +1507,14 @@ async function beginSerialMode(path, baudRate) {
       emitStatus("connected", `${path} @ ${baudRate || 115200}`);
     } catch (err) {
       runtime.connected = false;
+      emitTarget();
       emitStatus("error", `serial open failed: ${err.message}`);
       return;
     }
   }
 
   runtime.connected = true;
+  emitTarget();
   runtime.stateTimer = setInterval(serialSnapshotTick, runtime.statePollMs);
   runtime.fastTimer = setInterval(() => {
     sendSerialControl("PLANT");
@@ -775,7 +1577,9 @@ function applyMockParam(key, value) {
 function beginMockMode() {
   stopAllTimers();
   runtime.mode = "mock";
+  runtime.httpLegacy = false;
   runtime.connected = true;
+  emitTarget();
   runtime.activeNotes.clear();
   updateParams(FALLBACK_PARAMS);
   updateSynth(runtime.synth);
@@ -811,15 +1615,21 @@ function beginMockMode() {
 function disconnectAll() {
   stopAllTimers();
   closeSerialPort();
+  runtime.httpLegacy = false;
   runtime.connected = false;
+  emitTarget();
   runtime.pendingSet = [];
   runtime.activeNotes.clear();
   emitStatus("disconnected", "");
 }
 
 maxApi.addHandler("connect_http", (ip, port) => {
-  runtime.ip = String(ip || runtime.ip).trim() || runtime.ip;
+  const host = normalizeHostValue(ip);
+  if (host) runtime.ip = host;
+  const fromLocalName = runtime.ip.endsWith(".local");
+  if (fromLocalName) runtime.deviceName = normalizeDeviceName(runtime.ip);
   runtime.port = Math.max(1, Number(port || runtime.port) || runtime.port);
+  emitTarget();
   beginHttpMode();
 });
 
@@ -850,6 +1660,9 @@ maxApi.addHandler("set_mode", (mode) => {
 
 maxApi.addHandler("set_auto_reconnect", (flag) => {
   runtime.autoReconnect = Number(flag || 0) !== 0;
+  if (runtime.mode === "http" && runtime.autoReconnect && !runtime.connected) {
+    scheduleDiscovery("auto reconnect enabled", 80);
+  }
 });
 
 maxApi.addHandler("set_emit_mode", (mode) => {
@@ -860,6 +1673,40 @@ maxApi.addHandler("set_emit_mode", (mode) => {
 maxApi.addHandler("set_param", (key, value) => {
   if (typeof key === "undefined") return;
   queueSet(String(key), String(value));
+});
+
+maxApi.addHandler("set_http_host", (host) => {
+  const next = normalizeHostValue(host);
+  if (!next.length) return;
+  runtime.ip = next;
+  emitTarget();
+  if (runtime.mode === "http" && runtime.autoReconnect && !runtime.connected) {
+    scheduleDiscovery("host updated", 50);
+  }
+});
+
+maxApi.addHandler("set_http_port", (port) => {
+  runtime.port = Math.max(1, Number(port || runtime.port) || runtime.port);
+  emitTarget();
+  if (runtime.mode === "http" && runtime.autoReconnect && !runtime.connected) {
+    scheduleDiscovery("port updated", 50);
+  }
+});
+
+maxApi.addHandler("set_device_name", (name) => {
+  const next = normalizeDeviceName(name);
+  if (!next.length) return;
+  runtime.deviceName = next;
+  emitTarget();
+  if (runtime.mode === "http" && runtime.autoReconnect && !runtime.connected) {
+    scheduleDiscovery("device name updated", 50);
+  }
+});
+
+maxApi.addHandler("auto_connect", () => {
+  if (runtime.mode === "http" && !runtime.connected) {
+    scheduleDiscovery("auto-connect", 0);
+  }
 });
 
 maxApi.addHandler("manual_note", (on, note, vel, ch) => {
@@ -880,6 +1727,13 @@ maxApi.addHandler("request_state", () => {
   if (runtime.mode === "serial") sendSerialControl("STATE");
   else if (runtime.mode === "http") pollHttpState();
   else if (runtime.mode === "mock") emitJson("state", runtime.mockState);
+});
+
+maxApi.addHandler("request_target", () => {
+  emitTarget();
+  if (runtime.mode === "http" && runtime.autoReconnect && !runtime.connected) {
+    scheduleDiscovery("target request", 0);
+  }
 });
 
 maxApi.addHandler("request_fast", () => {
@@ -912,4 +1766,6 @@ maxApi.addHandler("enable_serial_telemetry", (flag) => {
 
 updateParams(FALLBACK_PARAMS);
 updateSynth(DEFAULT_SYNTH);
+emitTarget();
 emitStatus("ready", "beca_control_node loaded");
+scheduleDiscovery("initial startup", 250);

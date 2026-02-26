@@ -320,7 +320,7 @@ function state(jsonText) {
     setCtl("ts", idx + 1);
   }
 
-  var direct = ["bpm", "swing", "sens", "lo", "hi", "fx", "vs", "vi", "bright", "rest", "nr", "drumsel"];
+  var direct = ["bpm", "swing", "sens", "lo", "hi", "fx", "pal", "vs", "vi", "bright", "rest", "nr", "drumsel"];
   var k;
   for (k = 0; k < direct.length; k++) {
     var kk = direct[k];

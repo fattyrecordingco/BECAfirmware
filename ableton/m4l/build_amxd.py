@@ -72,6 +72,9 @@ def copy_support_folders(source_root: Path, target_dir: Path) -> None:
     root_native = source_root / "code" / "beca_native_controller.js"
     if root_native.exists():
         shutil.copy2(root_native, target_dir / "beca_native_controller.js")
+    root_node_bootstrap = source_root / "beca_control_node.js"
+    if root_node_bootstrap.exists():
+        shutil.copy2(root_node_bootstrap, target_dir / "beca_control_node.js")
 
 
 def copy_amxd_variants(source_amxd: Path, target_dir: Path) -> list[Path]:
@@ -88,6 +91,17 @@ def copy_amxd_variants(source_amxd: Path, target_dir: Path) -> list[Path]:
         native_alias = target_dir / "BECA Control Native.amxd"
         shutil.copy2(source_amxd, native_alias)
         copied.append(native_alias)
+        fresh_alias = target_dir / "BECA Control Fresh.amxd"
+        shutil.copy2(source_amxd, fresh_alias)
+        copied.append(fresh_alias)
+        pro_alias = target_dir / "BECA Control Pro.amxd"
+        shutil.copy2(source_amxd, pro_alias)
+        copied.append(pro_alias)
+
+        # Clean up legacy typo variant if present.
+        stale_alias = target_dir / "BECA Control.v2.amxd"
+        if stale_alias.exists():
+            stale_alias.unlink()
 
     return copied
 
@@ -127,6 +141,16 @@ def main() -> int:
         native_alias = args.amxd.with_name("BECA Control Native.amxd")
         shutil.copy2(args.amxd, native_alias)
         print(f"Synced local alias: {native_alias}")
+        fresh_alias = args.amxd.with_name("BECA Control Fresh.amxd")
+        shutil.copy2(args.amxd, fresh_alias)
+        print(f"Synced local alias: {fresh_alias}")
+        pro_alias = args.amxd.with_name("BECA Control Pro.amxd")
+        shutil.copy2(args.amxd, pro_alias)
+        print(f"Synced local alias: {pro_alias}")
+        stale_local = args.amxd.with_name("BECA Control.v2.amxd")
+        if stale_local.exists():
+            stale_local.unlink()
+            print(f"Removed stale alias: {stale_local}")
 
     if args.copy_user_library:
         target_dir = args.user_library_dir or default_user_library_target()

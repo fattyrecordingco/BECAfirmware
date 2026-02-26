@@ -15,7 +15,7 @@
             1120,
             170
         ],
-        "openinpresentation": 1,
+        "openinpresentation": 0,
         "default_fontsize": 12,
         "default_fontface": 0,
         "default_fontname": "Arial",
@@ -2067,6 +2067,71 @@
                     ],
                     "text": "s beca_ui_events"
                 }
+            },
+            {
+                "box": {
+                    "id": "obj-137",
+                    "maxclass": "comment",
+                    "patching_rect": [
+                        744,
+                        105,
+                        120,
+                        12
+                    ],
+                    "text": "Preset Reset"
+                }
+            },
+            {
+                "box": {
+                    "id": "obj-138",
+                    "maxclass": "textbutton",
+                    "patching_rect": [
+                        744,
+                        117,
+                        120,
+                        18
+                    ],
+                    "text": "Reset Preset"
+                }
+            },
+            {
+                "box": {
+                    "id": "obj-139",
+                    "maxclass": "newobj",
+                    "patching_rect": [
+                        956,
+                        295,
+                        40,
+                        22
+                    ],
+                    "text": "sel 1"
+                }
+            },
+            {
+                "box": {
+                    "id": "obj-140",
+                    "maxclass": "message",
+                    "patching_rect": [
+                        1002,
+                        295,
+                        154,
+                        22
+                    ],
+                    "text": "ui_param preset_reset 1"
+                }
+            },
+            {
+                "box": {
+                    "id": "obj-141",
+                    "maxclass": "newobj",
+                    "patching_rect": [
+                        1162,
+                        295,
+                        120,
+                        22
+                    ],
+                    "text": "s beca_ui_events"
+                }
             }
         ],
         "lines": [
@@ -3146,6 +3211,42 @@
                     ],
                     "destination": [
                         "obj-136",
+                        0
+                    ]
+                }
+            },
+            {
+                "patchline": {
+                    "source": [
+                        "obj-138",
+                        0
+                    ],
+                    "destination": [
+                        "obj-139",
+                        0
+                    ]
+                }
+            },
+            {
+                "patchline": {
+                    "source": [
+                        "obj-139",
+                        0
+                    ],
+                    "destination": [
+                        "obj-140",
+                        0
+                    ]
+                }
+            },
+            {
+                "patchline": {
+                    "source": [
+                        "obj-140",
+                        0
+                    ],
+                    "destination": [
+                        "obj-141",
                         0
                     ]
                 }

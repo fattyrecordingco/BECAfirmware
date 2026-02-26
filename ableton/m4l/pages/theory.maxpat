@@ -15,7 +15,7 @@
             1120,
             170
         ],
-        "openinpresentation": 1,
+        "openinpresentation": 0,
         "default_fontsize": 12,
         "default_fontface": 0,
         "default_fontname": "Arial",
