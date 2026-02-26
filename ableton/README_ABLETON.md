@@ -54,6 +54,10 @@ Note:
 The Ableton UI now includes:
 
 - Connection panel: mode (`HTTP`/`Serial`/`Mock`), IP/port fields, serial port + baud, connect/disconnect, refresh, auto reconnect, serial telemetry, re-emit/monitor mode.
+- Hostname panel additions:
+  - `Device` name field (for example `beca`)
+  - `.local` toggle
+  - `Connect .local` action (`<device>.local`)
 - Plant monitor: scrolling normalized energy graph plus raw value display.
 - MIDI monitor: last MIDI event and 12x8 note grid indicator.
 - Performance controls mapped to firmware:
@@ -77,9 +81,17 @@ The Ableton UI now includes:
 ### HTTP via IP
 
 1. Select `HTTP` mode in the device.
-2. Enter BECA IP + port (default `80`).
+2. Enter BECA IP/host + port (default `80`).
 3. Click `connect`.
 4. The status line should show `connected`.
+
+### HTTP via Device Name (.local)
+
+1. Enter BECA name in `Device` (for example `beca`).
+2. Either:
+   - enable `.local` and use `Connect`, or
+   - click `Connect .local` directly.
+3. Device connects to `http://<device>.local:<port>`.
 
 ### Serial
 

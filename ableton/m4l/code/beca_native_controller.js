@@ -5,8 +5,10 @@ outlets = 2; // 0 -> node.script, 1 -> thispatcher
 var NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 
 var ui = {
-  transportMode: 1, // 0=http,1=serial,2=mock
+  transportMode: 0, // 0=http,1=serial,2=mock
   ip: "192.168.4.1",
+  deviceName: "beca",
+  useLocalName: 0,
   port: 80,
   serialPorts: [],
   serialPortIndex: 0,
@@ -124,7 +126,20 @@ function ui_mode(v) {
 
 function ui_set_ip() {
   var txt = atomText(arrayfromargs(arguments));
-  if (txt && txt.length) ui.ip = txt;
+  if (txt && txt.length) ui.ip = txt.trim();
+}
+
+function ui_set_device_name() {
+  var txt = atomText(arrayfromargs(arguments));
+  if (!txt) return;
+  txt = txt.trim();
+  if (!txt.length) return;
+  if (txt.indexOf(".local") >= 0) txt = txt.substring(0, txt.indexOf(".local"));
+  ui.deviceName = txt;
+}
+
+function ui_use_local_name(v) {
+  ui.useLocalName = asInt(v, 0) ? 1 : 0;
 }
 
 function ui_set_port(v) {
@@ -155,8 +170,13 @@ function ui_emit(v) {
 }
 
 function ui_connect() {
+  var host = ui.ip;
+  if (ui.useLocalName && ui.deviceName && ui.deviceName.length) host = ui.deviceName + ".local";
+  if ((!host || !String(host).length) && ui.deviceName && ui.deviceName.length) host = ui.deviceName + ".local";
+
   if (ui.transportMode === 0) {
-    sendCmd("connect_http", ui.ip, ui.port);
+    setStatus("connecting", host + ":" + ui.port);
+    sendCmd("connect_http", host, ui.port);
     return;
   }
   if (ui.transportMode === 1) {
@@ -164,10 +184,25 @@ function ui_connect() {
     if (ui.serialPorts.length && ui.serialPortIndex >= 0 && ui.serialPortIndex < ui.serialPorts.length) {
       port = ui.serialPorts[ui.serialPortIndex];
     }
+    if (!port.length) {
+      setStatus("warn", "no serial port selected");
+      sendCmd("list_serial_ports");
+      return;
+    }
+    setStatus("connecting", port + " @" + ui.baud);
     sendCmd("connect_serial", port, ui.baud);
     return;
   }
+  setStatus("connecting", "mock");
   sendCmd("connect_mock");
+}
+
+function ui_connect_local() {
+  if (!ui.deviceName || !ui.deviceName.length) return;
+  ui.transportMode = 0;
+  setStatus("connecting", ui.deviceName + ".local:" + ui.port);
+  sendCmd("set_mode", "http");
+  sendCmd("connect_http", ui.deviceName + ".local", ui.port);
 }
 
 function ui_disconnect() {
@@ -333,4 +368,32 @@ function loadbang() {
   sendCmd("request_state");
   sendCmd("request_synth");
   sendCmd("request_fast");
+}
+
+function list() {
+  var a = arrayfromargs(arguments);
+  if (!a || !a.length) return;
+  var head = String(a[0]);
+  var rest = a.slice(1);
+  if (head && typeof this[head] === "function") {
+    this[head].apply(this, rest);
+  }
+}
+
+function anything() {
+  var a = arrayfromargs(arguments);
+  var sel = String(messagename || "");
+  if (sel === "list") {
+    list.apply(this, a);
+    return;
+  }
+  if (sel && typeof this[sel] === "function" && sel !== "anything") {
+    this[sel].apply(this, a);
+    return;
+  }
+  if (a && a.length) {
+    var head = String(a[0]);
+    var rest = a.slice(1);
+    if (head && typeof this[head] === "function") this[head].apply(this, rest);
+  }
 }
