@@ -9,6 +9,7 @@
       "BECA Control.amxd": { "kind": "patcher" }
     },
     "code": {
+      "beca_control_ui.js": { "kind": "javascript" },
       "code/beca_control_node.js": { "kind": "javascript" },
       "code/beca_control_ui.js": { "kind": "javascript" },
       "code/package.json": { "kind": "json" }

@@ -7,6 +7,7 @@ This folder adds an optional Ableton workflow. It does not replace the BECA web 
 - `ableton/m4l/BECA Control.maxproj`
 - `ableton/m4l/BECA Control.maxpat` (editable source)
 - `ableton/m4l/BECA Control.amxd` (device file)
+- `ableton/m4l/beca_control_ui.js` (root `jsui` script target for M4L load reliability)
 - `ableton/m4l/code/beca_control_node.js` (transport + protocol layer)
 - `ableton/m4l/code/beca_control_ui.js` (`jsui` control surface)
 - `ableton/m4l/code/package.json`
@@ -26,7 +27,7 @@ This folder adds an optional Ableton workflow. It does not replace the BECA web 
 python ableton/m4l/build_amxd.py --copy-user-library
 ```
 
-This also syncs `ableton/m4l/code/` and `ableton/m4l/assets/` into the same Ableton User Library folder.
+This also syncs `ableton/m4l/code/`, `ableton/m4l/assets/`, and a root-level `beca_control_ui.js` helper into the same Ableton User Library folder.
 
 2. Copy `BECA Control.amxd` to your Max for Live MIDI Effects folder.
 3. In Ableton, drop `BECA Control` on a MIDI track.

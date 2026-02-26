@@ -65,6 +65,11 @@ def copy_support_folders(source_root: Path, target_dir: Path) -> None:
             dst.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(src, dst)
 
+    # jsui resolves most reliably when the script is next to the AMXD.
+    root_jsui = source_root / "code" / "beca_control_ui.js"
+    if root_jsui.exists():
+        shutil.copy2(root_jsui, target_dir / "beca_control_ui.js")
+
 
 def main() -> int:
     root = Path(__file__).resolve().parent

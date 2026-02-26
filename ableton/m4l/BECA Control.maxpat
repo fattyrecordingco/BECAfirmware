@@ -51,7 +51,7 @@
                                   {
                                       "box":  {
                                                   "id":  "obj-3",
-                                                  "text":  "jsui code/beca_control_ui.js",
+                                                  "text":  "jsui beca_control_ui.js",
                                                   "maxclass":  "jsui",
                                                   "presentation":  1,
                                                   "patching_rect":  [
@@ -66,7 +66,7 @@
                                                                             1140,
                                                                             690
                                                                         ],
-                                                  "filename":  "code/beca_control_ui.js",
+                                                  "filename":  "beca_control_ui.js",
                                                   "jsarguments":  [
 
                                                                   ]
