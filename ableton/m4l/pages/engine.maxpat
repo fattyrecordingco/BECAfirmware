@@ -22,25 +22,6 @@
         "boxes": [
             {
                 "box": {
-                    "id": "obj-1",
-                    "maxclass": "panel",
-                    "patching_rect": [
-                        0,
-                        0,
-                        1120,
-                        170
-                    ],
-                    "presentation": 1,
-                    "presentation_rect": [
-                        0,
-                        0,
-                        1120,
-                        170
-                    ]
-                }
-            },
-            {
-                "box": {
                     "id": "obj-2",
                     "maxclass": "comment",
                     "patching_rect": [

@@ -139,25 +139,6 @@
             },
             {
                 "box": {
-                    "id": "obj-10",
-                    "maxclass": "panel",
-                    "patching_rect": [
-                        8,
-                        6,
-                        1160,
-                        326
-                    ],
-                    "presentation": 1,
-                    "presentation_rect": [
-                        8,
-                        6,
-                        1160,
-                        326
-                    ]
-                }
-            },
-            {
-                "box": {
                     "id": "obj-11",
                     "maxclass": "comment",
                     "patching_rect": [
