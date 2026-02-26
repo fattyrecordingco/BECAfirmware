@@ -59,7 +59,7 @@ def copy_support_folders(source_root: Path, target_dir: Path) -> None:
                 src,
                 dst,
                 dirs_exist_ok=True,
-                ignore=shutil.ignore_patterns("node_modules", "__pycache__", "*.pyc"),
+                ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
             )
         else:
             dst.parent.mkdir(parents=True, exist_ok=True)

@@ -38,6 +38,8 @@ This also syncs:
 
 into the same Ableton User Library folder.
 
+If `ableton/m4l/code/node_modules/` is present (after `npm install`), it is copied too so Serial mode works in User Library without a second install.
+
 2. Copy `BECA Control.amxd` to your Max for Live MIDI Effects folder.
 3. In Ableton, drop `BECA Control` on a MIDI track.
 4. Place your instrument after it in the same track chain.
