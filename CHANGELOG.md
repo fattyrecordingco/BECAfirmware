@@ -30,3 +30,8 @@
 
 - Added `README` section: `11A) Ableton Integration (Max for Live)`.
 - Added full Ableton setup and routing guide in `ableton/README_ABLETON.md`.
+
+### Fixed
+
+- `ableton/m4l/BECA Control.amxd` is now shipped in Ableton-loadable AMPF format (instead of raw JSON).
+- Added `ableton/m4l/build_amxd.py` to regenerate and optionally copy the AMXD into Ableton User Library.

@@ -19,9 +19,19 @@ This folder adds an optional Ableton workflow. It does not replace the BECA web 
 
 ## Install
 
-1. Copy `BECA Control.amxd` to your Max for Live MIDI Effects folder.
+1. If you edited `BECA Control.maxpat`, rebuild `BECA Control.amxd` first:
+
+```bash
+python ableton/m4l/build_amxd.py --copy-user-library
+```
+
+2. Copy `BECA Control.amxd` to your Max for Live MIDI Effects folder (copy, do not move).
 2. In Ableton, drop `BECA Control` on a MIDI track.
 3. Place your instrument after it in the same track chain.
+
+Note:
+- `BECA Control.amxd` must be in Ableton's AMPF container format.
+- `build_amxd.py` wraps the editable `.maxpat` into the loadable `.amxd`.
 
 ## Connection Modes
 

@@ -439,6 +439,7 @@ Optional Ableton-native control is included under:
 
 - `ableton/m4l/BECA Control.amxd`
 - `ableton/m4l/BECA Control.maxpat`
+- `ableton/m4l/build_amxd.py` (rebuild helper for loadable `.amxd`)
 - `ableton/README_ABLETON.md`
 
 What this adds (without removing web UI):
@@ -458,6 +459,8 @@ Serial mode note:
 
 - If you use the Node serial transport in the device, run `npm install` in `ableton/m4l/code` first.
 - Existing BECA serial MIDI bridge format (`@M`) remains supported.
+- After editing `BECA Control.maxpat`, rebuild/copy device with:
+  - `python ableton/m4l/build_amxd.py --copy-user-library`
 
 ## 12) Open The BECA Web UI (Control Page)
 
