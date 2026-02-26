@@ -440,6 +440,7 @@ Optional Ableton-native control is included under:
 - `ableton/m4l/BECA Control.amxd`
 - `ableton/m4l/BECA Control v2.amxd` (synced alias)
 - `ableton/m4l/BECA Control.maxpat`
+- `ableton/m4l/pages/*.maxpat` (native section pages)
 - `ableton/m4l/build_amxd.py` (rebuild helper for loadable `.amxd`)
 - `ableton/README_ABLETON.md`
 
@@ -448,6 +449,7 @@ What this adds (without removing web UI):
 - BECA control from inside Ableton (HTTP, Serial, or Mock mode).
 - Live plant graph + MIDI monitor grid in the M4L device.
 - Full in-device control pages for performance + engine parameters.
+- Native Max control pages (Input/Output/Theory/LED/Engine) for reliable interaction in Ableton panel.
 - Parameter control through additive firmware APIs (`/api/state`, `/api/plant`, `/api/notes`, `/api/params`, `/api/synth`, `/api/set`).
 - Re-emit or monitor-only MIDI behavior in the device.
 

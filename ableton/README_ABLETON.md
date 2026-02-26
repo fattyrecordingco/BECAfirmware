@@ -7,9 +7,11 @@ This folder adds an optional Ableton workflow. It does not replace the BECA web 
 - `ableton/m4l/BECA Control.maxproj`
 - `ableton/m4l/BECA Control.maxpat` (editable source)
 - `ableton/m4l/BECA Control.amxd` (device file)
+- `ableton/m4l/pages/*.maxpat` (native section pages)
 - `ableton/m4l/beca_control_ui.js` (root `jsui` script target for M4L load reliability)
 - `ableton/m4l/code/beca_control_node.js` (transport + protocol layer)
-- `ableton/m4l/code/beca_control_ui.js` (`jsui` control surface)
+- `ableton/m4l/code/beca_native_controller.js` (native UI controller + router)
+- `ableton/m4l/code/beca_control_ui.js` (legacy `jsui` control surface source)
 - `ableton/m4l/code/package.json`
 - `tools/mock_beca/mock_beca_server.py` (optional test server)
 
@@ -30,6 +32,7 @@ python ableton/m4l/build_amxd.py --copy-user-library
 This also syncs:
 - `ableton/m4l/code/`
 - `ableton/m4l/assets/`
+- `ableton/m4l/pages/`
 - root `beca_control_ui.js` helper
 - both device names: `BECA Control.amxd` and `BECA Control v2.amxd`
 
@@ -61,9 +64,10 @@ The Ableton UI now includes:
   - `filter`, `cutoff`, `resonance`
   - `reverb`, `delay_ms`, `delay_feedback`, `delay_mix`
   - `drive`, `master`, `detune`, `gain_trim`, `drumkit`
-- Compact page model:
-  - `All` page with section toggles (`Input`, `Output`, `Theory`, `LED FX`, `Engine`) so multiple sections can be visible together.
-  - Single-section pages for focused editing in smaller device heights.
+- Native section page model (non-`jsui` interaction path):
+  - `Input`, `Output`, `Theory`, `LED FX`, `Engine`
+  - page selection from section menu in the device
+  - controls are standard Max UI objects for reliable clicking/dragging in Live device panel
 
 ## Connection Modes
 
@@ -151,7 +155,7 @@ Inbound to M4L from BECA:
   1. Remove existing BECA devices from the track.
   2. Run `python ableton/m4l/build_amxd.py --copy-user-library`.
   3. Drag `BECA Control` again from User Library.
-  4. Confirm header `evt` value increments when clicking controls (verifies pointer events are reaching `jsui`).
+  4. Confirm native controls respond: section menu switches pages, and `Connect`/`Refresh`/toggles are clickable.
 
 ## Optional Mock Server
 

@@ -49,7 +49,7 @@ def default_user_library_target() -> Path:
 
 
 def copy_support_folders(source_root: Path, target_dir: Path) -> None:
-    for name in ("code", "assets"):
+    for name in ("code", "assets", "pages"):
         src = source_root / name
         if not src.exists():
             continue
@@ -127,7 +127,10 @@ def main() -> int:
         print("Copied:")
         for path in copied:
             print(f"  - {path}")
-        print(f"Synced support folders: {target_dir / 'code'} and {target_dir / 'assets'}")
+        print(
+            "Synced support folders: "
+            f"{target_dir / 'code'}, {target_dir / 'assets'}, and {target_dir / 'pages'}"
+        )
 
     return 0
 

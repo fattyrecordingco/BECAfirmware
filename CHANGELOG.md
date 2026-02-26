@@ -44,3 +44,5 @@
 - Hardened M4L `jsui` pointer handling for Live panel coordinate variants (`onclick`/`ondrag`/`onmousedown` fallback path).
 - Added compact section-page UI model (`All`, `Input`, `Output`, `Theory`, `LED FX`, `Engine`) for small Ableton device heights.
 - Build/copy flow now keeps both `BECA Control.amxd` and `BECA Control v2.amxd` synchronized to avoid stale Live loads.
+- Added native Max page architecture (`ableton/m4l/pages/*.maxpat`) and `beca_native_controller.js` to replace `jsui` interaction as primary control path.
+- Main M4L patch now uses standard Max controls for connection + monitoring + section switching, reducing click-hitbox issues in Ableton panel.
