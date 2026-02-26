@@ -69,9 +69,14 @@ volatile uint8_t gOutputMode = OUTPUT_BLE;
 const uint32_t SERIAL_MIDI_BAUD = 115200;
 const uint32_t SERIAL_MIDI_BEACON_MS = 2000;
 const uint32_t AUX_STARTUP_LOCK_MS = 12000;
+#ifndef BECA_SERIAL_JSON_TELEMETRY_DEFAULT
+#define BECA_SERIAL_JSON_TELEMETRY_DEFAULT 0
+#endif
 uint32_t gLastSerialBeaconMs = 0;
 uint32_t gAuxUnlockAtMs = 0;
 volatile bool gIoMuted = false;
+volatile bool gSerialJsonTelemetry = (BECA_SERIAL_JSON_TELEMETRY_DEFAULT != 0);
+uint32_t gLastSerialPlantTelemetryMs = 0;
 
 beca::SynthEngine gSynth;
 uint32_t gLastSynthUnderrunLogMs = 0;
@@ -100,6 +105,17 @@ extern Preferences prefs;
 extern float restProb;
 extern bool avoidRepeats;
 
+static inline void serialJsonMidiEvent(uint8_t note, uint8_t vel, uint8_t ch, bool on) {
+  if (!gSerialJsonTelemetry) return;
+  char line[128];
+  int n = snprintf(
+    line, sizeof(line),
+    "{\"type\":\"midi\",\"note\":%u,\"vel\":%u,\"ch\":%u,\"on\":%u,\"ts\":%lu}\n",
+    (unsigned)note, (unsigned)vel, (unsigned)ch, on ? 1u : 0u, (unsigned long)millis()
+  );
+  if (n > 0) Serial.write((const uint8_t*)line, (size_t)n);
+}
+
 static inline void serialMidiSend3(uint8_t st, uint8_t d1, uint8_t d2) {
   char line[24];
   int n = snprintf(line, sizeof(line), "@M %02X %02X %02X\n", st, d1 & 0x7F, d2 & 0x7F);
@@ -108,6 +124,7 @@ static inline void serialMidiSend3(uint8_t st, uint8_t d1, uint8_t d2) {
 
 static inline void midiSendNoteOn(uint8_t note, uint8_t vel, uint8_t ch) {
   uint8_t status = 0x90 | ((ch - 1) & 0x0F);
+  serialJsonMidiEvent(note, vel, ch, true);
   if (outputModeIsAux() || ioMuteActive()) return;
   if (midiOutIsSerial()) serialMidiSend3(status, note, vel);
   else if (outputModeIsBle() && gMidiConnected) MIDI.sendNoteOn(note, vel, ch);
@@ -115,6 +132,7 @@ static inline void midiSendNoteOn(uint8_t note, uint8_t vel, uint8_t ch) {
 
 static inline void midiSendNoteOff(uint8_t note, uint8_t vel, uint8_t ch) {
   uint8_t status = 0x80 | ((ch - 1) & 0x0F);
+  serialJsonMidiEvent(note, vel, ch, false);
   if (outputModeIsAux() || ioMuteActive()) return;
   if (midiOutIsSerial()) serialMidiSend3(status, note, vel);
   else if (outputModeIsBle() && gMidiConnected) MIDI.sendNoteOff(note, vel, ch);
@@ -375,6 +393,8 @@ volatile uint8_t gFeatVel    = 0;
 
 // -------------------- Scope helpers --------------------
 volatile float    gScopePlant   = 0.0f;   // 0..1
+volatile uint16_t gPlantRaw1    = 0;
+volatile uint16_t gPlantRaw2    = 0;
 
 // Note-hold info still used (for MIDI grid + note hold state)
 volatile uint32_t gHoldUntilMs  = 0;      // ms
@@ -1258,6 +1278,8 @@ static inline uint8_t buildMidiFromBins(int degIdx, int octIdx) {
 static inline void samplePlant(float &fDeg, float &fOct, uint8_t &velOut, float &energyOut) {
   float raw1 = analogRead(PLANT1_PIN);
   float raw2 = (PLANT2_PIN == PLANT1_PIN) ? raw1 : analogRead(PLANT2_PIN);
+  gPlantRaw1 = (uint16_t)constrain((int)raw1, 0, 4095);
+  gPlantRaw2 = (uint16_t)constrain((int)raw2, 0, 4095);
 
   ema1  += EMA_ALPHA      * (raw1 - ema1);
   ema2  += EMA_ALPHA      * (raw2 - ema2);
@@ -1728,14 +1750,10 @@ static inline void captureState() {
   LS.auxready = auxSwitchReady() ? 1 : 0;
 }
 
-static inline void pushStateIfChanged(bool force=false) {
-  if (!sseConnected) return;
-  if (!sseClient.connected()) { sseConnected = false; return; }
-  if (!force && !stateChanged()) return;
-
+static inline size_t renderStateJson(char* out, size_t outLen, bool bumpVersion) {
   captureState();
-  stateVersion++;
-
+  if (bumpVersion) stateVersion++;
+  const uint32_t ver = stateVersion;
   char buf[920];
   snprintf(buf, sizeof(buf),
     "{\"ver\":%u,"
@@ -1770,7 +1788,7 @@ static inline void pushStateIfChanged(bool force=false) {
     "\"last\":\"%u\","
     "\"vel\":%u,"
     "\"drumsel\":%u}",
-    stateVersion,
+    ver,
     LS.ble,
     LS.midimode,
     LS.outputmode,
@@ -1804,6 +1822,19 @@ static inline void pushStateIfChanged(bool force=false) {
     LS.vel,
     LS.drumsel
   );
+  if (outLen == 0) return 0;
+  strncpy(out, buf, outLen - 1);
+  out[outLen - 1] = '\0';
+  return strlen(out);
+}
+
+static inline void pushStateIfChanged(bool force=false) {
+  if (!sseConnected) return;
+  if (!sseClient.connected()) { sseConnected = false; return; }
+  if (!force && !stateChanged()) return;
+
+  char buf[920];
+  renderStateJson(buf, sizeof(buf), true);
 
   sseSend("state", buf);
 }
@@ -2150,6 +2181,302 @@ static inline void setDrumSel() {
     pushStateIfChanged(true);
   }
   server.send(200, "text/plain", "OK");
+}
+
+static const char* MODE_NAMES_API[] = {
+  "Notes",
+  "Arpeggiator",
+  "Chords",
+  "Drum Machine"
+};
+
+static const char* SCALE_NAMES_API[] = {
+  "Major",
+  "Minor",
+  "Dorian",
+  "Lydian",
+  "Mixolydian",
+  "Pent Minor",
+  "Pent Major",
+  "Harm Minor",
+  "Phrygian",
+  "Whole Tone",
+  "Maj7",
+  "Min7",
+  "Dom7",
+  "Sus2",
+  "Sus4"
+};
+
+static const char* TS_VALUES_API[] = {
+  "1-1","2-2","2-4","3-4","4-4","5-4","7-4","6-8","9-8","12-8","4-8","4-16","8-32"
+};
+
+static inline bool parseTimeSignatureToken(const String& in, uint8_t& beatsOut, uint8_t& denOut) {
+  String v = in;
+  v.trim();
+  int sep = v.indexOf('-');
+  if (sep < 0) sep = v.indexOf('/');
+  if (sep <= 0) return false;
+  uint8_t beats = (uint8_t)constrain(v.substring(0, sep).toInt(), 1, 16);
+  uint8_t den = (uint8_t)constrain(v.substring(sep + 1).toInt(), 1, 32);
+  if (!isValidDen(den)) return false;
+  beatsOut = beats;
+  denOut = den;
+  return true;
+}
+
+static inline bool applyParamByKey(const String& keyIn, const String& valueIn, String& err) {
+  String key = keyIn;
+  String value = valueIn;
+  key.trim();
+  value.trim();
+  key.toLowerCase();
+
+  if (key == "bpm") {
+    int b = value.toInt();
+    b = (b / 5) * 5;
+    bpm = (uint16_t)constrain(b, 20, 240);
+    recalcTransport(false);
+    return true;
+  }
+  if (key == "swing") { swingPct = (uint8_t)constrain(value.toInt(), 0, 60); return true; }
+  if (key == "bright") { gBrightness = (uint8_t)constrain(value.toInt(), 10, 255); return true; }
+  if (key == "sens") { sens = clampf(value.toFloat(), 0.0f, 0.5f); return true; }
+  if (key == "lo") {
+    lowOct = (uint8_t)constrain(value.toInt(), 1, 9);
+    if (lowOct > highOct) highOct = lowOct;
+    return true;
+  }
+  if (key == "hi") {
+    highOct = (uint8_t)constrain(value.toInt(), 1, 9);
+    if (highOct < lowOct) lowOct = highOct;
+    return true;
+  }
+  if (key == "mode") {
+    Mode next = (Mode)constrain(value.toInt(), 0, 3);
+    if (!drumsAllowedForCurrentOutput() && next == MODE_DRUM) next = MODE_NOTE;
+    gMode = next;
+    return true;
+  }
+  if (key == "clock") { gClock = (ClockMode)constrain(value.toInt(), 0, 1); return true; }
+  if (key == "scale") { gScale = (ScaleType)constrain(value.toInt(), 0, 14); return true; }
+  if (key == "root") {
+    int semi = constrain(value.toInt(), 0, 11);
+    int oct = (rootMidi / 12) * 12;
+    rootMidi = (uint8_t)(oct + semi);
+    return true;
+  }
+  if (key == "fx") { fxMode = (EffectMode)constrain(value.toInt(), 0, (int)FX_COUNT - 1); return true; }
+  if (key == "pal") { currentPaletteIndex = (uint8_t)constrain(value.toInt(), 0, (int)(NUM_BUILTIN + NUM_CUSTOM - 1)); return true; }
+  if (key == "vs") { visSpeed = (uint8_t)constrain(value.toInt(), 0, 255); return true; }
+  if (key == "vi") { visIntensity = (uint8_t)constrain(value.toInt(), 0, 255); return true; }
+  if (key == "rest") { restProb = clampf(value.toFloat(), 0.0f, 0.8f); return true; }
+  if (key == "nr" || key == "norep") { avoidRepeats = value.toInt() != 0; return true; }
+  if (key == "drumsel") { drumSelMask = (uint8_t)constrain(value.toInt(), 0, 255); return true; }
+  if (key == "ts") {
+    uint8_t beats = 0, den = 0;
+    if (!parseTimeSignatureToken(value, beats, den)) {
+      err = "invalid time signature";
+      return false;
+    }
+    gTS.beats = beats;
+    gTS.noteVal = den;
+    gTS.triplet = false;
+    recalcTransport(true);
+    return true;
+  }
+
+  if (key == "outputmode") {
+    uint8_t next = gOutputMode;
+    if (!parseOutputModeArg(value, next)) {
+      err = "invalid output mode";
+      return false;
+    }
+    if (next == OUTPUT_AUX && !auxSwitchReady()) {
+      err = "aux not ready";
+      return false;
+    }
+    setOutputMode(next);
+    saveOutputModePref();
+    return true;
+  }
+  if (key == "sync" || key == "daw_sync") {
+    bool on = gDawSyncEnabled;
+    if (!parseOnOffArg(value, on)) {
+      err = "invalid sync value";
+      return false;
+    }
+    applyDawSyncEnabled(on);
+    return true;
+  }
+  if (key == "mute" || key == "io_muted") {
+    bool on = ioMuteActive();
+    if (!parseOnOffArg(value, on)) {
+      err = "invalid mute value";
+      return false;
+    }
+    applyIoMute(on);
+    return true;
+  }
+
+  beca::SynthParams p;
+  gSynth.getParams(p);
+  bool synthTouched = false;
+  if (key == "preset") {
+    const uint8_t idx = (uint8_t)constrain(value.toInt(), 0, (int)beca::SynthEngine::kPresetCount - 1);
+    gSynth.loadPreset(idx);
+    gSynth.getParams(p);
+    synthTouched = true;
+  } else if (key == "preset_reset") {
+    if (value.toInt() != 0) {
+      gSynth.resetPreset();
+      gSynth.getParams(p);
+      synthTouched = true;
+    }
+  } else if (key == "wave_a") { p.waveA = (uint8_t)constrain(value.toInt(), 0, 3); synthTouched = true; }
+  else if (key == "wave_b") { p.waveB = (uint8_t)constrain(value.toInt(), 0, 3); synthTouched = true; }
+  else if (key == "osc_mix") { p.oscMix = value.toFloat(); synthTouched = true; }
+  else if (key == "mono") { p.mono = (value.toInt() != 0) ? 1 : 0; synthTouched = true; }
+  else if (key == "voices") { p.maxVoices = (uint8_t)constrain(value.toInt(), 1, 12); synthTouched = true; }
+  else if (key == "attack") { p.attack = value.toFloat(); synthTouched = true; }
+  else if (key == "decay") { p.decay = value.toFloat(); synthTouched = true; }
+  else if (key == "sustain") { p.sustain = value.toFloat(); synthTouched = true; }
+  else if (key == "release") { p.release = value.toFloat(); synthTouched = true; }
+  else if (key == "filter") { p.filterType = (uint8_t)constrain(value.toInt(), 0, 2); synthTouched = true; }
+  else if (key == "cutoff") { p.cutoffHz = value.toFloat(); synthTouched = true; }
+  else if (key == "resonance") { p.resonance = value.toFloat(); synthTouched = true; }
+  else if (key == "reverb") { p.reverb = value.toFloat(); synthTouched = true; }
+  else if (key == "delay_ms") { p.delayMs = value.toFloat(); synthTouched = true; }
+  else if (key == "delay_feedback") { p.delayFeedback = value.toFloat(); synthTouched = true; }
+  else if (key == "delay_mix") { p.delayMix = value.toFloat(); synthTouched = true; }
+  else if (key == "drive") { p.distDrive = value.toFloat(); synthTouched = true; }
+  else if (key == "master") { p.master = value.toFloat(); synthTouched = true; }
+  else if (key == "detune") { p.detuneCents = value.toFloat(); synthTouched = true; }
+  else if (key == "gain_trim") { p.gainTrim = value.toFloat(); synthTouched = true; }
+  else if (key == "drumkit") { p.drumKit = (uint8_t)constrain(value.toInt(), 0, 2); synthTouched = true; }
+  else {
+    err = "unknown key";
+    return false;
+  }
+
+  if (synthTouched) gSynth.setParams(p);
+  return true;
+}
+
+static inline void handleApiStateGet() {
+  sendNoCacheHeaders();
+  char buf[920];
+  renderStateJson(buf, sizeof(buf), false);
+  server.send(200, "application/json", buf);
+}
+
+static inline void handleApiPlantGet() {
+  sendNoCacheHeaders();
+  char buf[160];
+  snprintf(
+    buf, sizeof(buf),
+    "{\"value\":%.4f,\"raw\":%u,\"raw2\":%u,\"ts\":%lu}",
+    (double)gScopePlant, (unsigned)gPlantRaw1, (unsigned)gPlantRaw2, (unsigned long)millis()
+  );
+  server.send(200, "application/json", buf);
+}
+
+static inline void handleApiNotesGet() {
+  uint8_t uiNotes[MAX_ACTIVE_NOTES];
+  const uint8_t uiCount = uiCollectHeldNotes(uiNotes, MAX_ACTIVE_NOTES);
+  char notesCsv[196];
+  int n = 0;
+  for (uint8_t i = 0; i < uiCount; ++i) {
+    n += snprintf(
+      notesCsv + n,
+      sizeof(notesCsv) - (size_t)n,
+      "%u%s",
+      (unsigned)uiNotes[i],
+      (i + 1u < uiCount) ? "," : ""
+    );
+    if (n >= (int)sizeof(notesCsv) - 8) break;
+  }
+  if (uiCount == 0) notesCsv[0] = '\0';
+
+  sendNoCacheHeaders();
+  char buf[360];
+  snprintf(
+    buf, sizeof(buf),
+    "{\"held\":%u,\"vel\":%u,\"count\":%u,\"notes\":[%s],\"last\":%u,\"last_vel\":%u,\"ts\":%lu}",
+    uiCount > 0 ? 1u : 0u,
+    (unsigned)lastVel,
+    (unsigned)uiCount,
+    notesCsv,
+    (unsigned)lastNote,
+    (unsigned)lastVel,
+    (unsigned long)millis()
+  );
+  server.send(200, "application/json", buf);
+}
+
+static inline void handleApiParamsGet() {
+  sendNoCacheHeaders();
+  String json = "{";
+  json += "\"modes\":[";
+  for (uint8_t i = 0; i < (uint8_t)(sizeof(MODE_NAMES_API) / sizeof(MODE_NAMES_API[0])); ++i) {
+    if (i) json += ",";
+    json += "\""; json += MODE_NAMES_API[i]; json += "\"";
+  }
+  json += "],\"scales\":[";
+  for (uint8_t i = 0; i < (uint8_t)(sizeof(SCALE_NAMES_API) / sizeof(SCALE_NAMES_API[0])); ++i) {
+    if (i) json += ",";
+    json += "\""; json += SCALE_NAMES_API[i]; json += "\"";
+  }
+  json += "],\"time_signatures\":[";
+  for (uint8_t i = 0; i < (uint8_t)(sizeof(TS_VALUES_API) / sizeof(TS_VALUES_API[0])); ++i) {
+    if (i) json += ",";
+    json += "\""; json += TS_VALUES_API[i]; json += "\"";
+  }
+  json += "],\"synth_presets\":[";
+  for (uint8_t i = 0; i < beca::SynthEngine::kPresetCount; ++i) {
+    if (i) json += ",";
+    json += "\""; json += beca::SynthEngine::presetName(i); json += "\"";
+  }
+  json += "],\"ranges\":{";
+  json += "\"bpm\":[20,240],\"swing\":[0,60],\"sens\":[0,0.5],\"lo\":[1,9],\"hi\":[1,9],";
+  json += "\"rest\":[0,0.8],\"bright\":[10,255],\"cutoff\":[20,18000],\"resonance\":[0.1,10],";
+  json += "\"attack\":[0,5],\"decay\":[0,5],\"sustain\":[0,1],\"release\":[0.01,10],";
+  json += "\"delay_ms\":[0,800],\"delay_feedback\":[0,0.95],\"delay_mix\":[0,1],\"drive\":[0,1],";
+  json += "\"master\":[0,1],\"detune\":[0,8],\"gain_trim\":[0.45,1]";
+  json += "}}";
+  server.send(200, "application/json", json);
+}
+
+static inline void handleApiSetPost() {
+  String key = server.hasArg("key") ? server.arg("key") : "";
+  String value = server.hasArg("value") ? server.arg("value") : "";
+
+  if ((key.length() == 0 || value.length() == 0) && server.hasArg("plain")) {
+    String plain = server.arg("plain");
+    int eq = plain.indexOf('=');
+    if (eq > 0) {
+      key = plain.substring(0, eq);
+      value = plain.substring(eq + 1);
+    }
+  }
+
+  if (key.length() == 0 || value.length() == 0) {
+    server.send(400, "application/json", "{\"ok\":0,\"err\":\"key and value required\"}");
+    return;
+  }
+
+  String err;
+  if (!applyParamByKey(key, value, err)) {
+    String out = "{\"ok\":0,\"err\":\"";
+    out += err;
+    out += "\"}";
+    server.send(400, "application/json", out);
+    return;
+  }
+
+  pushStateIfChanged(true);
+  handleApiStateGet();
 }
 
 static inline void randomize() {
@@ -2569,6 +2896,103 @@ static inline void handleSerialControlLine(const char *line) {
     return;
   }
 
+  if (strcmp(cmd, "STATE") == 0) {
+    char buf[920];
+    renderStateJson(buf, sizeof(buf), false);
+    serialCtrlReply("STATE", String(buf));
+    return;
+  }
+
+  if (strcmp(cmd, "PLANT") == 0) {
+    char buf[192];
+    snprintf(
+      buf, sizeof(buf),
+      "{\"value\":%.4f,\"raw\":%u,\"raw2\":%u,\"ts\":%lu}",
+      (double)gScopePlant, (unsigned)gPlantRaw1, (unsigned)gPlantRaw2, (unsigned long)millis()
+    );
+    serialCtrlReply("PLANT", String(buf));
+    return;
+  }
+
+  if (strcmp(cmd, "NOTES") == 0) {
+    uint8_t uiNotes[MAX_ACTIVE_NOTES];
+    const uint8_t uiCount = uiCollectHeldNotes(uiNotes, MAX_ACTIVE_NOTES);
+    String payload = "{\"held\":";
+    payload += (uiCount > 0 ? "1" : "0");
+    payload += ",\"vel\":";
+    payload += (unsigned)lastVel;
+    payload += ",\"count\":";
+    payload += (unsigned)uiCount;
+    payload += ",\"notes\":[";
+    for (uint8_t i = 0; i < uiCount; ++i) {
+      if (i) payload += ",";
+      payload += (unsigned)uiNotes[i];
+    }
+    payload += "],\"last\":";
+    payload += (unsigned)lastNote;
+    payload += ",\"last_vel\":";
+    payload += (unsigned)lastVel;
+    payload += ",\"ts\":";
+    payload += (unsigned long)millis();
+    payload += "}";
+    serialCtrlReply("NOTES", payload);
+    return;
+  }
+
+  if (strcmp(cmd, "TELEMETRY") == 0) {
+    char buf[64];
+    snprintf(buf, sizeof(buf), "{\"ok\":1,\"enabled\":%u}", gSerialJsonTelemetry ? 1u : 0u);
+    serialCtrlReply("TELEMETRY", String(buf));
+    return;
+  }
+
+  if (strncmp(cmd, "TELEMETRY ", 10) == 0) {
+    bool next = gSerialJsonTelemetry;
+    if (!parseOnOffArg(String(cmd + 10), next)) {
+      serialCtrlReply("TELEMETRY", "{\"ok\":0,\"err\":\"invalid flag\"}");
+      return;
+    }
+    gSerialJsonTelemetry = next;
+    gLastSerialPlantTelemetryMs = 0;
+    char buf[64];
+    snprintf(buf, sizeof(buf), "{\"ok\":1,\"enabled\":%u}", gSerialJsonTelemetry ? 1u : 0u);
+    serialCtrlReply("TELEMETRY", String(buf));
+    return;
+  }
+
+  if (strncmp(cmd, "SET ", 4) == 0) {
+    String payload = String(cmd + 4);
+    payload.trim();
+    int sep = payload.indexOf(' ');
+    if (sep < 0) sep = payload.indexOf('=');
+    if (sep <= 0) {
+      serialCtrlReply("SET", "{\"ok\":0,\"err\":\"use: SET <key> <value>\"}");
+      return;
+    }
+
+    String key = payload.substring(0, sep);
+    String value = payload.substring(sep + 1);
+    key.trim();
+    value.trim();
+    if (key.length() == 0 || value.length() == 0) {
+      serialCtrlReply("SET", "{\"ok\":0,\"err\":\"key/value required\"}");
+      return;
+    }
+
+    String err;
+    if (!applyParamByKey(key, value, err)) {
+      String out = "{\"ok\":0,\"err\":\"";
+      out += err;
+      out += "\"}";
+      serialCtrlReply("SET", out);
+      return;
+    }
+
+    pushStateIfChanged(true);
+    serialCtrlReply("SET", "{\"ok\":1}");
+    return;
+  }
+
   if (strncmp(cmd, "WIFI_SAVE", 9) == 0) {
     const char *payload = cmd + 9;
     if (*payload == ' ') payload++;
@@ -2874,6 +3298,11 @@ void setup() {
   server.on("/api/mute",       HTTP_GET,  handleApiMuteGet);
   server.on("/api/mute",       HTTP_POST, handleApiMutePost);
   server.on("/api/sync",       HTTP_POST, handleApiSyncPost);
+  server.on("/api/state",      HTTP_GET,  handleApiStateGet);
+  server.on("/api/plant",      HTTP_GET,  handleApiPlantGet);
+  server.on("/api/notes",      HTTP_GET,  handleApiNotesGet);
+  server.on("/api/params",     HTTP_GET,  handleApiParamsGet);
+  server.on("/api/set",        HTTP_POST, handleApiSetPost);
   server.on("/api/synth",      HTTP_GET,  handleApiSynthGet);
   server.on("/api/synth",      HTTP_POST, handleApiSynthPost);
   server.on("/api/synth/test", HTTP_GET,  handleApiSynthTest);
@@ -2918,6 +3347,10 @@ void setup() {
   Serial.println("  /");
   Serial.println("  /setup");
   Serial.println("  /api/info");
+  Serial.println("  /api/state");
+  Serial.println("  /api/plant");
+  Serial.println("  /api/notes");
+  Serial.println("  /api/params");
   Serial.print("Output mode: ");
   Serial.println(outputModeName(gOutputMode));
   if (midiOutIsSerial()) Serial.println("@I MIDIMODE SERIAL READY");
@@ -2950,6 +3383,17 @@ void loop() {
   if ((int32_t)(now - lastPlantMs) >= (int32_t)PLANT_INTERVAL_MS) {
     lastPlantMs = now;
     plantPerformerTick();
+  }
+
+  if (gSerialJsonTelemetry && (int32_t)(now - gLastSerialPlantTelemetryMs) >= 50) {
+    gLastSerialPlantTelemetryMs = now;
+    char line[160];
+    int n = snprintf(
+      line, sizeof(line),
+      "{\"type\":\"plant\",\"value\":%.4f,\"raw\":%u,\"raw2\":%u,\"ts\":%lu}\n",
+      (double)gScopePlant, (unsigned)gPlantRaw1, (unsigned)gPlantRaw2, (unsigned long)now
+    );
+    if (n > 0) Serial.write((const uint8_t*)line, (size_t)n);
   }
 
   // Process incoming BLE-MIDI realtime clock/messages.
