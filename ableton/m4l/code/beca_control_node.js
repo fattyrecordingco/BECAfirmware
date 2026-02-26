@@ -77,6 +77,14 @@ function emitMidiStatus(payload) {
   maxApi.outlet(["midi_event", on ? 1 : 0, note, vel, ch]);
 }
 
+function emitMidiBytes(on, note, vel, ch) {
+  const chan = Math.max(1, Math.min(16, Number(ch || 1)));
+  const status = (on ? 0x90 : 0x80) | ((chan - 1) & 0x0f);
+  const data1 = Math.max(0, Math.min(127, Number(note || 0))) & 0x7f;
+  const data2 = Math.max(0, Math.min(127, Number(vel || 0))) & 0x7f;
+  maxApi.outlet(["midi_bytes", status, data1, data2]);
+}
+
 function normalizeMode(mode) {
   if (mode === "serial") return "serial";
   if (mode === "mock") return "mock";
@@ -237,7 +245,7 @@ function applyNotesSnapshot(snapshot) {
     if (!nextSet.has(note)) {
       runtime.activeNotes.delete(note);
       if (runtime.emitMode === "reemit") {
-        maxApi.outlet(["note_off", note, 0, ch]);
+        emitMidiBytes(false, note, 0, ch);
       }
       emitMidiStatus({ on: false, note, vel: 0, ch });
     }
@@ -247,7 +255,7 @@ function applyNotesSnapshot(snapshot) {
     if (!runtime.activeNotes.has(note)) {
       runtime.activeNotes.set(note, vel);
       if (runtime.emitMode === "reemit") {
-        maxApi.outlet(["note_on", note, vel, ch]);
+        emitMidiBytes(true, note, vel, ch);
       }
       emitMidiStatus({ on: true, note, vel, ch });
     }
@@ -322,8 +330,7 @@ function handleSerialLine(line) {
       if (evt.type === "midi") {
         emitMidiStatus(evt);
         if (runtime.emitMode === "reemit") {
-          if (evt.on) maxApi.outlet(["note_on", Number(evt.note || 0), Number(evt.vel || 0), Number(evt.ch || 1)]);
-          else maxApi.outlet(["note_off", Number(evt.note || 0), 0, Number(evt.ch || 1)]);
+          emitMidiBytes(!!evt.on, Number(evt.note || 0), Number(evt.on ? evt.vel || 0 : 0), Number(evt.ch || 1));
         }
         return;
       }
@@ -351,8 +358,7 @@ function handleSerialLine(line) {
     if (!evt) return;
     emitMidiStatus(evt);
     if (runtime.emitMode === "reemit") {
-      if (evt.on) maxApi.outlet(["note_on", evt.note, evt.vel, evt.ch]);
-      else maxApi.outlet(["note_off", evt.note, 0, evt.ch]);
+      emitMidiBytes(!!evt.on, evt.note, evt.on ? evt.vel : 0, evt.ch);
     }
   }
 }
@@ -511,8 +517,8 @@ function beginMockMode() {
       const vel = 70 + Math.floor(Math.random() * 56);
       const ch = 1;
       if (runtime.emitMode === "reemit") {
-        maxApi.outlet(["note_on", note, vel, ch]);
-        setTimeout(() => maxApi.outlet(["note_off", note, 0, ch]), 180 + Math.floor(Math.random() * 220));
+        emitMidiBytes(true, note, vel, ch);
+        setTimeout(() => emitMidiBytes(false, note, 0, ch), 180 + Math.floor(Math.random() * 220));
       }
       emitMidiStatus({ on: true, note, vel, ch });
     }
