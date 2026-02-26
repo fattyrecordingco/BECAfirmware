@@ -41,3 +41,6 @@
 
 - `ableton/m4l/BECA Control.amxd` is now shipped in Ableton-loadable AMPF format (instead of raw JSON).
 - Added `ableton/m4l/build_amxd.py` to regenerate and optionally copy the AMXD into Ableton User Library.
+- Hardened M4L `jsui` pointer handling for Live panel coordinate variants (`onclick`/`ondrag`/`onmousedown` fallback path).
+- Added compact section-page UI model (`All`, `Input`, `Output`, `Theory`, `LED FX`, `Engine`) for small Ableton device heights.
+- Build/copy flow now keeps both `BECA Control.amxd` and `BECA Control v2.amxd` synchronized to avoid stale Live loads.

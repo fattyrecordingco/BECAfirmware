@@ -113,7 +113,10 @@ var ui = {
   hotspots: [],
   editingField: "",
   drag: null,
-  lastSentAt: {}
+  lastSentAt: {},
+  clickCount: 0,
+  lastClick: "-",
+  mouseDown: 0
 };
 
 var SECTION = {
@@ -286,6 +289,7 @@ function drawTopBars(w) {
   drawText("BECA Control", head.x + 6, head.y + 13, 10, COLORS.text, "left");
   drawText("Ableton Live MIDI Effect", head.x + 106, head.y + 13, 8, COLORS.dim, "left");
   drawText("Status: " + ui.statusState + "  " + ui.statusDetail, head.x + head.w - 6, head.y + 13, 8, badgeColor(), "right");
+  drawText("evt " + ui.clickCount, head.x + head.w - 170, head.y + 13, 7, COLORS.dim, "right");
 
   y += 21;
   var nav = rect(pad, y, w - pad * 2, 19);
@@ -698,25 +702,80 @@ function handleHotspot(h, x, y) {
   }
 }
 
-function onclick(x, y, but, cmd, shift, capslock, option, ctrl) {
+function pointerToCanvas(x, y) {
+  var xx = Number(x);
+  var yy = Number(y);
+  if (!isFinite(xx) || !isFinite(yy)) return [0, 0];
+
+  var sz = canvasSize();
+  var w = sz[0];
+  var h = sz[1];
+
+  if (xx >= 0 && yy >= 0 && xx <= w && yy <= h) return [xx, yy];
+
+  if (Math.abs(xx) <= 1.5 && Math.abs(yy) <= 1.5) {
+    if (xx >= 0 && yy >= 0 && xx <= 1 && yy <= 1) return [xx * w, yy * h];
+    return [((xx + 1) * 0.5) * w, (1 - ((yy + 1) * 0.5)) * h];
+  }
+
+  return [xx, yy];
+}
+
+function pointerDown(x, y) {
+  var pt = pointerToCanvas(x, y);
+  var px = pt[0];
+  var py = pt[1];
+
+  ui.clickCount += 1;
+  ui.lastClick = Math.round(px) + "," + Math.round(py);
   ui.drag = null;
   ui.editingField = "";
   var i;
   for (i = ui.hotspots.length - 1; i >= 0; i--) {
-    if (ptInRect(x, y, ui.hotspots[i].rect)) {
-      handleHotspot(ui.hotspots[i], x, y);
+    if (ptInRect(px, py, ui.hotspots[i].rect)) {
+      handleHotspot(ui.hotspots[i], px, py);
       return;
     }
   }
   mgraphics.redraw();
 }
 
+function onclick(x, y, but, cmd, shift, capslock, option, ctrl) {
+  pointerDown(x, y);
+}
+
+function onmousedown(x, y, but, cmd, shift, capslock, option, ctrl) {
+  pointerDown(x, y);
+}
+
+function ondblclick(x, y, but, cmd, shift, capslock, option, ctrl) {
+  pointerDown(x, y);
+}
+
 function ondrag(x, y, but, cmd, shift, capslock, option, ctrl) {
+  if (but && !ui.mouseDown) {
+    ui.mouseDown = 1;
+    pointerDown(x, y);
+  }
   if (!but) {
+    ui.mouseDown = 0;
     ui.drag = null;
     return;
   }
-  if (ui.drag && ui.drag.control) applySlider(ui.drag.control, x);
+  if (ui.drag && ui.drag.control) {
+    var pt = pointerToCanvas(x, y);
+    applySlider(ui.drag.control, pt[0]);
+  }
+}
+
+function onmouseup(x, y, but, cmd, shift, capslock, option, ctrl) {
+  ui.mouseDown = 0;
+  ui.drag = null;
+}
+
+function onidleout() {
+  ui.mouseDown = 0;
+  ui.drag = null;
 }
 function key(k) {
   if (!ui.editingField) return;

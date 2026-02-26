@@ -27,7 +27,13 @@ This folder adds an optional Ableton workflow. It does not replace the BECA web 
 python ableton/m4l/build_amxd.py --copy-user-library
 ```
 
-This also syncs `ableton/m4l/code/`, `ableton/m4l/assets/`, and a root-level `beca_control_ui.js` helper into the same Ableton User Library folder.
+This also syncs:
+- `ableton/m4l/code/`
+- `ableton/m4l/assets/`
+- root `beca_control_ui.js` helper
+- both device names: `BECA Control.amxd` and `BECA Control v2.amxd`
+
+into the same Ableton User Library folder.
 
 2. Copy `BECA Control.amxd` to your Max for Live MIDI Effects folder.
 3. In Ableton, drop `BECA Control` on a MIDI track.
@@ -55,6 +61,9 @@ The Ableton UI now includes:
   - `filter`, `cutoff`, `resonance`
   - `reverb`, `delay_ms`, `delay_feedback`, `delay_mix`
   - `drive`, `master`, `detune`, `gain_trim`, `drumkit`
+- Compact page model:
+  - `All` page with section toggles (`Input`, `Output`, `Theory`, `LED FX`, `Engine`) so multiple sections can be visible together.
+  - Single-section pages for focused editing in smaller device heights.
 
 ## Connection Modes
 
@@ -138,6 +147,11 @@ Inbound to M4L from BECA:
 - External hardware silent: check Ableton track `MIDI To` target + channel.
 - Missing serial ports in dropdown: install Node dependency (`npm install`) and refresh.
 - If controls appear stale in serial mode: click `Refresh` to force `STATE/PARAMS/SYNTH` requests.
+- If Ableton shows an older/non-interactive UI:
+  1. Remove existing BECA devices from the track.
+  2. Run `python ableton/m4l/build_amxd.py --copy-user-library`.
+  3. Drag `BECA Control` again from User Library.
+  4. Confirm header `evt` value increments when clicking controls (verifies pointer events are reaching `jsui`).
 
 ## Optional Mock Server
 

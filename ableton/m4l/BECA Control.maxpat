@@ -69,7 +69,11 @@
                                                   "filename":  "beca_control_ui.js",
                                                   "jsarguments":  [
 
-                                                                  ]
+                                                                  ],
+                                                  "ignoreclick":  0,
+                                                  "clickthrough":  0,
+                                                  "enablehscroll":  0,
+                                                  "enablevscroll":  0
                                               }
                                   },
                                   {

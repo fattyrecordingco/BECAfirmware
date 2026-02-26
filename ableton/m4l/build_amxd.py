@@ -71,6 +71,21 @@ def copy_support_folders(source_root: Path, target_dir: Path) -> None:
         shutil.copy2(root_jsui, target_dir / "beca_control_ui.js")
 
 
+def copy_amxd_variants(source_amxd: Path, target_dir: Path) -> list[Path]:
+    copied: list[Path] = []
+    primary = target_dir / source_amxd.name
+    shutil.copy2(source_amxd, primary)
+    copied.append(primary)
+
+    # Keep legacy alias in sync so Live never loads a stale variant.
+    if source_amxd.name == "BECA Control.amxd":
+        alias = target_dir / "BECA Control v2.amxd"
+        shutil.copy2(source_amxd, alias)
+        copied.append(alias)
+
+    return copied
+
+
 def main() -> int:
     root = Path(__file__).resolve().parent
     default_maxpat = root / "BECA Control.maxpat"
@@ -99,13 +114,19 @@ def main() -> int:
     build_amxd(args.maxpat, args.amxd)
     print(f"Built: {args.amxd} ({args.amxd.stat().st_size} bytes)")
 
+    if args.amxd.name == "BECA Control.amxd":
+        local_alias = args.amxd.with_name("BECA Control v2.amxd")
+        shutil.copy2(args.amxd, local_alias)
+        print(f"Synced local alias: {local_alias}")
+
     if args.copy_user_library:
         target_dir = args.user_library_dir or default_user_library_target()
         target_dir.mkdir(parents=True, exist_ok=True)
-        target_file = target_dir / args.amxd.name
-        shutil.copy2(args.amxd, target_file)
+        copied = copy_amxd_variants(args.amxd, target_dir)
         copy_support_folders(root, target_dir)
-        print(f"Copied: {target_file}")
+        print("Copied:")
+        for path in copied:
+            print(f"  - {path}")
         print(f"Synced support folders: {target_dir / 'code'} and {target_dir / 'assets'}")
 
     return 0

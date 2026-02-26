@@ -438,6 +438,7 @@ Use this only if you want wireless MIDI and your DAW/OS supports BLE MIDI well.
 Optional Ableton-native control is included under:
 
 - `ableton/m4l/BECA Control.amxd`
+- `ableton/m4l/BECA Control v2.amxd` (synced alias)
 - `ableton/m4l/BECA Control.maxpat`
 - `ableton/m4l/build_amxd.py` (rebuild helper for loadable `.amxd`)
 - `ableton/README_ABLETON.md`
@@ -463,6 +464,7 @@ Serial mode note:
 - Serial control now also supports `@C PARAMS` and `@C SYNTH` snapshots for full UI parity.
 - After editing `BECA Control.maxpat`, rebuild/copy device with:
   - `python ableton/m4l/build_amxd.py --copy-user-library`
+  - this command syncs both `BECA Control.amxd` and `BECA Control v2.amxd` plus required `code/` and `assets/` support folders into Ableton User Library.
 
 ## 12) Open The BECA Web UI (Control Page)
 
