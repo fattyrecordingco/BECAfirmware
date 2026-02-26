@@ -82,6 +82,9 @@ def copy_amxd_variants(source_amxd: Path, target_dir: Path) -> list[Path]:
         alias = target_dir / "BECA Control v2.amxd"
         shutil.copy2(source_amxd, alias)
         copied.append(alias)
+        native_alias = target_dir / "BECA Control Native.amxd"
+        shutil.copy2(source_amxd, native_alias)
+        copied.append(native_alias)
 
     return copied
 
@@ -118,6 +121,9 @@ def main() -> int:
         local_alias = args.amxd.with_name("BECA Control v2.amxd")
         shutil.copy2(args.amxd, local_alias)
         print(f"Synced local alias: {local_alias}")
+        native_alias = args.amxd.with_name("BECA Control Native.amxd")
+        shutil.copy2(args.amxd, native_alias)
+        print(f"Synced local alias: {native_alias}")
 
     if args.copy_user_library:
         target_dir = args.user_library_dir or default_user_library_target()

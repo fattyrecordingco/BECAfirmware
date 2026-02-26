@@ -35,6 +35,7 @@ This also syncs:
 - `ableton/m4l/pages/`
 - root `beca_control_ui.js` helper
 - both device names: `BECA Control.amxd` and `BECA Control v2.amxd`
+- `BECA Control Native.amxd` (cache-busting alias for forced fresh load)
 
 into the same Ableton User Library folder.
 
