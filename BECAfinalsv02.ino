@@ -2074,7 +2074,7 @@ static inline void handleApiMutePost() {
   handleApiMuteGet();
 }
 
-static inline void handleApiSynthGet() {
+static inline String buildApiSynthJson() {
   beca::SynthParams p;
   gSynth.getParams(p);
   char buf[512];
@@ -2092,8 +2092,12 @@ static inline void handleApiSynthGet() {
     (double)p.delayFeedback, (double)p.delayMix, (double)p.distDrive, (double)p.master, (double)p.detuneCents,
     (double)p.gainTrim, (unsigned)p.drumKit
   );
+  return String(buf);
+}
+
+static inline void handleApiSynthGet() {
   sendNoCacheHeaders();
-  server.send(200, "application/json", buf);
+  server.send(200, "application/json", buildApiSynthJson());
 }
 
 static inline void handleApiSynthPost() {
@@ -2211,6 +2215,39 @@ static const char* SCALE_NAMES_API[] = {
 static const char* TS_VALUES_API[] = {
   "1-1","2-2","2-4","3-4","4-4","5-4","7-4","6-8","9-8","12-8","4-8","4-16","8-32"
 };
+
+static inline String buildApiParamsJson() {
+  String json = "{";
+  json += "\"modes\":[";
+  for (uint8_t i = 0; i < (uint8_t)(sizeof(MODE_NAMES_API) / sizeof(MODE_NAMES_API[0])); ++i) {
+    if (i) json += ",";
+    json += "\""; json += MODE_NAMES_API[i]; json += "\"";
+  }
+  json += "],\"scales\":[";
+  for (uint8_t i = 0; i < (uint8_t)(sizeof(SCALE_NAMES_API) / sizeof(SCALE_NAMES_API[0])); ++i) {
+    if (i) json += ",";
+    json += "\""; json += SCALE_NAMES_API[i]; json += "\"";
+  }
+  json += "],\"time_signatures\":[";
+  for (uint8_t i = 0; i < (uint8_t)(sizeof(TS_VALUES_API) / sizeof(TS_VALUES_API[0])); ++i) {
+    if (i) json += ",";
+    json += "\""; json += TS_VALUES_API[i]; json += "\"";
+  }
+  json += "],\"output_modes\":[\"BLE\",\"SERIAL\",\"AUX OUT\"],\"clock_modes\":[\"Internal\",\"Plant\"]";
+  json += ",\"synth_presets\":[";
+  for (uint8_t i = 0; i < beca::SynthEngine::kPresetCount; ++i) {
+    if (i) json += ",";
+    json += "\""; json += beca::SynthEngine::presetName(i); json += "\"";
+  }
+  json += "],\"ranges\":{";
+  json += "\"bpm\":[20,240],\"swing\":[0,60],\"sens\":[0,0.5],\"lo\":[1,9],\"hi\":[1,9],";
+  json += "\"rest\":[0,0.8],\"bright\":[10,255],\"cutoff\":[20,18000],\"resonance\":[0.1,10],";
+  json += "\"attack\":[0,5],\"decay\":[0,5],\"sustain\":[0,1],\"release\":[0.01,10],";
+  json += "\"delay_ms\":[0,800],\"delay_feedback\":[0,0.95],\"delay_mix\":[0,1],\"drive\":[0,1],";
+  json += "\"master\":[0,1],\"detune\":[0,8],\"gain_trim\":[0.45,1]";
+  json += "}}";
+  return json;
+}
 
 static inline bool parseTimeSignatureToken(const String& in, uint8_t& beatsOut, uint8_t& denOut) {
   String v = in;
@@ -2417,35 +2454,7 @@ static inline void handleApiNotesGet() {
 
 static inline void handleApiParamsGet() {
   sendNoCacheHeaders();
-  String json = "{";
-  json += "\"modes\":[";
-  for (uint8_t i = 0; i < (uint8_t)(sizeof(MODE_NAMES_API) / sizeof(MODE_NAMES_API[0])); ++i) {
-    if (i) json += ",";
-    json += "\""; json += MODE_NAMES_API[i]; json += "\"";
-  }
-  json += "],\"scales\":[";
-  for (uint8_t i = 0; i < (uint8_t)(sizeof(SCALE_NAMES_API) / sizeof(SCALE_NAMES_API[0])); ++i) {
-    if (i) json += ",";
-    json += "\""; json += SCALE_NAMES_API[i]; json += "\"";
-  }
-  json += "],\"time_signatures\":[";
-  for (uint8_t i = 0; i < (uint8_t)(sizeof(TS_VALUES_API) / sizeof(TS_VALUES_API[0])); ++i) {
-    if (i) json += ",";
-    json += "\""; json += TS_VALUES_API[i]; json += "\"";
-  }
-  json += "],\"synth_presets\":[";
-  for (uint8_t i = 0; i < beca::SynthEngine::kPresetCount; ++i) {
-    if (i) json += ",";
-    json += "\""; json += beca::SynthEngine::presetName(i); json += "\"";
-  }
-  json += "],\"ranges\":{";
-  json += "\"bpm\":[20,240],\"swing\":[0,60],\"sens\":[0,0.5],\"lo\":[1,9],\"hi\":[1,9],";
-  json += "\"rest\":[0,0.8],\"bright\":[10,255],\"cutoff\":[20,18000],\"resonance\":[0.1,10],";
-  json += "\"attack\":[0,5],\"decay\":[0,5],\"sustain\":[0,1],\"release\":[0.01,10],";
-  json += "\"delay_ms\":[0,800],\"delay_feedback\":[0,0.95],\"delay_mix\":[0,1],\"drive\":[0,1],";
-  json += "\"master\":[0,1],\"detune\":[0,8],\"gain_trim\":[0.45,1]";
-  json += "}}";
-  server.send(200, "application/json", json);
+  server.send(200, "application/json", buildApiParamsJson());
 }
 
 static inline void handleApiSetPost() {
@@ -2900,6 +2909,16 @@ static inline void handleSerialControlLine(const char *line) {
     char buf[920];
     renderStateJson(buf, sizeof(buf), false);
     serialCtrlReply("STATE", String(buf));
+    return;
+  }
+
+  if (strcmp(cmd, "PARAMS") == 0) {
+    serialCtrlReply("PARAMS", buildApiParamsJson());
+    return;
+  }
+
+  if (strcmp(cmd, "SYNTH") == 0) {
+    serialCtrlReply("SYNTH", buildApiSynthJson());
     return;
   }
 
