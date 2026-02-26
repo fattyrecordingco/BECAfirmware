@@ -56,7 +56,7 @@
                         270,
                         22
                     ],
-                    "text": "js code/beca_native_controller.js"
+                    "text": "js beca_native_controller.js"
                 }
             },
             {

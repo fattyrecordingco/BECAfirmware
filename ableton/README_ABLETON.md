@@ -9,6 +9,7 @@ This folder adds an optional Ableton workflow. It does not replace the BECA web 
 - `ableton/m4l/BECA Control.amxd` (device file)
 - `ableton/m4l/pages/*.maxpat` (native section pages)
 - `ableton/m4l/beca_control_ui.js` (root `jsui` script target for M4L load reliability)
+- `ableton/m4l/beca_native_controller.js` (root native controller path for M4L load reliability)
 - `ableton/m4l/code/beca_control_node.js` (transport + protocol layer)
 - `ableton/m4l/code/beca_native_controller.js` (native UI controller + router)
 - `ableton/m4l/code/beca_control_ui.js` (legacy `jsui` control surface source)
@@ -34,6 +35,7 @@ This also syncs:
 - `ableton/m4l/assets/`
 - `ableton/m4l/pages/`
 - root `beca_control_ui.js` helper
+- root `beca_native_controller.js` helper
 - both device names: `BECA Control.amxd` and `BECA Control v2.amxd`
 - `BECA Control Native.amxd` (cache-busting alias for forced fresh load)
 
