@@ -26,6 +26,8 @@ This folder adds an optional Ableton workflow. It does not replace the BECA web 
 python ableton/m4l/build_amxd.py --copy-user-library
 ```
 
+This also syncs `ableton/m4l/code/` and `ableton/m4l/assets/` into the same Ableton User Library folder.
+
 2. Copy `BECA Control.amxd` to your Max for Live MIDI Effects folder.
 3. In Ableton, drop `BECA Control` on a MIDI track.
 4. Place your instrument after it in the same track chain.

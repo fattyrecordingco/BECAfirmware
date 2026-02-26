@@ -48,6 +48,24 @@ def default_user_library_target() -> Path:
     return plain_docs
 
 
+def copy_support_folders(source_root: Path, target_dir: Path) -> None:
+    for name in ("code", "assets"):
+        src = source_root / name
+        if not src.exists():
+            continue
+        dst = target_dir / name
+        if src.is_dir():
+            shutil.copytree(
+                src,
+                dst,
+                dirs_exist_ok=True,
+                ignore=shutil.ignore_patterns("node_modules", "__pycache__", "*.pyc"),
+            )
+        else:
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dst)
+
+
 def main() -> int:
     root = Path(__file__).resolve().parent
     default_maxpat = root / "BECA Control.maxpat"
@@ -81,7 +99,9 @@ def main() -> int:
         target_dir.mkdir(parents=True, exist_ok=True)
         target_file = target_dir / args.amxd.name
         shutil.copy2(args.amxd, target_file)
+        copy_support_folders(root, target_dir)
         print(f"Copied: {target_file}")
+        print(f"Synced support folders: {target_dir / 'code'} and {target_dir / 'assets'}")
 
     return 0
 
