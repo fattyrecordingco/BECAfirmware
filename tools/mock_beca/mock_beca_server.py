@@ -184,6 +184,8 @@ class Handler(BaseHTTPRequestHandler):
                             "Sus4",
                         ],
                         "time_signatures": ["4-4", "3-4", "5-4", "6-8"],
+                        "output_modes": ["BLE", "SERIAL", "AUX OUT"],
+                        "clock_modes": ["Internal", "Plant"],
                         "synth_presets": [
                             "Fatty Neon Lead",
                             "Prism Poly Lead",
@@ -192,6 +194,28 @@ class Handler(BaseHTTPRequestHandler):
                             "Thick Mono Bass",
                             "Rubber Bass",
                         ],
+                        "ranges": {
+                            "bpm": [20, 240],
+                            "swing": [0, 60],
+                            "sens": [0, 0.5],
+                            "lo": [1, 9],
+                            "hi": [1, 9],
+                            "rest": [0, 0.8],
+                            "bright": [10, 255],
+                            "cutoff": [20, 18000],
+                            "resonance": [0.1, 10],
+                            "attack": [0, 5],
+                            "decay": [0, 5],
+                            "sustain": [0, 1],
+                            "release": [0.01, 10],
+                            "delay_ms": [0, 800],
+                            "delay_feedback": [0, 0.95],
+                            "delay_mix": [0, 1],
+                            "drive": [0, 1],
+                            "master": [0, 1],
+                            "detune": [0, 8],
+                            "gain_trim": [0.45, 1],
+                        },
                     }
                 )
                 return
@@ -213,7 +237,7 @@ class Handler(BaseHTTPRequestHandler):
                     self._json({"ok": 0, "err": "key required"}, status=400)
                     return
 
-                if key in {"bpm", "swing", "scale", "root", "mode", "lo", "hi", "preset"}:
+                if key in {"bpm", "swing", "scale", "root", "mode", "clock", "lo", "hi", "preset", "outputmode", "fx", "vs", "vi", "drumsel", "bright"}:
                     n = int(float(value))
                     if key == "bpm":
                         _state["bpm"] = _clamp(n, 20, 240)
@@ -225,22 +249,46 @@ class Handler(BaseHTTPRequestHandler):
                         _state["root"] = _clamp(n, 0, 11)
                     elif key == "mode":
                         _state["mode"] = _clamp(n, 0, 3)
+                    elif key == "clock":
+                        _state["clock"] = _clamp(n, 0, 1)
                     elif key == "lo":
                         _state["lo"] = _clamp(n, 1, 9)
                     elif key == "hi":
                         _state["hi"] = _clamp(n, 1, 9)
                     elif key == "preset":
                         _synth["preset"] = _clamp(n, 0, 5)
-                elif key in {"sens", "master"}:
+                    elif key == "outputmode":
+                        _state["outputmode"] = _clamp(n, 0, 2)
+                        _state["outputname"] = ["BLE", "SERIAL", "AUX"][_state["outputmode"]]
+                    elif key == "fx":
+                        _state["fx"] = _clamp(n, 0, 9)
+                    elif key == "vs":
+                        _state["vs"] = _clamp(n, 0, 255)
+                    elif key == "vi":
+                        _state["vi"] = _clamp(n, 0, 255)
+                    elif key == "drumsel":
+                        _state["drumsel"] = _clamp(n, 0, 255)
+                    elif key == "bright":
+                        _state["bright"] = _clamp(n, 10, 255)
+                elif key in {"sens", "master", "rest"}:
                     f = float(value)
                     if key == "sens":
                         _state["sens"] = round(_clamp(f, 0.0, 0.5), 2)
                     elif key == "master":
                         _synth["master"] = round(_clamp(f, 0.0, 1.0), 3)
+                    elif key == "rest":
+                        _state["rest"] = round(_clamp(f, 0.0, 0.8), 3)
                 elif key in {"mute", "io_muted"}:
                     _state["io_muted"] = 1 if str(value) in {"1", "true", "on"} else 0
                 elif key in {"sync", "daw_sync"}:
                     _state["daw_sync"] = 1 if str(value) in {"1", "true", "on"} else 0
+                elif key in {"nr", "norep"}:
+                    _state["nr"] = 1 if str(value) in {"1", "true", "on"} else 0
+                elif key in _synth:
+                    try:
+                        _synth[key] = float(value) if "." in value else int(value)
+                    except ValueError:
+                        _synth[key] = value
                 else:
                     self._json({"ok": 0, "err": f"unknown key: {key}"}, status=400)
                     return

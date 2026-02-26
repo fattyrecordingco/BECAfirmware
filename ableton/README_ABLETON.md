@@ -8,6 +8,7 @@ This folder adds an optional Ableton workflow. It does not replace the BECA web 
 - `ableton/m4l/BECA Control.maxpat` (editable source)
 - `ableton/m4l/BECA Control.amxd` (device file)
 - `ableton/m4l/code/beca_control_node.js` (transport + protocol layer)
+- `ableton/m4l/code/beca_control_ui.js` (`jsui` control surface)
 - `ableton/m4l/code/package.json`
 - `tools/mock_beca/mock_beca_server.py` (optional test server)
 
@@ -25,13 +26,32 @@ This folder adds an optional Ableton workflow. It does not replace the BECA web 
 python ableton/m4l/build_amxd.py --copy-user-library
 ```
 
-2. Copy `BECA Control.amxd` to your Max for Live MIDI Effects folder (copy, do not move).
-2. In Ableton, drop `BECA Control` on a MIDI track.
-3. Place your instrument after it in the same track chain.
+2. Copy `BECA Control.amxd` to your Max for Live MIDI Effects folder.
+3. In Ableton, drop `BECA Control` on a MIDI track.
+4. Place your instrument after it in the same track chain.
 
 Note:
 - `BECA Control.amxd` must be in Ableton's AMPF container format.
 - `build_amxd.py` wraps the editable `.maxpat` into the loadable `.amxd`.
+
+## Device UI Coverage
+
+The Ableton UI now includes:
+
+- Connection panel: mode (`HTTP`/`Serial`/`Mock`), IP/port fields, serial port + baud, connect/disconnect, refresh, auto reconnect, serial telemetry, re-emit/monitor mode.
+- Plant monitor: scrolling normalized energy graph plus raw value display.
+- MIDI monitor: last MIDI event and 12x8 note grid indicator.
+- Performance controls mapped to firmware:
+  - `mode`, `scale`, `root`, `clock`
+  - `bpm`, `swing`, `sens`, `lo`, `hi`
+  - `preset`, `outputmode`, `mute`, `sync`
+  - `fx`, `vs`, `vi`, `rest`, `nr`, `drumsel`
+- Engine controls mapped to firmware synth params:
+  - `wave_a`, `wave_b`, `osc_mix`, `mono`, `voices`
+  - `attack`, `decay`, `sustain`, `release`
+  - `filter`, `cutoff`, `resonance`
+  - `reverb`, `delay_ms`, `delay_feedback`, `delay_mix`
+  - `drive`, `master`, `detune`, `gain_trim`, `drumkit`
 
 ## Connection Modes
 
@@ -45,7 +65,7 @@ Note:
 ### Serial
 
 1. Select `Serial` mode.
-2. Click `list_serial_ports` and choose a port from the dropdown.
+2. Click `Refresh` and choose a port.
 3. Set baud (`115200` default).
 4. Click `connect`.
 5. Optional: enable serial telemetry toggle.
@@ -64,9 +84,8 @@ Use `connect_mock` for UI testing without hardware.
 
 ## BECA Parameters Exposed in Device
 
-- `bpm`, `scale`, `root`, `preset`, `sens`
-- Plus mode/connection controls and telemetry toggles.
-- Advanced keys are available through the Node layer using `set_param <key> <value>` messages.
+- Full parameter mapping through `POST /api/set` / serial `SET` keys.
+- UI labels are intentionally kept close to web-UI naming.
 
 ## HTTP Endpoints Used
 
@@ -75,13 +94,15 @@ Use `connect_mock` for UI testing without hardware.
 - `GET /api/notes`
 - `GET /api/params`
 - `POST /api/set` (`key`, `value`)
-- `GET/POST /api/synth` (optional synth panel work)
+- `GET /api/synth`
 
 ## Serial Protocol Used
 
 Outbound from M4L to BECA:
 
 - `@C STATE`
+- `@C PARAMS`
+- `@C SYNTH`
 - `@C PLANT`
 - `@C NOTES`
 - `@C SET <key> <value>`
@@ -90,6 +111,8 @@ Outbound from M4L to BECA:
 Inbound to M4L from BECA:
 
 - `@R STATE {...}`
+- `@R PARAMS {...}`
+- `@R SYNTH {...}`
 - `@R PLANT {...}`
 - `@R NOTES {...}`
 - `@M ss d1 d2` (existing serial MIDI hex)
@@ -99,9 +122,10 @@ Inbound to M4L from BECA:
 
 ## Rate Limiting and Stability
 
-- Parameter updates are debounced/queued to about 15 updates/sec max.
-- State polling is slow (`~4 Hz`) and plant/notes polling is fast (`~25 Hz`).
+- Parameter updates are queued/debounced to about `15 updates/sec` max.
+- State polling is low-rate (`~4 Hz`), plant/notes high-rate (`~25 Hz`), synth medium-rate.
 - On disconnect, HTTP mode retries when auto reconnect is enabled.
+- Serial parser ignores malformed lines and keeps the UI responsive.
 
 ## Troubleshooting
 
@@ -110,6 +134,7 @@ Inbound to M4L from BECA:
 - No MIDI output: ensure `Emit Mode = Reemit` and device is before instrument.
 - External hardware silent: check Ableton track `MIDI To` target + channel.
 - Missing serial ports in dropdown: install Node dependency (`npm install`) and refresh.
+- If controls appear stale in serial mode: click `Refresh` to force `STATE/PARAMS/SYNTH` requests.
 
 ## Optional Mock Server
 

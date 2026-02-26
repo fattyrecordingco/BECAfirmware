@@ -444,9 +444,10 @@ Optional Ableton-native control is included under:
 
 What this adds (without removing web UI):
 
-- BECA control from inside Ableton (HTTP or Serial mode).
-- Live plant + MIDI activity monitor in the M4L device.
-- Parameter control through additive firmware APIs (`/api/state`, `/api/plant`, `/api/notes`, `/api/params`, `/api/set`).
+- BECA control from inside Ableton (HTTP, Serial, or Mock mode).
+- Live plant graph + MIDI monitor grid in the M4L device.
+- Full in-device control pages for performance + engine parameters.
+- Parameter control through additive firmware APIs (`/api/state`, `/api/plant`, `/api/notes`, `/api/params`, `/api/synth`, `/api/set`).
 - Re-emit or monitor-only MIDI behavior in the device.
 
 Basic routing:
@@ -459,6 +460,7 @@ Serial mode note:
 
 - If you use the Node serial transport in the device, run `npm install` in `ableton/m4l/code` first.
 - Existing BECA serial MIDI bridge format (`@M`) remains supported.
+- Serial control now also supports `@C PARAMS` and `@C SYNTH` snapshots for full UI parity.
 - After editing `BECA Control.maxpat`, rebuild/copy device with:
   - `python ableton/m4l/build_amxd.py --copy-user-library`
 

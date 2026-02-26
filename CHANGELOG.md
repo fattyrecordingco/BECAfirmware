@@ -11,6 +11,11 @@
   - `m4l/code/beca_control_node.js` transport layer
   - `README_ABLETON.md`
 - Optional mock HTTP server for M4L testing: `tools/mock_beca/mock_beca_server.py`.
+- Full M4L control-surface UI (`jsui`) with:
+  - connection manager (HTTP/Serial/Mock),
+  - plant oscilloscope,
+  - MIDI activity monitor (last-event + 12x8 grid),
+  - performance and engine parameter pages mapped to firmware keys.
 
 ### Firmware (additive only)
 
@@ -24,6 +29,7 @@
   - `@C STATE`, `@C PLANT`, `@C NOTES`
   - `@C SET <key> <value>`
   - `@C TELEMETRY 1|0`
+  - `@C PARAMS`, `@C SYNTH`
 - Optional serial JSON telemetry lines (default off) for plant/midi events.
 
 ### Docs
