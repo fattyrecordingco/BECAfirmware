@@ -433,6 +433,32 @@ Use this only if you want wireless MIDI and your DAW/OS supports BLE MIDI well.
 3. Enable BLE MIDI input inside your DAW.
 4. Arm a track and test.
 
+## 11A) Ableton Integration (Max for Live)
+
+Optional Ableton-native control is included under:
+
+- `ableton/m4l/BECA Control.amxd`
+- `ableton/m4l/BECA Control.maxpat`
+- `ableton/README_ABLETON.md`
+
+What this adds (without removing web UI):
+
+- BECA control from inside Ableton (HTTP or Serial mode).
+- Live plant + MIDI activity monitor in the M4L device.
+- Parameter control through additive firmware APIs (`/api/state`, `/api/plant`, `/api/notes`, `/api/params`, `/api/set`).
+- Re-emit or monitor-only MIDI behavior in the device.
+
+Basic routing:
+
+1. Place `BECA Control` first in a MIDI track.
+2. Place an instrument after it in the same chain.
+3. For hardware synth routing, set track `MIDI To` to your external port/channel.
+
+Serial mode note:
+
+- If you use the Node serial transport in the device, run `npm install` in `ableton/m4l/code` first.
+- Existing BECA serial MIDI bridge format (`@M`) remains supported.
+
 ## 12) Open The BECA Web UI (Control Page)
 
 After flashing and reboot, open the BECA control page in a browser:
