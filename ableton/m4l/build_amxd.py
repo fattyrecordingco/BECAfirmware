@@ -9,7 +9,6 @@ into the local Ableton User Library MIDI Effects folder.
 from __future__ import annotations
 
 import argparse
-import os
 import shutil
 import struct
 from pathlib import Path
@@ -48,62 +47,64 @@ def default_user_library_target() -> Path:
     return plain_docs
 
 
+def safe_copy2(src: str, dst: str) -> str:
+    try:
+        return shutil.copy2(src, dst)
+    except PermissionError:
+        # Skip locked files (commonly native node_modules binaries in use by Live/Max).
+        print(f"Skipped locked file: {dst}")
+        return dst
+
+
 def copy_support_folders(source_root: Path, target_dir: Path) -> None:
-    for name in ("code", "assets", "pages"):
+    for name in ("code", "assets"):
         src = source_root / name
         if not src.exists():
             continue
         dst = target_dir / name
         if src.is_dir():
-            shutil.copytree(
-                src,
-                dst,
-                dirs_exist_ok=True,
-                ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
-            )
+            try:
+                shutil.copytree(
+                    src,
+                    dst,
+                    dirs_exist_ok=True,
+                    ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+                    copy_function=safe_copy2,
+                )
+            except shutil.Error as err:
+                # Continue if a subset of files are locked/inaccessible.
+                print(f"Warning: partial copy for {src}: {err}")
         else:
             dst.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(src, dst)
+            safe_copy2(str(src), str(dst))
 
     # UI scripts resolve most reliably when copied next to the AMXD.
     root_jsui = source_root / "code" / "beca_control_ui.js"
     if root_jsui.exists():
-        shutil.copy2(root_jsui, target_dir / "beca_control_ui.js")
-    root_native = source_root / "code" / "beca_native_controller.js"
-    if root_native.exists():
-        shutil.copy2(root_native, target_dir / "beca_native_controller.js")
+        safe_copy2(str(root_jsui), str(target_dir / "beca_control_ui.js"))
     root_node_bootstrap = source_root / "beca_control_node.js"
     if root_node_bootstrap.exists():
-        shutil.copy2(root_node_bootstrap, target_dir / "beca_control_node.js")
+        safe_copy2(str(root_node_bootstrap), str(target_dir / "beca_control_node.js"))
 
 
-def copy_amxd_variants(source_amxd: Path, target_dir: Path) -> list[Path]:
-    copied: list[Path] = []
+def copy_primary_amxd(source_amxd: Path, target_dir: Path) -> Path:
     primary = target_dir / source_amxd.name
     shutil.copy2(source_amxd, primary)
-    copied.append(primary)
+    return primary
 
-    # Keep legacy alias in sync so Live never loads a stale variant.
-    if source_amxd.name == "BECA Control.amxd":
-        alias = target_dir / "BECA Control v2.amxd"
-        shutil.copy2(source_amxd, alias)
-        copied.append(alias)
-        native_alias = target_dir / "BECA Control Native.amxd"
-        shutil.copy2(source_amxd, native_alias)
-        copied.append(native_alias)
-        fresh_alias = target_dir / "BECA Control Fresh.amxd"
-        shutil.copy2(source_amxd, fresh_alias)
-        copied.append(fresh_alias)
-        pro_alias = target_dir / "BECA Control Pro.amxd"
-        shutil.copy2(source_amxd, pro_alias)
-        copied.append(pro_alias)
 
-        # Clean up legacy typo variant if present.
-        stale_alias = target_dir / "BECA Control.v2.amxd"
-        if stale_alias.exists():
-            stale_alias.unlink()
-
-    return copied
+def remove_legacy_aliases(target_dir: Path) -> None:
+    for name in (
+        "BECA Control v2.amxd",
+        "BECA Control Native.amxd",
+        "BECA Control Fresh.amxd",
+        "BECA Control Pro.amxd",
+        "BECA Control.v2.amxd",
+    ):
+        p = target_dir / name
+        if p.exists():
+            p.unlink()
+            print(f"Removed legacy alias: {p}")
 
 
 def main() -> int:
@@ -131,38 +132,21 @@ def main() -> int:
         raise SystemExit(f"Input maxpat not found: {args.maxpat}")
 
     args.amxd.parent.mkdir(parents=True, exist_ok=True)
+    remove_legacy_aliases(args.amxd.parent)
     build_amxd(args.maxpat, args.amxd)
     print(f"Built: {args.amxd} ({args.amxd.stat().st_size} bytes)")
-
-    if args.amxd.name == "BECA Control.amxd":
-        local_alias = args.amxd.with_name("BECA Control v2.amxd")
-        shutil.copy2(args.amxd, local_alias)
-        print(f"Synced local alias: {local_alias}")
-        native_alias = args.amxd.with_name("BECA Control Native.amxd")
-        shutil.copy2(args.amxd, native_alias)
-        print(f"Synced local alias: {native_alias}")
-        fresh_alias = args.amxd.with_name("BECA Control Fresh.amxd")
-        shutil.copy2(args.amxd, fresh_alias)
-        print(f"Synced local alias: {fresh_alias}")
-        pro_alias = args.amxd.with_name("BECA Control Pro.amxd")
-        shutil.copy2(args.amxd, pro_alias)
-        print(f"Synced local alias: {pro_alias}")
-        stale_local = args.amxd.with_name("BECA Control.v2.amxd")
-        if stale_local.exists():
-            stale_local.unlink()
-            print(f"Removed stale alias: {stale_local}")
 
     if args.copy_user_library:
         target_dir = args.user_library_dir or default_user_library_target()
         target_dir.mkdir(parents=True, exist_ok=True)
-        copied = copy_amxd_variants(args.amxd, target_dir)
+        remove_legacy_aliases(target_dir)
+        copied = copy_primary_amxd(args.amxd, target_dir)
         copy_support_folders(root, target_dir)
         print("Copied:")
-        for path in copied:
-            print(f"  - {path}")
+        print(f"  - {copied}")
         print(
             "Synced support folders: "
-            f"{target_dir / 'code'}, {target_dir / 'assets'}, and {target_dir / 'pages'}"
+            f"{target_dir / 'code'} and {target_dir / 'assets'}"
         )
 
     return 0

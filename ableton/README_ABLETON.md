@@ -7,12 +7,9 @@ This folder adds an optional Ableton workflow. It does not replace the BECA web 
 - `ableton/m4l/BECA Control.maxproj`
 - `ableton/m4l/BECA Control.maxpat` (editable source)
 - `ableton/m4l/BECA Control.amxd` (device file)
-- `ableton/m4l/pages/*.maxpat` (legacy native section pages)
 - `ableton/m4l/beca_control_ui.js` (full `jsui` control surface; root copy for M4L load reliability)
 - `ableton/m4l/beca_control_node.js` (root Node bootstrap for reliable `node.script` resolution)
-- `ableton/m4l/beca_native_controller.js` (legacy native routing helper copy)
 - `ableton/m4l/code/beca_control_node.js` (transport + protocol layer)
-- `ableton/m4l/code/beca_native_controller.js` (legacy native routing helper source)
 - `ableton/m4l/code/beca_control_ui.js` (full control surface source)
 - `ableton/m4l/code/package.json`
 - `tools/mock_beca/mock_beca_server.py` (optional test server)
@@ -34,13 +31,8 @@ python ableton/m4l/build_amxd.py --copy-user-library
 This also syncs:
 - `ableton/m4l/code/`
 - `ableton/m4l/assets/`
-- `ableton/m4l/pages/`
 - root `beca_control_ui.js` helper
 - root `beca_control_node.js` bootstrap helper
-- root `beca_native_controller.js` helper (legacy compatibility)
-- both device names: `BECA Control.amxd` and `BECA Control v2.amxd`
-- `BECA Control Native.amxd` (cache-busting alias for forced fresh load)
-- `BECA Control Fresh.amxd` (additional fresh-load alias)
 
 into the same Ableton User Library folder.
 
@@ -139,31 +131,27 @@ Use `connect_mock` for UI testing without hardware.
 
 1. Build and sync:
    - Run: `python ableton/m4l/build_amxd.py --copy-user-library`
-   - Confirm all variants are updated in repo and User Library:
-     - `BECA Control.amxd`
-     - `BECA Control v2.amxd`
-     - `BECA Control Native.amxd`
-     - `BECA Control Fresh.amxd`
-     - `BECA Control Pro.amxd` (cache-busting alias)
+   - Confirm `BECA Control.amxd` is updated in repo and User Library.
 2. Force fresh load in Live:
    - Remove all old BECA devices from the track.
-   - Drag `BECA Control Pro` from User Library (cache-busting alias).
+   - Drag `BECA Control` from User Library.
    - Confirm header shows `BECA Control` with a target signifier (`<device> @ <host>`).
 3. Auto-discovery and signifier:
    - On load, confirm status goes through `ready/discovering/identified/connecting` to `connected`.
    - Confirm header shows `CONNECTED <host>:80` and device signifier `<device> @ <host>`.
    - In Max Console, confirm no `node.script` file-load error for `beca_control_node.js`.
    - Disconnect BECA network briefly; confirm status drops and auto-recovers back to `connected`.
-4. Single-page layout and monitors:
-   - In taller lanes (about `250+ px`), confirm `Input`, `Output`, `Theory`, `LED FX`, `Engine` render together in one dashboard page.
-   - In shorter lanes, confirm adaptive fallback (tabs + paged controls) has no overlap/clipping.
-   - Confirm plant graph updates continuously.
-   - Confirm MIDI monitor (last note/velocity + activity bars) updates in real time.
-   - If layout is cramped, use a taller device lane (target about `280-320 px`).
+4. UI layout + monitor readability (native-lane validation):
+   - At fixed lane height `169 px` (max available), confirm monitor-centric layout: controls on the left, plant + MIDI monitors stacked on the right, and no overlap/clipping.
+   - Confirm all control groups are reachable from one surface via tabs (`Input`, `Output`, `Theory`, `LED FX`, `Engine`) and section paging arrows.
+   - At reduced device widths (about `900 px`) and wide layouts (about `1600 px`), confirm tab sizing, arrow hit zones, and section pagination remain aligned to visuals.
+   - Confirm plant graph and MIDI monitor stay visible and readable at `169 px`, with live updates.
+   - Confirm section/page arrows never draw or click outside their panel bounds.
 5. Control interaction semantics:
    - Encoders drag vertically and send live values.
    - Toggle controls act as on/off buttons.
    - Dropdown-style controls (`Mode`, `Output`, `Scale`, `Root`, `Clock`, `Time Sig`, `Preset`) change discrete options.
+   - Knob ring pointer/value text remains legible in compact and tall layouts.
 6. Output routing control:
    - Use top-row `BLE / SERIAL / AUX` buttons.
    - Confirm BECA output mode switches immediately and persists in returned state.
@@ -217,6 +205,8 @@ Inbound to M4L from BECA:
 ## Rate Limiting and Stability
 
 - Parameter updates are queued/debounced to about `15 updates/sec` max.
+- `POST /api/set` writes now retry automatically on transient network/timeout failures.
+- If `/api/set` rejects or is unavailable, transport falls back to legacy endpoint writes for the same key.
 - State polling is low-rate (`~4 Hz`), plant/notes high-rate (`~25 Hz`), synth medium-rate.
 - On disconnect, HTTP mode retries when auto reconnect is enabled.
 - Serial parser ignores malformed lines and keeps the UI responsive.
@@ -227,8 +217,8 @@ Inbound to M4L from BECA:
 - No serial connection: close Arduino Serial Monitor/other apps using the same port.
 - If the old compact native UI still appears, Live has loaded a stale device cache:
   - remove existing BECA devices from the track
-  - remove stale `BECA Control.v2.amxd` if present
-  - drag `BECA Control Pro.amxd` again from User Library
+  - delete any legacy aliases (`BECA Control v2.amxd`, `BECA Control Native.amxd`, `BECA Control Fresh.amxd`, `BECA Control Pro.amxd`) from User Library if present
+  - drag `BECA Control.amxd` again from User Library
 - Auto-connect misses BECA host:
   - verify BECA and Ableton machine are on the same network
   - set `Device` to your BECA mDNS name (without `.local`) and wait one discovery cycle
@@ -241,12 +231,13 @@ Inbound to M4L from BECA:
 - External hardware silent: check Ableton track `MIDI To` target + channel.
 - Missing serial ports in dropdown: install Node dependency (`npm install`) and refresh.
 - If controls appear stale in serial mode: click `Refresh` to force `STATE/PARAMS/SYNTH` requests.
+- If control edits seem to "not stick": keep the device online for a second after a change; the backend now retries failed set writes and re-syncs state automatically.
 - If Ableton shows an older/non-interactive UI:
   1. Remove existing BECA devices from the track.
   2. Run `python ableton/m4l/build_amxd.py --copy-user-library`.
-  3. Delete stale `BECA Control.v2.amxd` if it exists in User Library.
-  4. Drag `BECA Control Pro` again from User Library.
-  5. Confirm the header reads `BECA Control` and controls respond.
+  3. Delete legacy alias AMXDs from User Library if they exist.
+  4. Drag `BECA Control` again from User Library.
+  5. Confirm the header reads `BECA Control`, device height is `169 px`, and controls respond.
 
 ## Optional Mock Server
 

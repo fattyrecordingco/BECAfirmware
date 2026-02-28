@@ -10,19 +10,21 @@ var NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B
 var SECTION_IDS = ["input", "output", "theory", "led", "engine"];
 
 var COLORS = {
-  bg: [0.10, 0.11, 0.13, 1],
-  panel: [0.15, 0.16, 0.18, 1],
-  panelSoft: [0.14, 0.15, 0.17, 1],
-  panelDeep: [0.08, 0.09, 0.11, 1],
-  border: [0.24, 0.25, 0.29, 1],
-  text: [0.86, 0.88, 0.90, 1],
-  dim: [0.56, 0.58, 0.62, 1],
-  accent: [0.20, 0.52, 0.88, 1],
-  amber: [0.95, 0.62, 0.24, 1],
-  good: [0.22, 0.70, 0.42, 1],
-  warn: [0.91, 0.63, 0.24, 1],
-  bad: [0.90, 0.33, 0.30, 1],
+  bg: [0.098, 0.103, 0.112, 1],
+  panel: [0.152, 0.158, 0.168, 1],
+  panelSoft: [0.132, 0.138, 0.148, 1],
+  panelDeep: [0.084, 0.090, 0.098, 1],
+  border: [0.256, 0.264, 0.278, 1],
+  text: [0.90, 0.91, 0.93, 1],
+  dim: [0.61, 0.63, 0.66, 1],
+  accent: [0.24, 0.54, 0.86, 1],
+  amber: [0.93, 0.66, 0.28, 1],
+  good: [0.26, 0.71, 0.44, 1],
+  warn: [0.91, 0.66, 0.27, 1],
+  bad: [0.86, 0.35, 0.33, 1],
 };
+
+var FONT_MAIN = "Arial";
 
 var FALLBACK_PARAMS = {
   modes: ["Notes", "Arpeggiator", "Chords", "Drum Machine"],
@@ -84,7 +86,15 @@ var ui = {
   },
   hotspots: [],
   drag: null,
+  lastPointerAt: 0,
+  lastPointerX: -9999,
+  lastPointerY: -9999,
   lastSentAt: {},
+  pendingByPath: {},
+  nodeReady: 0,
+  initSent: 0,
+  bootstrapTask: null,
+  stateVerifyTask: null,
   reconnectTask: null,
   decayTask: null,
 };
@@ -159,6 +169,27 @@ var SECTIONS = {
   ]
 };
 
+var SEND_META = {};
+
+function initSendMeta() {
+  SEND_META = {};
+  var sid;
+  var i;
+  for (sid in SECTIONS) {
+    if (!SECTIONS.hasOwnProperty(sid)) continue;
+    for (i = 0; i < SECTIONS[sid].length; i++) {
+      var c = SECTIONS[sid][i];
+      var sk = String(c.sendKey || c.key || "");
+      if (!sk.length) continue;
+      if (!SEND_META[sk]) SEND_META[sk] = { src: c.src, key: c.key, kind: c.kind };
+    }
+  }
+  if (!SEND_META.mute) SEND_META.mute = { src: "state", key: "io_muted", kind: "toggle" };
+  if (!SEND_META.sync) SEND_META.sync = { src: "state", key: "daw_sync", kind: "toggle" };
+}
+
+initSendMeta();
+
 function clip(v, lo, hi) {
   if (v < lo) return lo;
   if (v > hi) return hi;
@@ -220,8 +251,80 @@ function sendParam(key, value) {
   var k = String(key || "");
   if ((now - (ui.lastSentAt[k] || 0)) < 35) return;
   ui.lastSentAt[k] = now;
+  rememberPending(k, value);
   ui.lastUiAction = "ui." + k + "=" + String(value);
   sendCmd("set_param", k, String(value));
+  scheduleStateVerify();
+}
+
+function pendingPath(meta) {
+  if (!meta) return "";
+  return String(meta.src || "") + "." + String(meta.key || "");
+}
+
+function metaForSendKey(sendKey) {
+  var k = String(sendKey || "");
+  if (!k.length) return null;
+  if (SEND_META[k]) return SEND_META[k];
+  return null;
+}
+
+function rememberPending(sendKey, value) {
+  var meta = metaForSendKey(sendKey);
+  if (!meta) return;
+  if (meta.kind === "action") return;
+  var path = pendingPath(meta);
+  if (!path.length) return;
+  var now = new Date().getTime();
+  ui.pendingByPath[path] = {
+    value: String(value),
+    until: now + 1200,
+    at: now
+  };
+}
+
+function valuesEquivalent(key, incomingValue, expectedValue) {
+  if (String(key || "") === "ts") return token(incomingValue) === token(expectedValue);
+  var ni = Number(incomingValue);
+  var ne = Number(expectedValue);
+  if (isFinite(ni) && isFinite(ne)) return Math.abs(ni - ne) <= 0.015;
+  return token(incomingValue) === token(expectedValue);
+}
+
+function shouldApplyInboundValue(srcName, key, incomingValue) {
+  var path = String(srcName || "") + "." + String(key || "");
+  var pending = ui.pendingByPath[path];
+  if (!pending) return 1;
+  var now = new Date().getTime();
+  if (valuesEquivalent(key, incomingValue, pending.value)) {
+    delete ui.pendingByPath[path];
+    return 1;
+  }
+  if (now >= asInt(pending.until, 0)) {
+    delete ui.pendingByPath[path];
+    return 1;
+  }
+  return 0;
+}
+
+function mergeWithPending(dst, src, srcName) {
+  if (!dst || !src) return;
+  var k;
+  for (k in src) {
+    if (!src.hasOwnProperty(k)) continue;
+    if (shouldApplyInboundValue(srcName, k, src[k])) dst[k] = src[k];
+  }
+}
+
+function scheduleStateVerify() {
+  if (ui.stateVerifyTask) {
+    try { ui.stateVerifyTask.cancel(); } catch (_e1) {}
+  }
+  ui.stateVerifyTask = new Task(function () {
+    ui.stateVerifyTask = null;
+    sendCmd("request_state");
+  }, this);
+  ui.stateVerifyTask.schedule(140);
 }
 
 function canvasSize() {
@@ -233,8 +336,8 @@ function canvasSize() {
       h = Number(mgraphics.size[1]) || h;
     }
   } catch (_e) {}
-  if (w < 820) w = 820;
-  if (h < 130) h = 130;
+  if (w < 420) w = 420;
+  if (h < 118) h = 118;
   return [w, h];
 }
 
@@ -261,7 +364,7 @@ function strokeRect(r, c, lw) {
 
 function drawText(text, x, y, size, color, align) {
   mgraphics.set_source_rgba(color[0], color[1], color[2], color[3]);
-  mgraphics.select_font_face("Arial");
+  mgraphics.select_font_face(FONT_MAIN);
   mgraphics.set_font_size(size);
   var tw = mgraphics.text_measure(text)[0];
   var tx = x;
@@ -269,6 +372,20 @@ function drawText(text, x, y, size, color, align) {
   else if (align === "right") tx = x - tw;
   mgraphics.move_to(tx, y);
   mgraphics.show_text(text);
+}
+
+function fitText(text, maxW, size) {
+  var str = String(text || "");
+  if (maxW <= 8 || !str.length) return "";
+  mgraphics.select_font_face(FONT_MAIN);
+  mgraphics.set_font_size(size);
+  if (mgraphics.text_measure(str)[0] <= maxW) return str;
+  var suffix = "...";
+  var out = str;
+  while (out.length > 1 && mgraphics.text_measure(out + suffix)[0] > maxW) {
+    out = out.slice(0, out.length - 1);
+  }
+  return out + suffix;
 }
 
 function addHotspot(r, kind, data) {
@@ -433,8 +550,9 @@ function activeControls() {
   var list = SECTIONS[ui.section] || [];
   var page = asInt(ui.pageBySection[ui.section], 0);
   var sz = canvasSize();
-  var slots = Math.floor((sz[0] - 80) / 180);
-  slots = clip(slots, 4, 6);
+  var target = sz[1] >= 250 ? 150 : sz[1] >= 200 ? 136 : 122;
+  var slots = Math.floor((sz[0] - 84) / target);
+  slots = clip(slots, 3, 8);
   var totalPages = Math.max(1, Math.ceil(list.length / slots));
   page = clip(page, 0, totalPages - 1);
   ui.pageBySection[ui.section] = page;
@@ -447,41 +565,79 @@ function activeControls() {
   };
 }
 
+function compactControlGeometry(areaW) {
+  var leftShare = areaW >= 1460 ? 0.34 : areaW >= 1180 ? 0.37 : areaW >= 980 ? 0.41 : 0.46;
+  var leftW = Math.floor(areaW * leftShare);
+  if ((areaW - leftW) < 330) leftW = areaW - 330;
+  leftW = clip(leftW, 280, areaW - 220);
+  var cols = leftW >= 470 ? 3 : leftW >= 320 ? 2 : 1;
+  var rows = 2;
+  return {
+    leftW: leftW,
+    cols: cols,
+    rows: rows,
+    perPage: cols * rows
+  };
+}
+
+function sectionPaging(sectionId, perPage) {
+  var list = SECTIONS[sectionId] || [];
+  var pp = Math.max(1, perPage || 1);
+  var pages = Math.max(1, Math.ceil(list.length / pp));
+  var page = clip(asInt(ui.pageBySection[sectionId], 0), 0, pages - 1);
+  ui.pageBySection[sectionId] = page;
+  return {
+    page: page,
+    pages: pages,
+    list: list.slice(page * pp, page * pp + pp)
+  };
+}
+
 function drawHeader(w, h) {
-  var compact = h < 210;
-  var top = rect(4, 4, w - 8, 24);
+  var compact = h < 175 || w < 980;
+  var topH = compact ? 23 : 27;
+  var top = rect(4, 4, w - 8, topH);
   fillRect(top, COLORS.panelSoft);
   strokeRect(top, COLORS.border, 1);
-  drawText("BECA Control", top.x + 6, top.y + 9, 8.5, COLORS.text, "left");
-  drawText(targetDeviceLabel(), top.x + 88, top.y + 9, 7, COLORS.dim, "left");
-  drawText((ui.targetConnected ? "CONNECTED " : "CONNECTING ") + targetLabel(), top.x + 6, top.y + 21, 7.5, ui.targetConnected ? COLORS.good : COLORS.amber, "left");
-
   var om = clip(asInt(ui.state.outputmode, 0), 0, 2);
   var labels = ["BLE", "SERIAL", "AUX"];
-  var modeW = 176;
-  var x = top.x + top.w - modeW - 4;
-  var statusX = x - 240;
-  if (statusX < (top.x + 380)) statusX = top.x + 380;
-  var s = "Status: " + String(ui.statusState || "") + " " + String(ui.statusDetail || "");
-  drawText(s, statusX, top.y + 9, 7, statusColor(), "left");
-  if (compact) {
-    drawText("RX " + ui.lastInbound, statusX, top.y + 21, 6.5, COLORS.dim, "left");
-  } else {
-    drawText("UI " + ui.lastUiAction + " | TX " + ui.lastOutbound + " | RX " + ui.lastInbound, statusX, top.y + 21, 6.3, COLORS.dim, "left");
+  var modeW = w < 760 ? 146 : w < 980 ? 160 : 178;
+  var modeGap = 2;
+  var modeBtnW = Math.floor((modeW - modeGap * 2) / 3);
+  var modeX = top.x + top.w - modeW - 4;
+  var modeY = top.y + Math.floor((top.h - 15) * 0.5);
+
+  var textX = top.x + 6;
+  var textW = modeX - textX - 8;
+  var deviceText = fitText(targetDeviceLabel(), Math.max(30, textW - 88), 7.0);
+  drawText("BECA Control", textX, top.y + 10, 8.9, COLORS.text, "left");
+  if (deviceText.length) drawText(deviceText, textX + 86, top.y + 10, 7.0, COLORS.dim, "left");
+
+  var status = String(ui.statusState || "").toUpperCase();
+  var statusLine = (ui.targetConnected ? "CONNECTED " : "CONNECTING ") + targetLabel();
+  var detailLine = compact ? ("RX " + ui.lastInbound) : ("Status " + status + " | TX " + ui.lastOutbound + " | RX " + ui.lastInbound);
+  var lineColor = ui.targetConnected ? COLORS.good : COLORS.amber;
+  drawText(fitText(statusLine, textW, 7.1), textX, top.y + (compact ? 19 : 21), 7.1, lineColor, "left");
+  if (!compact && textW > 240) {
+    drawText(fitText(detailLine, textW, 6.4), textX, top.y + 14, 6.4, statusColor(), "left");
   }
 
   var i;
   for (i = 0; i < 3; i++) {
-    var r = rect(x + i * 58, top.y + 5, 54, 14);
+    var bx = modeX + i * (modeBtnW + modeGap);
+    var r = rect(bx, modeY, modeBtnW, 15);
     fillRect(r, i === om ? [COLORS.accent[0], COLORS.accent[1], COLORS.accent[2], 0.34] : COLORS.panelDeep);
     strokeRect(r, i === om ? COLORS.accent : COLORS.border, 1);
-    drawText(labels[i], r.x + r.w * 0.5, r.y + 10, 7, COLORS.text, "center");
+    drawText(labels[i], r.x + r.w * 0.5, r.y + 11, 7.0, COLORS.text, "center");
     addHotspot(r, "outmode", i);
   }
 }
 
 function drawTabs(w, h) {
-  var bar = rect(4, 30, w - 8, 18);
+  var compact = h < 175 || w < 980;
+  var barY = compact ? 27 : 31;
+  var barH = compact ? 18 : 19;
+  var bar = rect(4, barY, w - 8, barH);
   fillRect(bar, COLORS.panelSoft);
   strokeRect(bar, COLORS.border, 1);
 
@@ -493,20 +649,31 @@ function drawTabs(w, h) {
     engine: "Engine"
   };
 
+  var info = activeControls();
+  if (compact && h <= 175) {
+    var contentW = w - 10;
+    var geom = compactControlGeometry(contentW);
+    info = sectionPaging(ui.section, geom.perPage);
+  }
+  var pageText = "Page " + (info.page + 1) + "/" + info.pages;
+  var pageW = 84;
+  var tabGap = 3;
+  var innerW = bar.w - 8 - pageW;
+  var tabW = Math.floor((innerW - tabGap * (SECTION_IDS.length - 1)) / SECTION_IDS.length);
+  tabW = clip(tabW, 48, 96);
   var x = bar.x + 4;
   var i;
   for (i = 0; i < SECTION_IDS.length; i++) {
     var id = SECTION_IDS[i];
-    var r = rect(x, bar.y + 1, 58, 15);
+    var r = rect(x, bar.y + 1, tabW, bar.h - 3);
     fillRect(r, ui.section === id ? [COLORS.accent[0], COLORS.accent[1], COLORS.accent[2], 0.28] : COLORS.panelDeep);
     strokeRect(r, ui.section === id ? COLORS.accent : COLORS.border, 1);
-    drawText(labels[id], r.x + r.w * 0.5, r.y + 11, 7, COLORS.text, "center");
+    drawText(labels[id], r.x + r.w * 0.5, r.y + (compact ? 11 : 12), compact ? 7.0 : 7.2, COLORS.text, "center");
     addHotspot(r, "section", id);
-    x += r.w + 2;
+    x += r.w + tabGap;
   }
 
-  var info = activeControls();
-  drawText("Page " + (info.page + 1) + "/" + info.pages, bar.x + bar.w - 56, bar.y + 12, 7, COLORS.dim, "right");
+  drawText(pageText, bar.x + bar.w - 6, bar.y + (compact ? 12 : 13), compact ? 6.8 : 7.0, COLORS.dim, "right");
 }
 
 function drawMeters(w, h, y0, monitorH) {
@@ -516,14 +683,17 @@ function drawMeters(w, h, y0, monitorH) {
   strokeRect(row, COLORS.border, 1);
 
   var gap = 6;
-  var graphW = Math.floor(row.w * (h >= 220 ? 0.62 : 0.58));
-  var graphPanel = rect(row.x + 4, row.y + 4, graphW - 6, row.h - 8);
-  var midiPanel = rect(graphPanel.x + graphPanel.w + gap, graphPanel.y, row.x + row.w - (graphPanel.x + graphPanel.w + gap) - 4, graphPanel.h);
+  var inner = rect(row.x + 4, row.y + 4, row.w - 8, row.h - 8);
+  var split = inner.w >= 1300 ? 0.60 : inner.w >= 980 ? 0.57 : inner.w >= 760 ? 0.54 : 0.50;
+  var graphW = Math.floor((inner.w - gap) * split);
+  if ((inner.w - graphW - gap) < 170) graphW = Math.floor((inner.w - gap) * 0.5);
+  var graphPanel = rect(inner.x, inner.y, graphW, inner.h);
+  var midiPanel = rect(graphPanel.x + graphPanel.w + gap, inner.y, inner.x + inner.w - (graphPanel.x + graphPanel.w + gap), inner.h);
 
   fillRect(graphPanel, COLORS.panel);
   strokeRect(graphPanel, COLORS.border, 1);
-  drawText("Plant Input", graphPanel.x + 4, graphPanel.y + 10, 7, COLORS.text, "left");
-  drawText("n " + formatNumber(ui.plantVal) + " | raw " + ui.plantRaw, graphPanel.x + graphPanel.w - 4, graphPanel.y + 10, 6.8, COLORS.dim, "right");
+  drawText("Plant Input", graphPanel.x + 4, graphPanel.y + 10, 6.9, COLORS.text, "left");
+  drawText("n " + formatNumber(ui.plantVal) + " | raw " + ui.plantRaw, graphPanel.x + graphPanel.w - 4, graphPanel.y + 10, 6.5, COLORS.dim, "right");
 
   var graph = rect(graphPanel.x + 3, graphPanel.y + 13, graphPanel.w - 6, graphPanel.h - 16);
   fillRect(graph, COLORS.panelDeep);
@@ -532,7 +702,7 @@ function drawMeters(w, h, y0, monitorH) {
   var gx;
   var gy;
   var i;
-  mgraphics.set_line_width(1);
+  mgraphics.set_line_width(0.8);
   mgraphics.set_source_rgba(COLORS.border[0], COLORS.border[1], COLORS.border[2], 0.35);
   for (i = 1; i < 4; i++) {
     gy = graph.y + (graph.h * i / 4);
@@ -550,7 +720,7 @@ function drawMeters(w, h, y0, monitorH) {
     var n = ui.plantHistory.length;
     var step = (graph.w - 2) / Math.max(1, n - 1);
     mgraphics.set_source_rgba(COLORS.good[0], COLORS.good[1], COLORS.good[2], 0.95);
-    mgraphics.set_line_width(1.6);
+    mgraphics.set_line_width(1.5);
     for (i = 0; i < n; i++) {
       gx = graph.x + 1 + i * step;
       gy = graph.y + graph.h - 1 - clip(ui.plantHistory[i], 0, 1) * (graph.h - 2);
@@ -562,8 +732,8 @@ function drawMeters(w, h, y0, monitorH) {
 
   fillRect(midiPanel, COLORS.panel);
   strokeRect(midiPanel, COLORS.border, 1);
-  drawText("MIDI Monitor", midiPanel.x + 4, midiPanel.y + 10, 7, COLORS.text, "left");
-  drawText("n" + ui.midiNote + "  v" + ui.midiVel + "  ch" + ui.midiCh, midiPanel.x + midiPanel.w - 4, midiPanel.y + 10, 6.8, COLORS.dim, "right");
+  drawText("MIDI Monitor", midiPanel.x + 4, midiPanel.y + 10, 6.9, COLORS.text, "left");
+  drawText("n" + ui.midiNote + "  v" + ui.midiVel + "  ch" + ui.midiCh, midiPanel.x + midiPanel.w - 4, midiPanel.y + 10, 6.5, COLORS.dim, "right");
 
   var midi = rect(midiPanel.x + 3, midiPanel.y + 13, midiPanel.w - 6, midiPanel.h - 16);
   fillRect(midi, COLORS.panelDeep);
@@ -575,13 +745,13 @@ function drawMeters(w, h, y0, monitorH) {
     var base = rect(midi.x + 2 + b * bw + 1, midi.y + midi.h - 5, Math.max(2, bw - 3), 3);
     fillRect(base, [0.13, 0.14, 0.16, 1]);
     if (amp > 0.01) {
-      fillRect(rect(base.x, base.y - amp * (midi.h - 8), base.w, amp * (midi.h - 8)), [COLORS.accent[0], COLORS.accent[1], COLORS.accent[2], 0.92]);
+      fillRect(rect(base.x, base.y - amp * (midi.h - 8), base.w, amp * (midi.h - 8)), [COLORS.accent[0], COLORS.accent[1], COLORS.accent[2], 0.9]);
     }
   }
 
-  if (monitorH >= 58) {
+  if (monitorH >= 52) {
     for (b = 0; b < 12; b++) {
-      drawText(NOTE_NAMES[b], midi.x + 2 + b * bw + Math.max(2, bw - 3) * 0.5, midi.y + midi.h - 7, 5.5, COLORS.dim, "center");
+      drawText(NOTE_NAMES[b], midi.x + 2 + b * bw + Math.max(2, bw - 3) * 0.5, midi.y + midi.h - 7, 5.3, COLORS.dim, "center");
     }
   }
 
@@ -593,74 +763,93 @@ function drawEncoder(control, r) {
   strokeRect(r, COLORS.border, 1);
 
   var value = getValue(control);
+  var compactCard = r.h < 64;
+  var tinyCard = r.h < 48;
+  var labelSize = tinyCard ? 6.4 : compactCard ? 6.9 : 7.3;
+  var valueSize = tinyCard ? 6.4 : 7.0;
+  var labelText = fitText(control.label, r.w - 6, labelSize);
+
   if (control.kind === "choice") {
-    drawText(control.label, r.x + 4, r.y + 10, 7, COLORS.dim, "left");
-    var drop = rect(r.x + 4, r.y + r.h - 18, r.w - 8, 14);
+    drawText(labelText, r.x + 3, r.y + 11, labelSize, COLORS.dim, "left");
+    var dropH = tinyCard ? 14 : 17;
+    var drop = rect(r.x + 3, r.y + r.h - (dropH + 3), r.w - 6, dropH);
+    var arrW = dropH;
     fillRect(drop, COLORS.panelDeep);
     strokeRect(drop, COLORS.border, 1);
-    drawText(valueText(control, value), drop.x + 4, drop.y + 10, 7, COLORS.text, "left");
-    drawText("v", drop.x + drop.w - 4, drop.y + 10, 7, COLORS.dim, "right");
+    var leftBtn = rect(drop.x + 1, drop.y + 1, arrW - 2, drop.h - 2);
+    var rightBtn = rect(drop.x + drop.w - arrW + 1, drop.y + 1, arrW - 2, drop.h - 2);
+    fillRect(leftBtn, COLORS.panel);
+    fillRect(rightBtn, COLORS.panel);
+    strokeRect(leftBtn, COLORS.border, 1);
+    strokeRect(rightBtn, COLORS.border, 1);
+    drawText("<", leftBtn.x + leftBtn.w * 0.5, leftBtn.y + (tinyCard ? 10 : 12), valueSize, COLORS.text, "center");
+    drawText(">", rightBtn.x + rightBtn.w * 0.5, rightBtn.y + (tinyCard ? 10 : 12), valueSize, COLORS.text, "center");
+
+    var valueX = drop.x + arrW + 3;
+    var valueW = drop.w - (arrW * 2 + 6);
+    drawText(fitText(valueText(control, value), valueW, valueSize), valueX, drop.y + (tinyCard ? 10 : 12), valueSize, COLORS.text, "left");
     addHotspot(r, "control", control);
     return;
   }
 
   if (control.kind === "toggle") {
-    drawText(control.label, r.x + r.w * 0.5, r.y + 12, 7, COLORS.dim, "center");
+    drawText(labelText, r.x + r.w * 0.5, r.y + 11, labelSize, COLORS.dim, "center");
     var on = asInt(value, 0) ? 1 : 0;
-    var t = rect(r.x + 6, r.y + r.h - 22, r.w - 12, 16);
-    fillRect(t, on ? [COLORS.good[0], COLORS.good[1], COLORS.good[2], 0.26] : COLORS.panelDeep);
+    var tH = tinyCard ? 14 : 17;
+    var t = rect(r.x + 5, r.y + r.h - (tH + 3), r.w - 10, tH);
+    fillRect(t, on ? [COLORS.good[0], COLORS.good[1], COLORS.good[2], 0.34] : COLORS.panelDeep);
     strokeRect(t, on ? COLORS.good : COLORS.border, 1);
-    drawText(on ? "ON" : "OFF", t.x + t.w * 0.5, t.y + 11, 7, COLORS.text, "center");
+    drawText(on ? "ON" : "OFF", t.x + t.w * 0.5, t.y + (tinyCard ? 10 : 12), valueSize, COLORS.text, "center");
     addHotspot(r, "control", control);
     return;
   }
 
   if (control.kind === "action") {
-    drawText(control.label, r.x + r.w * 0.5, r.y + 12, 7, COLORS.dim, "center");
-    var a = rect(r.x + 6, r.y + r.h - 22, r.w - 12, 16);
-    fillRect(a, [COLORS.amber[0], COLORS.amber[1], COLORS.amber[2], 0.18]);
+    drawText(labelText, r.x + r.w * 0.5, r.y + 11, labelSize, COLORS.dim, "center");
+    var aH = tinyCard ? 14 : 17;
+    var a = rect(r.x + 5, r.y + r.h - (aH + 3), r.w - 10, aH);
+    fillRect(a, [COLORS.amber[0], COLORS.amber[1], COLORS.amber[2], 0.22]);
     strokeRect(a, COLORS.amber, 1);
-    drawText("Trigger", a.x + a.w * 0.5, a.y + 11, 7, COLORS.text, "center");
+    drawText("TRIG", a.x + a.w * 0.5, a.y + (tinyCard ? 10 : 12), valueSize, COLORS.text, "center");
     addHotspot(r, "control", control);
     return;
   }
 
   var t = normalizedValue(control, value);
-
   var cx = r.x + r.w * 0.5;
-  var cy = r.y + Math.min(34, r.h * 0.44);
-  var rad = Math.min(r.w * 0.32, r.h * 0.34);
+  var cy = r.y + (compactCard ? r.h * 0.50 : r.h * 0.44);
+  var rad = Math.min(r.w * (compactCard ? 0.29 : 0.31), r.h * (compactCard ? 0.30 : 0.34));
   if (rad < 7) rad = 7;
 
-  var start = Math.PI * 0.75;
-  var span = Math.PI * 1.5;
+  var start = Math.PI * 0.72;
+  var span = Math.PI * 1.56;
   var end = start + span * clip(t, 0, 1);
 
-  mgraphics.set_line_width(2);
+  mgraphics.set_line_width(compactCard ? 1.6 : 2);
   mgraphics.set_source_rgba(0.20, 0.21, 0.24, 1);
   mgraphics.arc(cx, cy, rad, start, start + span);
   mgraphics.stroke();
 
-  var ringColor = COLORS.accent;
-  if (control.kind === "toggle") ringColor = asInt(value, 0) ? COLORS.good : COLORS.dim;
-  if (control.kind === "action") ringColor = COLORS.warn;
-
-  mgraphics.set_line_width(2.5);
-  mgraphics.set_source_rgba(ringColor[0], ringColor[1], ringColor[2], 0.95);
+  mgraphics.set_line_width(compactCard ? 2.1 : 2.6);
+  mgraphics.set_source_rgba(COLORS.accent[0], COLORS.accent[1], COLORS.accent[2], 0.95);
   mgraphics.arc(cx, cy, rad, start, end);
   mgraphics.stroke();
 
+  mgraphics.set_source_rgba(COLORS.panelDeep[0], COLORS.panelDeep[1], COLORS.panelDeep[2], 1);
+  mgraphics.arc(cx, cy, Math.max(2.5, rad * 0.55), 0, Math.PI * 2);
+  mgraphics.fill();
+
   var ang = start + span * clip(t, 0, 1);
-  var px = cx + Math.cos(ang) * (rad - 3);
-  var py = cy + Math.sin(ang) * (rad - 3);
+  var px = cx + Math.cos(ang) * (rad - 2);
+  var py = cy + Math.sin(ang) * (rad - 2);
   mgraphics.set_source_rgba(COLORS.text[0], COLORS.text[1], COLORS.text[2], 0.9);
-  mgraphics.set_line_width(1.5);
+  mgraphics.set_line_width(compactCard ? 1.2 : 1.5);
   mgraphics.move_to(cx, cy);
   mgraphics.line_to(px, py);
   mgraphics.stroke();
 
-  drawText(control.label, cx, r.y + r.h - 18, 8, COLORS.text, "center");
-  drawText(valueText(control, value), cx, r.y + r.h - 6, 7, COLORS.dim, "center");
+  drawText(labelText, cx, r.y + 11, labelSize, COLORS.dim, "center");
+  drawText(fitText(valueText(control, value), r.w - 6, valueSize), cx, r.y + r.h - 6, valueSize, COLORS.text, "center");
 
   addHotspot(r, "control", control);
 }
@@ -681,32 +870,35 @@ function sectionPageControls(sectionId, slots) {
 function drawSectionPanel(sectionId, title, panelRect) {
   fillRect(panelRect, COLORS.panelSoft);
   strokeRect(panelRect, COLORS.border, 1);
-  var header = rect(panelRect.x + 1, panelRect.y + 1, panelRect.w - 2, 12);
+  var header = rect(panelRect.x + 1, panelRect.y + 1, panelRect.w - 2, 14);
   fillRect(header, COLORS.panelDeep);
   strokeRect(header, COLORS.border, 1);
-  drawText(title, panelRect.x + 4, panelRect.y + 10, 7, COLORS.text, "left");
+  drawText(title, panelRect.x + 4, panelRect.y + 10, 7.0, COLORS.text, "left");
 
-  var slots = Math.floor((panelRect.w - 20) / 96);
-  slots = clip(slots, 2, panelRect.h > 108 ? 4 : 3);
+  var minSlotW = panelRect.h > 110 ? 92 : panelRect.h > 86 ? 82 : 72;
+  var maxSlots = panelRect.h > 108 ? 4 : panelRect.h > 84 ? 3 : 2;
+  var slots = Math.floor((panelRect.w - 18) / minSlotW);
+  slots = clip(slots, 1, maxSlots);
   var info = sectionPageControls(sectionId, slots);
+  drawText((info.page + 1) + "/" + info.pages, panelRect.x + panelRect.w - 40, panelRect.y + 10, 6.6, COLORS.dim, "right");
 
   if (info.pages > 1) {
-    var prev = rect(panelRect.x + panelRect.w - 32, panelRect.y + 2, 12, 9);
-    var next = rect(panelRect.x + panelRect.w - 16, panelRect.y + 2, 12, 9);
+    var prev = rect(panelRect.x + panelRect.w - 32, panelRect.y + 2, 13, 11);
+    var next = rect(panelRect.x + panelRect.w - 17, panelRect.y + 2, 13, 11);
     fillRect(prev, COLORS.panelDeep);
     fillRect(next, COLORS.panelDeep);
     strokeRect(prev, COLORS.border, 1);
     strokeRect(next, COLORS.border, 1);
-    drawText("<", prev.x + prev.w * 0.5, prev.y + 7, 6.5, COLORS.text, "center");
-    drawText(">", next.x + next.w * 0.5, next.y + 7, 6.5, COLORS.text, "center");
+    drawText("<", prev.x + prev.w * 0.5, prev.y + 9, 7.0, COLORS.text, "center");
+    drawText(">", next.x + next.w * 0.5, next.y + 9, 7.0, COLORS.text, "center");
     addHotspot(prev, "section_page_prev", sectionId);
     addHotspot(next, "section_page_next", sectionId);
   }
 
-  var inner = rect(panelRect.x + 4, panelRect.y + 15, panelRect.w - 8, panelRect.h - 19);
+  var inner = rect(panelRect.x + 3, panelRect.y + 17, panelRect.w - 6, panelRect.h - 20);
   if (!info.list.length || inner.w <= 10 || inner.h <= 10) return;
 
-  var gap = 4;
+  var gap = inner.h > 60 ? 5 : 4;
   var cw = (inner.w - gap * (info.list.length - 1)) / info.list.length;
   var i;
   for (i = 0; i < info.list.length; i++) {
@@ -716,11 +908,11 @@ function drawSectionPanel(sectionId, title, panelRect) {
 
 function drawAllDashboard(w, h, yStart) {
   var area = rect(4, yStart, w - 8, h - (yStart + 4));
-  if (area.h <= 80) {
+  if (area.h <= 88) {
     drawControls(w, h, yStart);
     return;
   }
-  if (area.h < 150) {
+  if (area.h < 126) {
     drawAllCompact(w, h, yStart);
     return;
   }
@@ -731,8 +923,12 @@ function drawAllDashboard(w, h, yStart) {
   var gx = 4;
   var gy = 4;
   var pw = Math.floor((area.w - gx * 2 - 2) / 3);
-  var row1H = Math.floor((area.h - gy - 2) * 0.48);
+  var row1H = Math.floor((area.h - gy - 2) * 0.49);
   var row2H = area.h - row1H - gy - 2;
+  if (row1H < 54 || row2H < 54) {
+    drawAllCompact(w, h, yStart);
+    return;
+  }
 
   drawSectionPanel("input", "Input", rect(area.x + 1, area.y + 1, pw, row1H));
   drawSectionPanel("output", "Output", rect(area.x + 1 + (pw + gx), area.y + 1, pw, row1H));
@@ -745,7 +941,7 @@ function drawAllDashboard(w, h, yStart) {
 
 function drawAllCompact(w, h, yStart) {
   var area = rect(4, yStart, w - 8, h - (yStart + 4));
-  if (area.h <= 76) {
+  if (area.h <= 64) {
     drawControls(w, h, yStart);
     return;
   }
@@ -753,7 +949,30 @@ function drawAllCompact(w, h, yStart) {
   fillRect(area, COLORS.panelSoft);
   strokeRect(area, COLORS.border, 1);
 
-  var cols = clip(Math.floor((area.w - 2) / 260), 2, 5);
+  if (area.h >= 128) {
+    var rowGap = 4;
+    var rowH = Math.floor((area.h - rowGap - 2) / 2);
+    var top = ["input", "output", "theory"];
+    var bottom = ["led", "engine"];
+    var topGap = 4;
+    var botGap = 4;
+    var topW = Math.floor((area.w - 2 - topGap * (top.length - 1)) / top.length);
+    var botW = Math.floor((area.w - 2 - botGap * (bottom.length - 1)) / bottom.length);
+    var iTop;
+    for (iTop = 0; iTop < top.length; iTop++) {
+      drawSectionPanel(top[iTop], sectionLabel(top[iTop]), rect(area.x + 1 + iTop * (topW + topGap), area.y + 1, topW, rowH));
+    }
+    var iBot;
+    var y2 = area.y + 1 + rowH + rowGap;
+    for (iBot = 0; iBot < bottom.length; iBot++) {
+      drawSectionPanel(bottom[iBot], sectionLabel(bottom[iBot]), rect(area.x + 1 + iBot * (botW + botGap), y2, botW, rowH));
+    }
+    return;
+  }
+
+  var gap = 4;
+  var minPanelW = area.h > 88 ? 220 : 240;
+  var cols = clip(Math.floor((area.w + gap) / (minPanelW + gap)), 2, 5);
   var ordered = [ui.section];
   var i;
   for (i = 0; i < SECTION_IDS.length; i++) {
@@ -761,7 +980,6 @@ function drawAllCompact(w, h, yStart) {
   }
 
   var shown = ordered.slice(0, cols);
-  var gap = 4;
   var pw = Math.floor((area.w - gap * (shown.length - 1) - 2) / shown.length);
   var ph = area.h - 2;
   for (i = 0; i < shown.length; i++) {
@@ -777,9 +995,9 @@ function drawAllCompact(w, h, yStart) {
 }
 
 function drawControls(w, h, topY) {
-  if (typeof topY === "undefined") topY = h < 190 ? 50 : 66;
+  if (typeof topY === "undefined") topY = h < 170 ? 46 : 54;
   var area = rect(4, topY, w - 8, h - (topY + 4));
-  if (area.h <= 36) return;
+  if (area.h <= 34) return;
   fillRect(area, COLORS.panelSoft);
   strokeRect(area, COLORS.border, 1);
 
@@ -788,7 +1006,7 @@ function drawControls(w, h, topY) {
   var page = info.page;
   var totalPages = info.pages;
 
-  var sideW = area.h < 84 ? 14 : 18;
+  var sideW = area.h < 68 ? 14 : area.h < 90 ? 16 : 18;
   var prev = rect(area.x + 4, area.y + 4, sideW, area.h - 8);
   var next = rect(area.x + area.w - (sideW + 4), area.y + 4, sideW, area.h - 8);
   fillRect(prev, COLORS.panelDeep);
@@ -804,7 +1022,7 @@ function drawControls(w, h, topY) {
 
   var x0 = area.x + sideW + 8;
   var y0 = area.y + 4;
-  var gap = 6;
+  var gap = area.h < 78 ? 4 : 6;
   var cw = (area.w - (sideW * 2 + 16) - gap * (controls.length - 1)) / controls.length;
   var i;
   for (i = 0; i < controls.length; i++) {
@@ -812,8 +1030,137 @@ function drawControls(w, h, topY) {
   }
 
   if (totalPages > 1) {
-    drawText((page + 1) + "/" + totalPages, area.x + area.w * 0.5, area.y + 12, 7, COLORS.dim, "center");
+    drawText(sectionLabel(ui.section) + " " + (page + 1) + "/" + totalPages, area.x + area.w * 0.5, area.y + 12, 6.6, COLORS.dim, "center");
   }
+}
+
+function drawPlantPanel169(panel) {
+  fillRect(panel, COLORS.panel);
+  strokeRect(panel, COLORS.border, 1);
+  drawText("Plant Input", panel.x + 5, panel.y + 10, 6.9, COLORS.text, "left");
+  drawText("n " + formatNumber(ui.plantVal) + " | raw " + ui.plantRaw, panel.x + panel.w - 5, panel.y + 10, 6.6, COLORS.dim, "right");
+
+  var graph = rect(panel.x + 2, panel.y + 13, panel.w - 4, panel.h - 15);
+  fillRect(graph, COLORS.panelDeep);
+  strokeRect(graph, COLORS.border, 1);
+
+  var i;
+  var gx;
+  var gy;
+  mgraphics.set_line_width(0.7);
+  mgraphics.set_source_rgba(COLORS.border[0], COLORS.border[1], COLORS.border[2], 0.32);
+  for (i = 1; i < 4; i++) {
+    gy = graph.y + (graph.h * i / 4);
+    mgraphics.move_to(graph.x + 1, gy);
+    mgraphics.line_to(graph.x + graph.w - 1, gy);
+  }
+  for (i = 1; i < 12; i++) {
+    gx = graph.x + (graph.w * i / 12);
+    mgraphics.move_to(gx, graph.y + 1);
+    mgraphics.line_to(gx, graph.y + graph.h - 1);
+  }
+  mgraphics.stroke();
+
+  if (ui.plantHistory.length > 1) {
+    var n = ui.plantHistory.length;
+    var step = (graph.w - 2) / Math.max(1, n - 1);
+    mgraphics.set_source_rgba(COLORS.good[0], COLORS.good[1], COLORS.good[2], 0.95);
+    mgraphics.set_line_width(1.2);
+    for (i = 0; i < n; i++) {
+      gx = graph.x + 1 + i * step;
+      gy = graph.y + graph.h - 1 - clip(ui.plantHistory[i], 0, 1) * (graph.h - 2);
+      if (i === 0) mgraphics.move_to(gx, gy);
+      else mgraphics.line_to(gx, gy);
+    }
+    mgraphics.stroke();
+  }
+}
+
+function drawMidiPanel169(panel) {
+  fillRect(panel, COLORS.panel);
+  strokeRect(panel, COLORS.border, 1);
+  drawText("MIDI Monitor", panel.x + 5, panel.y + 10, 6.9, COLORS.text, "left");
+  drawText("n" + ui.midiNote + "  v" + ui.midiVel + "  ch" + ui.midiCh, panel.x + panel.w - 5, panel.y + 10, 6.6, COLORS.dim, "right");
+
+  var midi = rect(panel.x + 2, panel.y + 13, panel.w - 4, panel.h - 15);
+  fillRect(midi, COLORS.panelDeep);
+  strokeRect(midi, COLORS.border, 1);
+
+  var bw = (midi.w - 4) / 12;
+  var i;
+  for (i = 0; i < 12; i++) {
+    var amp = clip(ui.midiBins[i], 0, 1);
+    var base = rect(midi.x + 2 + i * bw + 1, midi.y + midi.h - 5, Math.max(2, bw - 3), 3);
+    fillRect(base, [0.13, 0.14, 0.16, 1]);
+    if (amp > 0.01) {
+      fillRect(rect(base.x, base.y - amp * (midi.h - 8), base.w, amp * (midi.h - 8)), [COLORS.accent[0], COLORS.accent[1], COLORS.accent[2], 0.92]);
+    }
+    drawText(NOTE_NAMES[i], base.x + base.w * 0.5, midi.y + midi.h - 7, 5.4, COLORS.dim, "center");
+  }
+}
+
+function drawCompact169(w, h) {
+  var content = rect(3, 46, w - 6, h - 49);
+  if (content.h <= 42) {
+    drawControls(w, h, 46);
+    return;
+  }
+
+  fillRect(content, COLORS.panelSoft);
+  strokeRect(content, COLORS.border, 1);
+
+  var gap = 3;
+  var inner = rect(content.x + 1, content.y + 1, content.w - 2, content.h - 2);
+  var geo = compactControlGeometry(inner.w);
+  var leftPanel = rect(inner.x, inner.y, geo.leftW, inner.h);
+  var rightPanel = rect(leftPanel.x + leftPanel.w + gap, inner.y, inner.w - leftPanel.w - gap, inner.h);
+
+  if (rightPanel.w < 220) {
+    drawControls(w, h, 46);
+    return;
+  }
+
+  fillRect(leftPanel, COLORS.panel);
+  strokeRect(leftPanel, COLORS.border, 1);
+  var head = rect(leftPanel.x + 1, leftPanel.y + 1, leftPanel.w - 2, 12);
+  fillRect(head, COLORS.panelDeep);
+  strokeRect(head, COLORS.border, 1);
+  drawText(sectionLabel(ui.section), head.x + 4, head.y + 9, 6.9, COLORS.text, "left");
+
+  var pageInfo = sectionPaging(ui.section, geo.perPage);
+  drawText((pageInfo.page + 1) + "/" + pageInfo.pages, head.x + head.w - 58, head.y + 9, 6.5, COLORS.dim, "right");
+  drawText(pageInfo.pages > 1 ? "drag" : "drag / < >", head.x + head.w - 6, head.y + 9, 6.0, COLORS.dim, "right");
+  if (pageInfo.pages > 1) {
+    var prev = rect(head.x + head.w - 32, head.y + 1, 14, 10);
+    var next = rect(head.x + head.w - 16, head.y + 1, 14, 10);
+    fillRect(prev, COLORS.panelDeep);
+    fillRect(next, COLORS.panelDeep);
+    strokeRect(prev, COLORS.border, 1);
+    strokeRect(next, COLORS.border, 1);
+    drawText("<", prev.x + prev.w * 0.5, prev.y + 8, 7.0, COLORS.text, "center");
+    drawText(">", next.x + next.w * 0.5, next.y + 8, 7.0, COLORS.text, "center");
+    addHotspot(prev, "section_page_prev", ui.section);
+    addHotspot(next, "section_page_next", ui.section);
+  }
+
+  var grid = rect(leftPanel.x + 3, leftPanel.y + 14, leftPanel.w - 6, leftPanel.h - 16);
+  var cols = geo.cols;
+  var rows = geo.rows;
+  var cellGap = 3;
+  var cw = (grid.w - cellGap * (cols - 1)) / cols;
+  var ch = (grid.h - cellGap * (rows - 1)) / rows;
+  var i;
+  for (i = 0; i < pageInfo.list.length; i++) {
+    var col = i % cols;
+    var row = Math.floor(i / cols);
+    drawEncoder(pageInfo.list[i], rect(grid.x + col * (cw + cellGap), grid.y + row * (ch + cellGap), cw, ch));
+  }
+
+  var topH = Math.floor((rightPanel.h - gap) * 0.50);
+  var plantPanel = rect(rightPanel.x, rightPanel.y, rightPanel.w, topH);
+  var midiPanel = rect(rightPanel.x, rightPanel.y + topH + gap, rightPanel.w, rightPanel.h - topH - gap);
+  drawPlantPanel169(plantPanel);
+  drawMidiPanel169(midiPanel);
 }
 
 function drawAll() {
@@ -821,28 +1168,34 @@ function drawAll() {
   var sz = canvasSize();
   var w = sz[0];
   var h = sz[1];
+  var compactTop = h < 175 || w < 980;
 
   fillRect(rect(0, 0, w, h), COLORS.bg);
   drawHeader(w, h);
   drawTabs(w, h);
-  var contentY = 50;
+  if (h <= 175) {
+    drawCompact169(w, h);
+    return;
+  }
+  var contentY = compactTop ? 46 : 51;
   var available = h - contentY - 4;
-  var controlsMin = h >= 240 ? 90 : h >= 200 ? 78 : 68;
-  var meterTarget = h >= 280 ? 86 : h >= 240 ? 68 : h >= 200 ? 52 : 36;
+  var controlsMin = h >= 260 ? 106 : h >= 210 ? 86 : 72;
+  var meterTarget = h >= 300 ? 88 : h >= 240 ? 74 : h >= 190 ? 52 : 42;
   var meterMax = Math.max(0, available - controlsMin - 4);
   var meterH = Math.max(0, Math.min(meterTarget, meterMax));
-  if (meterMax < 22) meterH = 0;
+  if (meterH > 0 && meterH < 34) meterH = Math.min(34, meterMax);
+  if (meterMax < 18) meterH = 0;
 
   var y = contentY;
   if (meterH > 0) y = drawMeters(w, h, contentY, meterH);
 
   var controlArea = h - y - 4;
-  if (h >= 260 && controlArea >= 132) {
+  if (controlArea >= 118 && w >= 980) {
     drawAllDashboard(w, h, y);
     return;
   }
 
-  if (h >= 220 && controlArea >= 96) {
+  if (controlArea >= 72) {
     drawAllCompact(w, h, y);
     return;
   }
@@ -1013,16 +1366,27 @@ function pointerDown(x, y) {
   }
 }
 
-function onclick(x, y, but, cmd, shift, capslock, option, ctrl) {
+function pointerDownDedup(x, y) {
+  var now = new Date().getTime();
+  var dx = Math.abs(asNum(x, 0) - asNum(ui.lastPointerX, 0));
+  var dy = Math.abs(asNum(y, 0) - asNum(ui.lastPointerY, 0));
+  if ((now - asInt(ui.lastPointerAt, 0)) < 70 && dx <= 2 && dy <= 2) return;
+  ui.lastPointerAt = now;
+  ui.lastPointerX = x;
+  ui.lastPointerY = y;
   pointerDown(x, y);
+}
+
+function onclick(x, y, but, cmd, shift, capslock, option, ctrl) {
+  pointerDownDedup(x, y);
 }
 
 function onmousedown(x, y, but, cmd, shift, capslock, option, ctrl) {
-  pointerDown(x, y);
+  pointerDownDedup(x, y);
 }
 
 function ondblclick(x, y, but, cmd, shift, capslock, option, ctrl) {
-  pointerDown(x, y);
+  pointerDownDedup(x, y);
 }
 
 function ondrag(x, y, but, cmd, shift, capslock, option, ctrl) {
@@ -1069,6 +1433,8 @@ function anything() {
     if (String(ui.statusState).toLowerCase() === "connected") ui.targetConnected = 1;
     if (String(ui.statusState).toLowerCase() === "disconnected" || String(ui.statusState).toLowerCase() === "error") ui.targetConnected = 0;
     if (args.length > 1 && String(args[1]).indexOf(":") >= 0) ui.targetLastConnected = String(args[1]).split(" ")[0];
+    ui.nodeReady = 1;
+    sendInitToNode();
     mgraphics.redraw();
     return;
   }
@@ -1081,6 +1447,8 @@ function anything() {
     ui.targetLastConnected = args.length > 4 ? String(args[4]) : ui.targetLastConnected;
     ui.targetMode = args.length > 5 ? String(args[5]) : ui.targetMode;
     ui.lastInbound = "target." + (ui.targetConnected ? "connected" : "idle");
+    ui.nodeReady = 1;
+    sendInitToNode();
     mgraphics.redraw();
     return;
   }
@@ -1088,7 +1456,7 @@ function anything() {
   if (sel === "state") {
     var st = parseJson(args[0]);
     if (st) {
-      merge(ui.state, st);
+      mergeWithPending(ui.state, st, "state");
       if (typeof ui.state.ts !== "undefined") ui.state.ts = String(ui.state.ts).replace("-", "/");
       ui.lastInbound = "state.v" + String(st.ver || "?");
     }
@@ -1113,7 +1481,7 @@ function anything() {
   if (sel === "synth") {
     var sy = parseJson(args[0]);
     if (sy) {
-      merge(ui.synth, sy);
+      mergeWithPending(ui.synth, sy, "synth");
       ui.lastInbound = "synth";
     }
     mgraphics.redraw();
@@ -1145,11 +1513,13 @@ function anything() {
 }
 
 function reconnectTick() {
-  sendCmd("request_target");
-  if (String(ui.statusState || "").toLowerCase() !== "connected") {
-    sendCmd("auto_connect");
+  if (!ui.nodeReady) {
+    sendCmd("request_target");
+    if (ui.reconnectTask) ui.reconnectTask.schedule(1000);
+    return;
   }
-  if (ui.reconnectTask) ui.reconnectTask.schedule(4000);
+  sendCmd("request_target");
+  if (ui.reconnectTask) ui.reconnectTask.schedule(5000);
 }
 
 function ensureReconnectTask() {
@@ -1157,11 +1527,12 @@ function ensureReconnectTask() {
     try { ui.reconnectTask.cancel(); } catch (_e1) {}
   }
   ui.reconnectTask = new Task(reconnectTick, this);
-  ui.reconnectTask.schedule(2500);
+  ui.reconnectTask.schedule(3000);
 }
 
-function loadbang() {
-  ui.section = "input";
+function sendInitToNode() {
+  if (ui.initSent) return;
+  ui.initSent = 1;
   sendCmd("set_mode", "http");
   sendCmd("set_auto_reconnect", 1);
   sendCmd("set_emit_mode", ui.emitMode);
@@ -1174,6 +1545,30 @@ function loadbang() {
   sendCmd("request_synth");
   sendCmd("request_fast");
   sendCmd("request_target");
+}
+
+function bootstrapTick() {
+  if (ui.nodeReady) {
+    sendInitToNode();
+    return;
+  }
+  sendCmd("request_target");
+  if (ui.bootstrapTask) ui.bootstrapTask.schedule(900);
+}
+
+function ensureBootstrapTask() {
+  if (ui.bootstrapTask) {
+    try { ui.bootstrapTask.cancel(); } catch (_e1) {}
+  }
+  ui.bootstrapTask = new Task(bootstrapTick, this);
+  ui.bootstrapTask.schedule(120);
+}
+
+function loadbang() {
+  ui.section = "input";
+  ui.nodeReady = 0;
+  ui.initSent = 0;
+  ensureBootstrapTask();
   ensureReconnectTask();
   ensureDecayTask();
 }

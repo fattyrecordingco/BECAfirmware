@@ -123,11 +123,12 @@ const runtime = {
   fastPollMs: 40,
   synthPollMs: 2500,
   paramsPollMs: 3000,
-  discoveryCooldownMs: 2000,
-  discoveryTimeoutMs: 1400,
+  discoveryCooldownMs: 1200,
+  discoveryTimeoutMs: 950,
   stateTimer: null,
   fastTimer: null,
   setTimer: null,
+  setStateSyncTimer: null,
   synthTimer: null,
   paramsTimer: null,
   mockTimer: null,
@@ -141,6 +142,7 @@ const runtime = {
     synth: false,
   },
   pendingSet: [],
+  setInFlight: false,
   lastSetSentAt: 0,
   lastHttpError: "",
   activeNotes: new Map(),
@@ -285,22 +287,21 @@ function buildDiscoveryCandidates(ipHints) {
     });
   });
 
+  const subnetSweep = [1, 2, 3, 4, 5, 8, 10, 11, 12, 16, 20, 24, 30, 40, 50, 64, 80, 96, 100, 120, 150, 180, 200];
   for (const prefix of prefixes) {
-    add(`${prefix}.1`);
-    for (let i = 2; i <= 254; i += 1) add(`${prefix}.${i}`);
+    for (const host of subnetSweep) add(`${prefix}.${host}`);
   }
 
   // Fallback scanning in case Max's networkInterfaces() is incomplete.
   const fallbackPrefixes = ["192.168.0", "192.168.1", "192.168.4"];
   fallbackPrefixes.forEach((prefix) => {
-    add(`${prefix}.1`);
-    for (let i = 2; i <= 120; i += 1) add(`${prefix}.${i}`);
+    [1, 2, 4, 8, 10, 11, 20, 24, 40, 50, 80, 100].forEach((host) => add(`${prefix}.${host}`));
   });
 
   return candidates;
 }
 
-function resolveHostIpv4(host, timeoutMs = 650) {
+function resolveHostIpv4(host, timeoutMs = 420) {
   const safeHost = normalizeHostValue(host);
   if (!safeHost.length) return Promise.resolve("");
   if (isIpv4Host(safeHost)) return Promise.resolve(safeHost);
@@ -312,7 +313,7 @@ function resolveHostIpv4(host, timeoutMs = 650) {
       settled = true;
       resolve(normalizeHostValue(value || ""));
     };
-    const timer = setTimeout(() => finish(""), Math.max(200, Number(timeoutMs) || 650));
+    const timer = setTimeout(() => finish(""), Math.max(180, Number(timeoutMs) || 420));
     dns.lookup(safeHost, { family: 4 }, (err, address) => {
       clearTimeout(timer);
       if (err || !address) {
@@ -346,7 +347,7 @@ async function discoveryIpHints() {
       continue;
     }
     // eslint-disable-next-line no-await-in-loop
-    const resolved = await resolveHostIpv4(safeHost, 550);
+    const resolved = await resolveHostIpv4(safeHost, 380);
     if (resolved.length) add(resolved);
   }
 
@@ -381,6 +382,14 @@ function emitStatus(state, detail) {
   runtime.lastStatusToken = token;
   maxApi.outlet(["status", state, detail || ""]);
   emitTarget();
+}
+
+function postDebug(line) {
+  try {
+    maxApi.post(`[BECA] ${String(line || "")}`);
+  } catch (err) {
+    // no-op in non-Max test environments
+  }
 }
 
 function emitTarget() {
@@ -511,6 +520,9 @@ function stopAllTimers() {
   stopHttpTimers();
   stopMockTimer();
   stopLegacyEventStream();
+  runtime.setInFlight = false;
+  if (runtime.setStateSyncTimer) clearTimeout(runtime.setStateSyncTimer);
+  runtime.setStateSyncTimer = null;
   if (runtime.discoveryTimer) clearTimeout(runtime.discoveryTimer);
   runtime.discoveryTimer = null;
   runtime.discoveryInFlight = false;
@@ -928,6 +940,7 @@ async function sendLegacySet(key, value) {
 }
 
 function flushPendingSetQueue() {
+  if (runtime.setInFlight) return;
   if (!runtime.pendingSet.length) return;
   const minGapMs = 66; // ~15 updates/sec max
   const waitMs = Math.max(0, minGapMs - (nowMs() - runtime.lastSetSentAt));
@@ -948,43 +961,123 @@ function flushPendingSetQueue() {
 
   if (runtime.mode !== "http") return;
 
-  if (runtime.httpLegacy) {
-    sendLegacySet(next.key, next.value)
-      .then(() => {
-        runtime.connected = true;
-        emitTarget();
-      })
-      .catch((err) => {
-        runtime.lastHttpError = err.message;
-        emitStatus("warn", `legacy set failed: ${err.message}`);
-      });
-    return;
-  }
-
-  const body = new URLSearchParams({ key: String(next.key), value: String(next.value) }).toString();
-  requestJson("POST", "/api/set", body)
-    .then((state) => {
-      emitJson("state", state);
-      runtime.connected = true;
-      emitTarget();
+  runtime.setInFlight = true;
+  sendLegacySet(next.key, next.value)
+    .then(() => {
+      // Keep modern polling flow active while writing through legacy-style endpoints.
+      finalizeSetSuccess(next, null, false);
     })
-    .catch((err) => {
-      if (String(err.message || "").startsWith("HTTP 302")) {
-        enableLegacyHttpMode("/api/set unavailable, switching to legacy endpoints");
-        sendLegacySet(next.key, next.value).catch(() => {});
+    .catch((legacyErr) => {
+      const legacyMsg = String((legacyErr && legacyErr.message) || legacyErr || "legacy set failed");
+      postDebug(`set legacy failed key=${next.key} value=${next.value} err=${legacyMsg}`);
+      if (runtime.httpLegacy) {
+        handleSetFailure(next, legacyErr, true);
         return;
       }
-      runtime.lastHttpError = err.message;
-      runtime.connected = false;
-      emitTarget();
-      emitStatus("error", err.message);
+
+      // Last resort: try modern /api/set path for unknown/new keys.
+      const body = new URLSearchParams({ key: String(next.key), value: String(next.value) }).toString();
+      requestJson("POST", "/api/set", body)
+        .then((state) => {
+          postDebug(`set modern fallback ok key=${next.key} value=${next.value}`);
+          finalizeSetSuccess(next, state, false);
+        })
+        .catch((modernErr) => {
+          const modernMsg = String((modernErr && modernErr.message) || modernErr || "modern set failed");
+          postDebug(`set modern fallback failed key=${next.key} err=${modernMsg}`);
+          handleSetFailure(next, `legacy:${legacyMsg} | modern:${modernMsg}`, false);
+        });
     });
 }
 
 function queueSet(key, value) {
   const deduped = runtime.pendingSet.filter((item) => item.key !== key);
-  deduped.push({ key, value });
+  deduped.push({ key, value, attempts: 0 });
   runtime.pendingSet = deduped;
+}
+
+function scheduleSetStateSync(delayMs = 110) {
+  if (runtime.mode !== "http") return;
+  if (runtime.httpLegacy) return;
+  if (runtime.setStateSyncTimer) clearTimeout(runtime.setStateSyncTimer);
+  runtime.setStateSyncTimer = setTimeout(() => {
+    runtime.setStateSyncTimer = null;
+    pollHttpState();
+  }, Math.max(40, Number(delayMs) || 110));
+}
+
+function isRetryableSetError(messageLike) {
+  const msg = String(messageLike || "");
+  if (!msg.length) return true;
+  if (
+    msg.startsWith("HTTP 400")
+    || msg.startsWith("HTTP 401")
+    || msg.startsWith("HTTP 403")
+    || msg.startsWith("HTTP 404")
+    || msg.startsWith("HTTP 409")
+    || msg.startsWith("HTTP 422")
+  ) {
+    return false;
+  }
+  const low = msg.toLowerCase();
+  if (low.includes("timeout")) return true;
+  if (low.includes("socket")) return true;
+  if (low.includes("econn")) return true;
+  if (low.includes("enotfound")) return true;
+  if (low.includes("ehostunreach")) return true;
+  if (low.includes("network")) return true;
+  if (low.includes("invalid json from /api/set")) return true;
+  if (low.includes("http 429")) return true;
+  if (low.includes("http 500")) return true;
+  if (low.includes("http 502")) return true;
+  if (low.includes("http 503")) return true;
+  if (low.includes("http 504")) return true;
+  return true;
+}
+
+function requeueSet(next, reason, legacyMode) {
+  const attempts = Math.max(0, Number(next && next.attempts) || 0) + 1;
+  if (attempts > 4) {
+    emitStatus("error", `set ${next.key} failed: ${String(reason || "unknown")}`);
+    return;
+  }
+  runtime.pendingSet.unshift({
+    key: String(next.key),
+    value: String(next.value),
+    attempts,
+  });
+  if (runtime.mode === "http" && runtime.autoReconnect && !runtime.connected) {
+    const backoffMs = 80 + attempts * 130;
+    scheduleDiscovery(`set retry ${next.key}`, backoffMs);
+  }
+  if (attempts === 1) {
+    emitStatus("warn", `retrying ${next.key}`);
+  }
+}
+
+function finalizeSetSuccess(next, statePayload, legacyMode) {
+  runtime.setInFlight = false;
+  if (statePayload && looksLikeBecaState(statePayload)) {
+    emitJson("state", statePayload);
+  } else if (!legacyMode) {
+    scheduleSetStateSync(110);
+  }
+  runtime.connected = true;
+  runtime.lastHttpError = "";
+  runtime.lastConnectedHost = runtime.ip;
+  emitTarget();
+}
+
+function handleSetFailure(next, err, legacyMode) {
+  runtime.setInFlight = false;
+  const msg = String((err && err.message) || err || "set failed");
+  runtime.lastHttpError = msg;
+  postDebug(`set failed key=${next.key} value=${next.value} err=${msg}`);
+  if (isRetryableSetError(msg)) {
+    requeueSet(next, msg, legacyMode);
+    return;
+  }
+  emitStatus("warn", `set ${next.key} failed: ${msg}`);
 }
 
 function applyNotesSnapshot(snapshot) {
@@ -1224,7 +1317,7 @@ async function probeHostForBeca(host, port) {
     if (!looksLikeBecaInfo(info)) return null;
     let adoptedHost = normalizeHostValue(info.ip || "");
     if (!adoptedHost.length && !isIpv4Host(safeHost)) {
-      adoptedHost = await resolveHostIpv4(safeHost, 550);
+      adoptedHost = await resolveHostIpv4(safeHost, 380);
     }
     return {
       host: safeHost,
@@ -1241,7 +1334,7 @@ async function probeHostForBeca(host, port) {
     if (looksLikeBecaState(state)) {
       let adoptedHost = "";
       if (!isIpv4Host(safeHost)) {
-        adoptedHost = await resolveHostIpv4(safeHost, 550);
+        adoptedHost = await resolveHostIpv4(safeHost, 380);
       }
       return {
         host: safeHost,
@@ -1288,17 +1381,17 @@ async function probeCandidateBatch(candidates, port, maxConcurrent) {
 
 async function findResponsiveHost(candidates, port) {
   if (!Array.isArray(candidates) || !candidates.length) return null;
-  const headSize = Math.min(20, candidates.length);
+  const headSize = Math.min(28, candidates.length);
   const head = candidates.slice(0, headSize);
   const tail = candidates.slice(headSize);
 
-  const quick = await probeCandidateBatch(head, port, 8);
+  const quick = await probeCandidateBatch(head, port, 10);
   if (quick) return quick;
   if (!tail.length) return null;
-  return probeCandidateBatch(tail, port, 24);
+  return probeCandidateBatch(tail, port, 12);
 }
 
-function scheduleDiscovery(reason, delayMs = 120) {
+function scheduleDiscovery(reason, delayMs = 80) {
   if (runtime.mode !== "http" || !runtime.autoReconnect) return;
   if (runtime.discoveryTimer) clearTimeout(runtime.discoveryTimer);
   runtime.discoveryTimer = setTimeout(() => {
@@ -1379,6 +1472,7 @@ async function refreshHttpInfo() {
 async function pollHttpState() {
   if (runtime.mode !== "http") return;
   if (runtime.httpLegacy) return;
+  if (runtime.setInFlight || runtime.pendingSet.length) return;
   if (runtime.pollInFlight.state) return;
   runtime.pollInFlight.state = true;
   try {
@@ -1411,6 +1505,8 @@ async function pollHttpState() {
 async function pollHttpFast() {
   if (runtime.mode !== "http") return;
   if (runtime.httpLegacy) return;
+  if (runtime.setInFlight || runtime.pendingSet.length) return;
+  if ((nowMs() - runtime.lastSetSentAt) < 140) return;
   if (runtime.pollInFlight.fast) return;
   runtime.pollInFlight.fast = true;
   try {
@@ -1484,7 +1580,7 @@ function beginHttpMode() {
   pollHttpFast();
   pollHttpParams();
   pollHttpSynth();
-  scheduleDiscovery("http startup", 400);
+  scheduleDiscovery("http startup", 180);
 }
 
 function serialSnapshotTick() {
@@ -1661,7 +1757,7 @@ maxApi.addHandler("set_mode", (mode) => {
 maxApi.addHandler("set_auto_reconnect", (flag) => {
   runtime.autoReconnect = Number(flag || 0) !== 0;
   if (runtime.mode === "http" && runtime.autoReconnect && !runtime.connected) {
-    scheduleDiscovery("auto reconnect enabled", 80);
+    scheduleDiscovery("auto reconnect enabled", 30);
   }
 });
 
@@ -1681,7 +1777,7 @@ maxApi.addHandler("set_http_host", (host) => {
   runtime.ip = next;
   emitTarget();
   if (runtime.mode === "http" && runtime.autoReconnect && !runtime.connected) {
-    scheduleDiscovery("host updated", 50);
+    scheduleDiscovery("host updated", 20);
   }
 });
 
@@ -1689,7 +1785,7 @@ maxApi.addHandler("set_http_port", (port) => {
   runtime.port = Math.max(1, Number(port || runtime.port) || runtime.port);
   emitTarget();
   if (runtime.mode === "http" && runtime.autoReconnect && !runtime.connected) {
-    scheduleDiscovery("port updated", 50);
+    scheduleDiscovery("port updated", 20);
   }
 });
 
@@ -1699,7 +1795,7 @@ maxApi.addHandler("set_device_name", (name) => {
   runtime.deviceName = next;
   emitTarget();
   if (runtime.mode === "http" && runtime.autoReconnect && !runtime.connected) {
-    scheduleDiscovery("device name updated", 50);
+    scheduleDiscovery("device name updated", 20);
   }
 });
 
