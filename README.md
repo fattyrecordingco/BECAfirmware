@@ -476,6 +476,10 @@ Test:
 - If bridge shows `Access is denied`, another app owns the COM port.
 - Use 2.4 GHz Wi-Fi for setup and normal operation.
 - If using BLE only, bridge tool is not required.
+- Plant input now uses adaptive normalization so dynamics stay more consistent across USB power sources (laptop/iPad/power bank).
+- BECA now auto-saves runtime settings in the background (debounced) so reboot recovery restores last known state.
+- If severe audio underruns are detected repeatedly, firmware performs a soft auto-restart and reloads saved state.
+- Startup was tuned for smoother boot: shorter fixed boot delays and faster STA connect fallback window.
 
 ## 16) Troubleshooting
 
@@ -545,8 +549,10 @@ If something fails, start here first.
 
 1. In BECA Setup Step 3, run `Set Wi-Fi` again and wait for reboot.
 2. Open `http://<device-ip>/` from the same LAN.
-3. If `.local` does not resolve, use direct IP.
-4. Fallback: connect to `BECA-XXXX` and use `http://192.168.4.1/setup`.
+3. For `.local`, use the mDNS-safe name (lowercase letters/numbers/hyphens). Example: `http://beca-blk.local/`.
+4. If `.local` does not resolve, use direct IP.
+5. If your phone is the hotspot host, that same phone may not be able to reach hotspot clients. Try opening BECA UI from another device on that hotspot (iPad/laptop).
+6. Fallback: connect to `BECA-XXXX` and use `http://192.168.4.1/setup`.
 
 ### Problem: No audio in AUX OUT mode
 
