@@ -50,13 +50,21 @@ Note:
 
 The Ableton UI now includes:
 
-- Connection panel: mode (`HTTP`/`Serial`/`Mock`), IP/port fields, serial port + baud, connect/disconnect, refresh, auto reconnect, serial telemetry, re-emit/monitor mode.
-- Hostname panel additions:
-  - `Device` name field (for example `beca`)
-  - `.local` toggle
-  - `Connect .local` action (`<device>.local`)
-- Plant monitor: scrolling normalized energy graph plus raw value display.
-- MIDI monitor: last MIDI event and 12x8 note grid indicator.
+- Single-page `jsui` layout (no tabs or section paging) tuned for Ableton device lane height (`169 px` max):
+  - left strip: multi-slot connection status (`A/B/C`), slot enable, active-slot focus, link/broadcast toggle
+  - center strip: core musical controls (`mode`, `scale`, `root`, `clock`, `ts`, `bpm`, `swing`, `sens`, `lo`, `hi`, `preset`, `mute`, `sync`) plus one `outputmode` selector
+  - right strip: one Plant monitor and one MIDI monitor (blue bar style, no piano keyboard)
+  - bottom strip: compact `LED FX` + `Engine` controls on the same surface
+- Multi-device support in one set:
+  - up to 3 runtime slots (`A/B/C`) with per-slot status (`connected`, host, mode, state detail)
+  - `Link` mode broadcasts parameter edits to all enabled slots
+  - non-link mode edits only the active slot
+- Scale sync feature:
+  - `Sync` button with source selector (`Scale Device`, `Selected Clip`, `Manual`)
+  - Max LiveAPI helper requests scale/root from Ableton context and applies mapped `scale`/`root`
+  - graceful fallback status (`Scale sync unavailable`) when Ableton scale context is not readable
+- Plant monitor: single normalized energy graph plus raw values (`raw`, `raw2`).
+- MIDI monitor: single blue bar monitor with last note/velocity/channel.
 - Performance controls mapped to firmware:
   - `mode`, `scale`, `root`, `clock`
   - `bpm`, `swing`, `sens`, `lo`, `hi`
@@ -142,11 +150,10 @@ Use `connect_mock` for UI testing without hardware.
    - In Max Console, confirm no `node.script` file-load error for `beca_control_node.js`.
    - Disconnect BECA network briefly; confirm status drops and auto-recovers back to `connected`.
 4. UI layout + monitor readability (native-lane validation):
-   - At fixed lane height `169 px` (max available), confirm monitor-centric layout: controls on the left, plant + MIDI monitors stacked on the right, and no overlap/clipping.
-   - Confirm all control groups are reachable from one surface via tabs (`Input`, `Output`, `Theory`, `LED FX`, `Engine`) and section paging arrows.
-   - At reduced device widths (about `900 px`) and wide layouts (about `1600 px`), confirm tab sizing, arrow hit zones, and section pagination remain aligned to visuals.
-   - Confirm plant graph and MIDI monitor stay visible and readable at `169 px`, with live updates.
-   - Confirm section/page arrows never draw or click outside their panel bounds.
+   - At fixed lane height `169 px`, confirm single-page layout (no tabs/pages) with left connection strip, center core controls, right monitors, and bottom compact LED/engine strip.
+   - Confirm every mapped control appears once on the same surface (no duplicated output selector rows, no duplicated monitors).
+   - At reduced widths (`~900 px`) and wide layouts (`~1600 px`), confirm labels/values do not overlap or clip.
+   - Confirm Plant monitor appears once and MIDI monitor appears once in blue-bar style.
 5. Control interaction semantics:
    - Encoders drag vertically and send live values.
    - Toggle controls act as on/off buttons.
@@ -168,6 +175,11 @@ Use `connect_mock` for UI testing without hardware.
 8. Stress test:
    - Sweep multiple controls for 10+ seconds.
    - Confirm no UI lockup, no status thrash, and continuous plant/MIDI updates.
+9. Multi-device + scale sync:
+   - Enable slot `B` (or `C`), connect at least two BECA targets, and confirm both show independent status LEDs/name/IP/mode.
+   - Toggle `Link` mode ON and confirm one control edit broadcasts to all enabled slots.
+   - Toggle `Link` mode OFF, switch active slot, and confirm edits affect only the selected slot.
+   - Trigger `Sync` with `Scale Device`, `Selected Clip`, and `Manual` source modes; confirm `scale`/`root` update on BECA and status reports fallback when unavailable.
 
 ## HTTP Endpoints Used
 

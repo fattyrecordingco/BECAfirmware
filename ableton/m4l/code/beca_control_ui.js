@@ -56,6 +56,16 @@ var ui = {
   targetConnected: 0,
   targetLastConnected: "",
   targetMode: "http",
+  activeTargetId: "A",
+  linkMode: 1,
+  scaleSyncSource: 0,
+  scaleSyncState: "idle",
+  scaleSyncDetail: "",
+  targets: {
+    A: { id: "A", host: "beca-blk.local", port: 80, device: "beca-blk", connected: 0, lastHost: "", mode: "http", enabled: 1, state: "ready", detail: "idle" },
+    B: { id: "B", host: "beca.local", port: 80, device: "beca", connected: 0, lastHost: "", mode: "http", enabled: 0, state: "ready", detail: "idle" },
+    C: { id: "C", host: "beca.local", port: 80, device: "beca", connected: 0, lastHost: "", mode: "http", enabled: 0, state: "ready", detail: "idle" }
+  },
   emitMode: "reemit",
   autoReconnect: 1,
   lastUiAction: "init",
@@ -189,6 +199,45 @@ function initSendMeta() {
 }
 
 initSendMeta();
+
+var CONTROL_INDEX = {};
+
+function indexControls() {
+  CONTROL_INDEX = {};
+  var sid;
+  var i;
+  for (sid in SECTIONS) {
+    if (!SECTIONS.hasOwnProperty(sid)) continue;
+    for (i = 0; i < SECTIONS[sid].length; i++) {
+      var control = SECTIONS[sid][i];
+      var sendKey = String(control.sendKey || control.key || "");
+      if (sendKey.length) CONTROL_INDEX[sendKey] = control;
+    }
+  }
+}
+
+indexControls();
+
+var CORE_KEYS = ["mode", "scale", "root", "clock", "ts", "bpm", "swing", "sens", "lo", "hi", "preset", "mute", "sync"];
+var ADV_KEYS = [
+  "fx", "pal", "vs", "vi", "rest", "nr", "drumsel", "bright",
+  "wave_a", "wave_b", "osc_mix", "mono", "voices",
+  "attack", "decay", "sustain", "release",
+  "filter", "cutoff", "resonance",
+  "reverb", "delay_ms", "delay_feedback", "delay_mix",
+  "drive", "master", "detune", "gain_trim", "drumkit", "preset_reset"
+];
+var SCALE_SOURCES = ["Scale Device", "Selected Clip", "Manual"];
+
+function controlsFromKeys(keys) {
+  var out = [];
+  var i;
+  for (i = 0; i < keys.length; i++) {
+    var k = String(keys[i] || "");
+    if (CONTROL_INDEX.hasOwnProperty(k)) out.push(CONTROL_INDEX[k]);
+  }
+  return out;
+}
 
 function clip(v, lo, hi) {
   if (v < lo) return lo;
@@ -1037,8 +1086,8 @@ function drawControls(w, h, topY) {
 function drawPlantPanel169(panel) {
   fillRect(panel, COLORS.panel);
   strokeRect(panel, COLORS.border, 1);
-  drawText("Plant Input", panel.x + 5, panel.y + 10, 6.9, COLORS.text, "left");
-  drawText("n " + formatNumber(ui.plantVal) + " | raw " + ui.plantRaw, panel.x + panel.w - 5, panel.y + 10, 6.6, COLORS.dim, "right");
+  drawText("Plant", panel.x + 5, panel.y + 10, 6.9, COLORS.text, "left");
+  drawText("n " + formatNumber(ui.plantVal) + " | raw " + ui.plantRaw + " | r2 " + ui.plantRaw2, panel.x + panel.w - 5, panel.y + 10, 6.2, COLORS.dim, "right");
 
   var graph = rect(panel.x + 2, panel.y + 13, panel.w - 4, panel.h - 15);
   fillRect(graph, COLORS.panelDeep);
@@ -1163,44 +1212,231 @@ function drawCompact169(w, h) {
   drawMidiPanel169(midiPanel);
 }
 
+function slotColor(slot) {
+  var state = String((slot && slot.state) || "").toLowerCase();
+  if (slot && slot.connected) return COLORS.good;
+  if (state === "connecting" || state === "discovering" || state === "identified" || state === "warn") return COLORS.warn;
+  if (state === "error") return COLORS.bad;
+  return COLORS.dim;
+}
+
+function drawConnectionPanel(panel) {
+  fillRect(panel, COLORS.panelSoft);
+  strokeRect(panel, COLORS.border, 1);
+
+  var head = rect(panel.x + 2, panel.y + 2, panel.w - 4, 16);
+  fillRect(head, COLORS.panelDeep);
+  strokeRect(head, COLORS.border, 1);
+  drawText("Connections", head.x + 4, head.y + 11, 7.0, COLORS.text, "left");
+
+  var linkBtn = rect(head.x + head.w - 68, head.y + 2, 64, 12);
+  var linked = ui.linkMode ? 1 : 0;
+  fillRect(linkBtn, linked ? [COLORS.accent[0], COLORS.accent[1], COLORS.accent[2], 0.30] : COLORS.panel);
+  strokeRect(linkBtn, linked ? COLORS.accent : COLORS.border, 1);
+  drawText(linked ? "LINK ON" : "LINK OFF", linkBtn.x + linkBtn.w * 0.5, linkBtn.y + 9, 6.2, COLORS.text, "center");
+  addHotspot(linkBtn, "link_mode_toggle", 0);
+
+  var rowGap = 4;
+  var rowH = Math.max(12, Math.floor((panel.h - 24 - rowGap * 2) / 3));
+  var ids = ["A", "B", "C"];
+  var i;
+  for (i = 0; i < ids.length; i++) {
+    var id = ids[i];
+    var slot = ui.targets[id];
+    var row = rect(panel.x + 4, panel.y + 21 + i * (rowH + rowGap), panel.w - 8, rowH);
+    var active = ui.activeTargetId === id;
+    fillRect(row, active ? [COLORS.accent[0], COLORS.accent[1], COLORS.accent[2], 0.18] : COLORS.panel);
+    strokeRect(row, active ? COLORS.accent : COLORS.border, 1);
+
+    var enableBtn = rect(row.x + 2, row.y + 2, 18, row.h - 4);
+    fillRect(enableBtn, slot && slot.enabled ? [COLORS.good[0], COLORS.good[1], COLORS.good[2], 0.32] : COLORS.panelDeep);
+    strokeRect(enableBtn, slot && slot.enabled ? COLORS.good : COLORS.border, 1);
+    drawText(slot && slot.enabled ? "ON" : "OFF", enableBtn.x + enableBtn.w * 0.5, enableBtn.y + 9, 5.8, COLORS.text, "center");
+    addHotspot(enableBtn, "target_enable", id);
+
+    var ledX = row.x + 24;
+    var ledY = row.y + row.h * 0.5;
+    var col = slotColor(slot);
+    mgraphics.set_source_rgba(col[0], col[1], col[2], 1);
+    mgraphics.arc(ledX, ledY, 2.4, 0, Math.PI * 2);
+    mgraphics.fill();
+
+    var info = id + " " + String((slot && slot.device) || "beca");
+    var host = String((slot && (slot.lastHost || slot.host)) || "");
+    if (host.length) info += " @ " + host;
+    drawText(fitText(info, row.w - 62, 6.3), row.x + 30, row.y + 8, 6.3, COLORS.text, "left");
+    if (row.h >= 17) drawText(fitText(String((slot && slot.mode) || "http"), 34, 6.0), row.x + 30, row.y + row.h - 3, 6.0, COLORS.dim, "left");
+    else drawText(fitText(String((slot && slot.mode) || "http"), 28, 5.7), row.x + row.w - 34, row.y + 8, 5.7, COLORS.dim, "left");
+
+    var scanBtn = rect(row.x + row.w - 28, row.y + 2, 26, row.h - 4);
+    fillRect(scanBtn, COLORS.panelDeep);
+    strokeRect(scanBtn, COLORS.border, 1);
+    drawText("GO", scanBtn.x + scanBtn.w * 0.5, scanBtn.y + 9, 5.7, COLORS.text, "center");
+    addHotspot(scanBtn, "target_connect", id);
+
+    addHotspot(rect(row.x + 22, row.y, row.w - 54, row.h), "target_active", id);
+  }
+}
+
+function drawCorePanel(panel) {
+  fillRect(panel, COLORS.panelSoft);
+  strokeRect(panel, COLORS.border, 1);
+
+  var head = rect(panel.x + 2, panel.y + 2, panel.w - 4, 18);
+  fillRect(head, COLORS.panelDeep);
+  strokeRect(head, COLORS.border, 1);
+  drawText("Core", head.x + 4, head.y + 12, 7.0, COLORS.text, "left");
+
+  var om = clip(asInt(ui.state.outputmode, 0), 0, 2);
+  var labels = ["BLE", "SER", "AUX"];
+  var modeWrap = rect(head.x + 38, head.y + 2, 90, 14);
+  var btnW = Math.floor((modeWrap.w - 4) / 3);
+  var i;
+  for (i = 0; i < 3; i++) {
+    var mr = rect(modeWrap.x + i * (btnW + 2), modeWrap.y, btnW, modeWrap.h);
+    fillRect(mr, i === om ? [COLORS.accent[0], COLORS.accent[1], COLORS.accent[2], 0.34] : COLORS.panel);
+    strokeRect(mr, i === om ? COLORS.accent : COLORS.border, 1);
+    drawText(labels[i], mr.x + mr.w * 0.5, mr.y + 9, 6.2, COLORS.text, "center");
+    addHotspot(mr, "outmode", i);
+  }
+
+  var srcWrap = rect(head.x + head.w - 178, head.y + 2, 110, 14);
+  fillRect(srcWrap, COLORS.panel);
+  strokeRect(srcWrap, COLORS.border, 1);
+  drawText("<", srcWrap.x + 7, srcWrap.y + 9, 7.0, COLORS.text, "center");
+  drawText(">", srcWrap.x + srcWrap.w - 7, srcWrap.y + 9, 7.0, COLORS.text, "center");
+  drawText(fitText(SCALE_SOURCES[clip(asInt(ui.scaleSyncSource, 0), 0, SCALE_SOURCES.length - 1)], srcWrap.w - 18, 6.0), srcWrap.x + srcWrap.w * 0.5, srcWrap.y + 9, 6.0, COLORS.text, "center");
+  addHotspot(rect(srcWrap.x, srcWrap.y, 12, srcWrap.h), "scale_source_prev", 0);
+  addHotspot(rect(srcWrap.x + srcWrap.w - 12, srcWrap.y, 12, srcWrap.h), "scale_source_next", 0);
+
+  var syncBtn = rect(head.x + head.w - 62, head.y + 2, 58, 14);
+  fillRect(syncBtn, [COLORS.amber[0], COLORS.amber[1], COLORS.amber[2], 0.24]);
+  strokeRect(syncBtn, COLORS.amber, 1);
+  drawText("SYNC", syncBtn.x + syncBtn.w * 0.5, syncBtn.y + 9, 6.3, COLORS.text, "center");
+  addHotspot(syncBtn, "scale_sync", 0);
+
+  drawText(
+    fitText(String(ui.scaleSyncState || "idle") + (ui.scaleSyncDetail ? ": " + String(ui.scaleSyncDetail) : ""), panel.w - 10, 6.0),
+    panel.x + panel.w - 6,
+    panel.y + panel.h - 4,
+    6.0,
+    COLORS.dim,
+    "right"
+  );
+
+  var controls = controlsFromKeys(CORE_KEYS);
+  var grid = rect(panel.x + 4, panel.y + 23, panel.w - 8, panel.h - 37);
+  if (controls.length < 1 || grid.h < 16) return;
+  var cols = 7;
+  var rows = 2;
+  var gap = 6;
+  var cw = (grid.w - gap * (cols - 1)) / cols;
+  var ch = (grid.h - gap * (rows - 1)) / rows;
+  for (i = 0; i < controls.length; i++) {
+    var col = i % cols;
+    var row = Math.floor(i / cols);
+    if (row >= rows) break;
+    drawEncoder(controls[i], rect(grid.x + col * (cw + gap), grid.y + row * (ch + gap), cw, ch));
+  }
+}
+
+function drawBottomPanel(panel) {
+  fillRect(panel, COLORS.panelSoft);
+  strokeRect(panel, COLORS.border, 1);
+  var ledControls = controlsFromKeys(["fx", "pal", "vs", "vi", "rest", "nr", "drumsel", "bright"]);
+  var engineControls = controlsFromKeys([
+    "wave_a", "wave_b", "osc_mix", "mono", "voices",
+    "attack", "decay", "sustain", "release",
+    "filter", "cutoff", "resonance",
+    "reverb", "delay_ms", "delay_feedback", "delay_mix",
+    "drive", "master", "detune", "gain_trim", "drumkit", "preset_reset"
+  ]);
+
+  var gap = 8;
+  var ledW = clip(Math.floor((panel.w - 10) * 0.31), 210, Math.max(220, panel.w - 280));
+  var ledPanel = rect(panel.x + 3, panel.y + 2, ledW, panel.h - 4);
+  var enginePanel = rect(ledPanel.x + ledPanel.w + gap, panel.y + 2, panel.w - (ledPanel.w + gap) - 6, panel.h - 4);
+
+  fillRect(ledPanel, COLORS.panel);
+  strokeRect(ledPanel, COLORS.border, 1);
+  drawText("LED FX", ledPanel.x + 4, ledPanel.y + 10, 6.7, COLORS.text, "left");
+  fillRect(enginePanel, COLORS.panel);
+  strokeRect(enginePanel, COLORS.border, 1);
+  drawText("Engine", enginePanel.x + 4, enginePanel.y + 10, 6.7, COLORS.text, "left");
+
+  var ledGrid = rect(ledPanel.x + 3, ledPanel.y + 12, ledPanel.w - 6, ledPanel.h - 15);
+  var engGrid = rect(enginePanel.x + 3, enginePanel.y + 12, enginePanel.w - 6, enginePanel.h - 15);
+
+  var rows = 2;
+  var ledCols = Math.ceil(ledControls.length / rows);
+  var ledGap = 6;
+  var ledCw = (ledGrid.w - ledGap * (ledCols - 1)) / ledCols;
+  var ledCh = (ledGrid.h - ledGap * (rows - 1)) / rows;
+  var i;
+  for (i = 0; i < ledControls.length; i++) {
+    var ledCol = i % ledCols;
+    var ledRow = Math.floor(i / ledCols);
+    drawEncoder(ledControls[i], rect(ledGrid.x + ledCol * (ledCw + ledGap), ledGrid.y + ledRow * (ledCh + ledGap), ledCw, ledCh));
+  }
+
+  var engCols = Math.ceil(engineControls.length / rows);
+  var engGap = 6;
+  var engCw = (engGrid.w - engGap * (engCols - 1)) / engCols;
+  var engCh = (engGrid.h - engGap * (rows - 1)) / rows;
+  for (i = 0; i < engineControls.length; i++) {
+    var engCol = i % engCols;
+    var engRow = Math.floor(i / engCols);
+    drawEncoder(engineControls[i], rect(engGrid.x + engCol * (engCw + engGap), engGrid.y + engRow * (engCh + engGap), engCw, engCh));
+  }
+}
+
+function drawSinglePage(w, h) {
+  var pad = 8;
+  var gap = 8;
+  var inner = rect(pad, pad, w - pad * 2, h - pad * 2);
+  fillRect(inner, COLORS.panelSoft);
+  strokeRect(inner, COLORS.border, 1);
+
+  var topH = Math.max(72, Math.min(82, inner.h - 72));
+  var bottomY = inner.y + topH + gap;
+  var bottomH = inner.h - topH - gap;
+  if (bottomH < 38) {
+    topH = inner.h - 44;
+    bottomY = inner.y + topH + gap;
+    bottomH = inner.h - topH - gap;
+  }
+
+  var leftW = clip(Math.floor(inner.w * 0.24), 204, 280);
+  var rightW = clip(Math.floor(inner.w * 0.24), 220, 320);
+  if (inner.w - leftW - rightW - gap * 2 < 300) {
+    leftW = 190;
+    rightW = 210;
+  }
+  var centerW = inner.w - leftW - rightW - gap * 2;
+
+  var left = rect(inner.x + 1, inner.y + 1, leftW, topH - 2);
+  var center = rect(left.x + left.w + gap, inner.y + 1, centerW, topH - 2);
+  var right = rect(center.x + center.w + gap, inner.y + 1, rightW, topH - 2);
+  var bottom = rect(inner.x + 1, bottomY, inner.w - 2, bottomH - 1);
+
+  drawConnectionPanel(left);
+  drawCorePanel(center);
+
+  var monitorGap = 6;
+  var plantH = Math.floor((right.h - monitorGap) * 0.50);
+  drawPlantPanel169(rect(right.x, right.y, right.w, plantH));
+  drawMidiPanel169(rect(right.x, right.y + plantH + monitorGap, right.w, right.h - plantH - monitorGap));
+
+  drawBottomPanel(bottom);
+}
+
 function drawAll() {
   ui.hotspots = [];
   var sz = canvasSize();
   var w = sz[0];
   var h = sz[1];
-  var compactTop = h < 175 || w < 980;
-
   fillRect(rect(0, 0, w, h), COLORS.bg);
-  drawHeader(w, h);
-  drawTabs(w, h);
-  if (h <= 175) {
-    drawCompact169(w, h);
-    return;
-  }
-  var contentY = compactTop ? 46 : 51;
-  var available = h - contentY - 4;
-  var controlsMin = h >= 260 ? 106 : h >= 210 ? 86 : 72;
-  var meterTarget = h >= 300 ? 88 : h >= 240 ? 74 : h >= 190 ? 52 : 42;
-  var meterMax = Math.max(0, available - controlsMin - 4);
-  var meterH = Math.max(0, Math.min(meterTarget, meterMax));
-  if (meterH > 0 && meterH < 34) meterH = Math.min(34, meterMax);
-  if (meterMax < 18) meterH = 0;
-
-  var y = contentY;
-  if (meterH > 0) y = drawMeters(w, h, contentY, meterH);
-
-  var controlArea = h - y - 4;
-  if (controlArea >= 118 && w >= 980) {
-    drawAllDashboard(w, h, y);
-    return;
-  }
-
-  if (controlArea >= 72) {
-    drawAllCompact(w, h, y);
-    return;
-  }
-
-  drawControls(w, h, y);
+  drawSinglePage(w, h);
 }
 
 function paint() {
@@ -1243,6 +1479,69 @@ function sectionLabel(id) {
 }
 
 function handleClick(hotspot, x, y) {
+  if (hotspot.kind === "link_mode_toggle") {
+    ui.linkMode = ui.linkMode ? 0 : 1;
+    sendCmd("set_link_mode", ui.linkMode ? 1 : 0);
+    mgraphics.redraw();
+    return;
+  }
+
+  if (hotspot.kind === "target_enable") {
+    var tidEnable = String(hotspot.data || "A");
+    if (tidEnable === "A") {
+      mgraphics.redraw();
+      return;
+    }
+    if (ui.targets.hasOwnProperty(tidEnable)) {
+      var slotEnable = ui.targets[tidEnable];
+      slotEnable.enabled = slotEnable.enabled ? 0 : 1;
+      sendCmd("set_target_enabled", tidEnable, slotEnable.enabled ? 1 : 0);
+      if (slotEnable.enabled) sendCmd("connect_target", tidEnable);
+    }
+    mgraphics.redraw();
+    return;
+  }
+
+  if (hotspot.kind === "target_connect") {
+    var tidConnect = String(hotspot.data || "A");
+    sendCmd("connect_target", tidConnect);
+    mgraphics.redraw();
+    return;
+  }
+
+  if (hotspot.kind === "target_active") {
+    var tidActive = String(hotspot.data || "A");
+    ui.activeTargetId = tidActive;
+    sendCmd("set_active_target", tidActive);
+    sendCmd("request_target", tidActive);
+    sendCmd("request_state", tidActive);
+    sendCmd("request_params", tidActive);
+    sendCmd("request_synth", tidActive);
+    sendCmd("request_fast", tidActive);
+    mgraphics.redraw();
+    return;
+  }
+
+  if (hotspot.kind === "scale_source_prev") {
+    ui.scaleSyncSource = Math.max(0, asInt(ui.scaleSyncSource, 0) - 1);
+    mgraphics.redraw();
+    return;
+  }
+
+  if (hotspot.kind === "scale_source_next") {
+    ui.scaleSyncSource = Math.min(SCALE_SOURCES.length - 1, asInt(ui.scaleSyncSource, 0) + 1);
+    mgraphics.redraw();
+    return;
+  }
+
+  if (hotspot.kind === "scale_sync") {
+    ui.scaleSyncState = "pending";
+    ui.scaleSyncDetail = "Reading Ableton scale";
+    sendCmd("sync_scale", ui.scaleSyncSource, asInt(ui.state.scale, 0), asInt(ui.state.root, 0), ui.activeTargetId);
+    mgraphics.redraw();
+    return;
+  }
+
   if (hotspot.kind === "section") {
     ui.section = String(hotspot.data || "input");
     if (!ui.pageBySection.hasOwnProperty(ui.section)) ui.pageBySection[ui.section] = 0;
@@ -1427,12 +1726,36 @@ function anything() {
   var sel = String(messagename || "");
 
   if (sel === "status") {
-    ui.statusState = args.length ? String(args[0]) : "";
-    ui.statusDetail = args.length > 1 ? String(args[1]) : "";
+    var statusTid = "";
+    var statusState = "";
+    var statusDetail = "";
+    if (args.length > 2 && /^[ABC]$/i.test(String(args[0] || ""))) {
+      statusTid = String(args[0]).toUpperCase();
+      statusState = String(args[1] || "");
+      statusDetail = String(args[2] || "");
+      if (ui.targets.hasOwnProperty(statusTid)) {
+        ui.targets[statusTid].state = statusState;
+        ui.targets[statusTid].detail = statusDetail;
+        if (statusState.toLowerCase() === "connected") ui.targets[statusTid].connected = 1;
+        if (statusState.toLowerCase() === "disconnected" || statusState.toLowerCase() === "error") ui.targets[statusTid].connected = 0;
+      }
+    } else {
+      statusTid = ui.activeTargetId;
+      statusState = args.length ? String(args[0]) : "";
+      statusDetail = args.length > 1 ? String(args[1]) : "";
+      if (ui.targets.hasOwnProperty(statusTid)) {
+        ui.targets[statusTid].state = statusState;
+        ui.targets[statusTid].detail = statusDetail;
+      }
+    }
+    if (statusTid === ui.activeTargetId) {
+      ui.statusState = statusState;
+      ui.statusDetail = statusDetail;
+      if (String(ui.statusState).toLowerCase() === "connected") ui.targetConnected = 1;
+      if (String(ui.statusState).toLowerCase() === "disconnected" || String(ui.statusState).toLowerCase() === "error") ui.targetConnected = 0;
+      if (statusDetail.indexOf(":") >= 0) ui.targetLastConnected = statusDetail.split(" ")[0];
+    }
     ui.lastInbound = "status." + ui.statusState;
-    if (String(ui.statusState).toLowerCase() === "connected") ui.targetConnected = 1;
-    if (String(ui.statusState).toLowerCase() === "disconnected" || String(ui.statusState).toLowerCase() === "error") ui.targetConnected = 0;
-    if (args.length > 1 && String(args[1]).indexOf(":") >= 0) ui.targetLastConnected = String(args[1]).split(" ")[0];
     ui.nodeReady = 1;
     sendInitToNode();
     mgraphics.redraw();
@@ -1440,12 +1763,40 @@ function anything() {
   }
 
   if (sel === "target") {
-    ui.targetHost = args.length ? String(args[0]) : ui.targetHost;
-    ui.targetPort = args.length > 1 ? asInt(args[1], ui.targetPort) : ui.targetPort;
-    ui.targetDevice = args.length > 2 ? String(args[2]) : ui.targetDevice;
-    ui.targetConnected = args.length > 3 ? (asInt(args[3], 0) ? 1 : 0) : ui.targetConnected;
-    ui.targetLastConnected = args.length > 4 ? String(args[4]) : ui.targetLastConnected;
-    ui.targetMode = args.length > 5 ? String(args[5]) : ui.targetMode;
+    var tid = "";
+    if (args.length > 6 && /^[ABC]$/i.test(String(args[0] || ""))) {
+      tid = String(args[0]).toUpperCase();
+      if (ui.targets.hasOwnProperty(tid)) {
+        ui.targets[tid].host = args.length > 1 ? String(args[1]) : ui.targets[tid].host;
+        ui.targets[tid].port = args.length > 2 ? asInt(args[2], ui.targets[tid].port) : ui.targets[tid].port;
+        ui.targets[tid].device = args.length > 3 ? String(args[3]) : ui.targets[tid].device;
+        ui.targets[tid].connected = args.length > 4 ? (asInt(args[4], 0) ? 1 : 0) : ui.targets[tid].connected;
+        ui.targets[tid].lastHost = args.length > 5 ? String(args[5]) : ui.targets[tid].lastHost;
+        ui.targets[tid].mode = args.length > 6 ? String(args[6]) : ui.targets[tid].mode;
+        ui.targets[tid].enabled = args.length > 7 ? (asInt(args[7], 0) ? 1 : 0) : ui.targets[tid].enabled;
+        ui.targets[tid].state = args.length > 8 ? String(args[8]) : ui.targets[tid].state;
+        ui.targets[tid].detail = args.length > 9 ? String(args[9]) : ui.targets[tid].detail;
+      }
+    } else {
+      tid = ui.activeTargetId;
+      if (!ui.targets.hasOwnProperty(tid)) tid = "A";
+      if (ui.targets.hasOwnProperty(tid)) {
+        ui.targets[tid].host = args.length ? String(args[0]) : ui.targets[tid].host;
+        ui.targets[tid].port = args.length > 1 ? asInt(args[1], ui.targets[tid].port) : ui.targets[tid].port;
+        ui.targets[tid].device = args.length > 2 ? String(args[2]) : ui.targets[tid].device;
+        ui.targets[tid].connected = args.length > 3 ? (asInt(args[3], 0) ? 1 : 0) : ui.targets[tid].connected;
+        ui.targets[tid].lastHost = args.length > 4 ? String(args[4]) : ui.targets[tid].lastHost;
+        ui.targets[tid].mode = args.length > 5 ? String(args[5]) : ui.targets[tid].mode;
+      }
+    }
+    if (tid === ui.activeTargetId && ui.targets.hasOwnProperty(tid)) {
+      ui.targetHost = ui.targets[tid].host;
+      ui.targetPort = ui.targets[tid].port;
+      ui.targetDevice = ui.targets[tid].device;
+      ui.targetConnected = ui.targets[tid].connected;
+      ui.targetLastConnected = ui.targets[tid].lastHost;
+      ui.targetMode = ui.targets[tid].mode;
+    }
     ui.lastInbound = "target." + (ui.targetConnected ? "connected" : "idle");
     ui.nodeReady = 1;
     sendInitToNode();
@@ -1453,8 +1804,26 @@ function anything() {
     return;
   }
 
+  if (sel === "targets_meta") {
+    ui.activeTargetId = args.length ? String(args[0] || "A").toUpperCase() : ui.activeTargetId;
+    ui.linkMode = args.length > 1 ? (asInt(args[1], ui.linkMode) ? 1 : 0) : ui.linkMode;
+    ui.autoReconnect = args.length > 2 ? (asInt(args[2], ui.autoReconnect) ? 1 : 0) : ui.autoReconnect;
+    mgraphics.redraw();
+    return;
+  }
+
   if (sel === "state") {
-    var st = parseJson(args[0]);
+    var stateTid = "";
+    var statePayload = "";
+    if (args.length > 1 && /^[ABC]$/i.test(String(args[0] || ""))) {
+      stateTid = String(args[0]).toUpperCase();
+      statePayload = args[1];
+    } else {
+      stateTid = ui.activeTargetId;
+      statePayload = args[0];
+    }
+    if (stateTid !== ui.activeTargetId) return;
+    var st = parseJson(statePayload);
     if (st) {
       mergeWithPending(ui.state, st, "state");
       if (typeof ui.state.ts !== "undefined") ui.state.ts = String(ui.state.ts).replace("-", "/");
@@ -1465,7 +1834,17 @@ function anything() {
   }
 
   if (sel === "params") {
-    var p = parseJson(args[0]);
+    var paramsTid = "";
+    var paramsPayload = "";
+    if (args.length > 1 && /^[ABC]$/i.test(String(args[0] || ""))) {
+      paramsTid = String(args[0]).toUpperCase();
+      paramsPayload = args[1];
+    } else {
+      paramsTid = ui.activeTargetId;
+      paramsPayload = args[0];
+    }
+    if (paramsTid !== ui.activeTargetId) return;
+    var p = parseJson(paramsPayload);
     if (p) {
       merge(ui.params, p);
       if (p.ranges) {
@@ -1479,7 +1858,17 @@ function anything() {
   }
 
   if (sel === "synth") {
-    var sy = parseJson(args[0]);
+    var synthTid = "";
+    var synthPayload = "";
+    if (args.length > 1 && /^[ABC]$/i.test(String(args[0] || ""))) {
+      synthTid = String(args[0]).toUpperCase();
+      synthPayload = args[1];
+    } else {
+      synthTid = ui.activeTargetId;
+      synthPayload = args[0];
+    }
+    if (synthTid !== ui.activeTargetId) return;
+    var sy = parseJson(synthPayload);
     if (sy) {
       mergeWithPending(ui.synth, sy, "synth");
       ui.lastInbound = "synth";
@@ -1489,9 +1878,16 @@ function anything() {
   }
 
   if (sel === "plant") {
-    ui.plantVal = asNum(args[0], 0);
-    ui.plantRaw = asInt(args[1], 0);
-    ui.plantRaw2 = asInt(args[2], 0);
+    var plantTid = ui.activeTargetId;
+    var plantOffset = 0;
+    if (args.length > 3 && /^[ABC]$/i.test(String(args[0] || ""))) {
+      plantTid = String(args[0]).toUpperCase();
+      plantOffset = 1;
+    }
+    if (plantTid !== ui.activeTargetId) return;
+    ui.plantVal = asNum(args[0 + plantOffset], 0);
+    ui.plantRaw = asInt(args[1 + plantOffset], 0);
+    ui.plantRaw2 = asInt(args[2 + plantOffset], 0);
     pushPlantValue(ui.plantVal);
     ui.lastInbound = "plant." + formatNumber(ui.plantVal);
     mgraphics.redraw();
@@ -1499,14 +1895,37 @@ function anything() {
   }
 
   if (sel === "midi_event") {
-    var on = asInt(args[0], 0);
-    ui.midiNote = asInt(args[1], 60);
-    ui.midiVel = asInt(args[2], 0);
-    ui.midiCh = asInt(args[3], 1);
+    var midiTid = ui.activeTargetId;
+    var midiOffset = 0;
+    if (args.length > 4 && /^[ABC]$/i.test(String(args[0] || ""))) {
+      midiTid = String(args[0]).toUpperCase();
+      midiOffset = 1;
+    }
+    if (midiTid !== ui.activeTargetId) return;
+    var on = asInt(args[0 + midiOffset], 0);
+    ui.midiNote = asInt(args[1 + midiOffset], 60);
+    ui.midiVel = asInt(args[2 + midiOffset], 0);
+    ui.midiCh = asInt(args[3 + midiOffset], 1);
     var bucket = midiBucket(ui.midiNote);
     if (on) ui.midiBins[bucket] = clip(ui.midiVel / 127, 0.2, 1);
     else ui.midiBins[bucket] = Math.max(ui.midiBins[bucket], 0.2);
     ui.lastInbound = "midi." + (on ? "on" : "off") + ".n" + ui.midiNote;
+    mgraphics.redraw();
+    return;
+  }
+
+  if (sel === "scale_sync_status") {
+    var scaleOffset = 0;
+    if (args.length > 3 && /^[ABC]$/i.test(String(args[0] || ""))) {
+      if (String(args[0]).toUpperCase() !== ui.activeTargetId) return;
+      scaleOffset = 1;
+    }
+    ui.scaleSyncState = args.length > scaleOffset ? String(args[0 + scaleOffset]) : "idle";
+    ui.scaleSyncDetail = args.length > scaleOffset + 1 ? String(args[1 + scaleOffset]) : "";
+    if (args.length > scaleOffset + 4) {
+      ui.state.scale = asInt(args[3 + scaleOffset], ui.state.scale);
+      ui.state.root = asInt(args[4 + scaleOffset], ui.state.root);
+    }
     mgraphics.redraw();
     return;
   }
@@ -1535,15 +1954,19 @@ function sendInitToNode() {
   ui.initSent = 1;
   sendCmd("set_mode", "http");
   sendCmd("set_auto_reconnect", 1);
+  sendCmd("set_link_mode", ui.linkMode ? 1 : 0);
+  sendCmd("set_active_target", ui.activeTargetId);
   sendCmd("set_emit_mode", ui.emitMode);
   sendCmd("set_device_name", ui.deviceName);
   if (String(ui.host || "").length) sendCmd("set_http_host", ui.host);
   sendCmd("set_http_port", ui.port);
+  sendCmd("set_target_enabled", "B", ui.targets.B && ui.targets.B.enabled ? 1 : 0);
+  sendCmd("set_target_enabled", "C", ui.targets.C && ui.targets.C.enabled ? 1 : 0);
   sendCmd("auto_connect");
-  sendCmd("request_params");
-  sendCmd("request_state");
-  sendCmd("request_synth");
-  sendCmd("request_fast");
+  sendCmd("request_params", ui.activeTargetId);
+  sendCmd("request_state", ui.activeTargetId);
+  sendCmd("request_synth", ui.activeTargetId);
+  sendCmd("request_fast", ui.activeTargetId);
   sendCmd("request_target");
 }
 

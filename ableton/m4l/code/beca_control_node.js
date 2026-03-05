@@ -106,6 +106,8 @@ const runtime = {
   ip: "beca-blk.local",
   deviceName: "beca-blk",
   port: 80,
+  activeTargetId: "A",
+  linkMode: true,
   autoReconnect: true,
   emitMode: "reemit", // reemit | monitor
   connected: false,
@@ -118,6 +120,8 @@ const runtime = {
   legacySseRestartTimer: null,
   lastConnectedHost: "",
   lastStatusToken: "",
+  lastStatusState: "ready",
+  lastStatusDetail: "idle",
   infoTick: 0,
   statePollMs: 250,
   fastPollMs: 40,
@@ -190,12 +194,50 @@ const runtime = {
   },
 };
 
+function createExtraTarget(id) {
+  return {
+    id,
+    mode: "http",
+    enabled: false,
+    ip: "beca.local",
+    port: 80,
+    deviceName: "beca",
+    connected: false,
+    connecting: false,
+    lastConnectedHost: "",
+    lastStatusToken: "",
+    lastStatusState: "ready",
+    lastStatusDetail: "idle",
+    lastDiscoveryAt: 0,
+    discoveryTimer: null,
+    discoveryInFlight: false,
+    pollTimer: null,
+    fastTimer: null,
+    setTimer: null,
+    setInFlight: false,
+    pendingSet: [],
+    lastSetSentAt: 0,
+    lastPlant: { value: 0, raw: 0, raw2: 0 },
+    activeNotes: new Map(),
+  };
+}
+
+const extraTargets = {
+  B: createExtraTarget("B"),
+  C: createExtraTarget("C"),
+};
+
 function nowMs() {
   return Date.now();
 }
 
 function asNumber(v, fallback) {
   const n = Number(v);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function asInt(v, fallback) {
+  const n = parseInt(v, 10);
   return Number.isFinite(n) ? n : fallback;
 }
 
@@ -220,6 +262,57 @@ function normalizeDeviceName(input) {
   if (!name) return "";
   if (name.endsWith(".local")) name = name.slice(0, -6);
   return name.trim();
+}
+
+function normalizeTargetId(input) {
+  const id = String(input || "").trim().toUpperCase();
+  if (id === "A" || id === "B" || id === "C") return id;
+  return "A";
+}
+
+function getExtraTarget(id) {
+  const key = normalizeTargetId(id);
+  if (key === "A") return null;
+  return extraTargets[key] || null;
+}
+
+function targetIsActive(id) {
+  return normalizeTargetId(id) === normalizeTargetId(runtime.activeTargetId);
+}
+
+function emitTargetsMeta() {
+  maxApi.outlet([
+    "targets_meta",
+    String(runtime.activeTargetId || "A"),
+    runtime.linkMode ? 1 : 0,
+    runtime.autoReconnect ? 1 : 0,
+  ]);
+}
+
+function normalizeScaleSyncSource(value) {
+  const raw = String(value || "").trim().toLowerCase();
+  if (raw === "1" || raw === "selected_clip" || raw === "clip") return "selected_clip";
+  if (raw === "2" || raw === "manual") return "manual";
+  return "scale_device";
+}
+
+function applySyncedScale(scaleIndex, rootIndex, source, targetHint) {
+  const scale = Math.max(0, Math.min(14, asInt(scaleIndex, 0)));
+  const root = Math.max(0, Math.min(11, asInt(rootIndex, 0)));
+  const targets = resolveTargetsForControl(targetHint);
+  targets.forEach((target) => {
+    if (target.id === "A") {
+      queueSet("scale", String(scale));
+      queueSet("root", String(root));
+      emitJson("state", { scale, root });
+    } else {
+      queueSetForExtra(target, "scale", String(scale));
+      queueSetForExtra(target, "root", String(root));
+      emitJsonForExtra("state", target.id, { scale, root });
+    }
+  });
+  maxApi.outlet(["scale_sync_status", normalizeTargetId(runtime.activeTargetId), "ok", "Scale synced", String(source || "manual"), scale, root]);
+  maxApi.outlet(["scale_sync_status", "ok", "Scale synced", String(source || "manual"), scale, root]);
 }
 
 function isPrivateIpv4(ip) {
@@ -378,9 +471,15 @@ function looksLikeBecaInfo(payload) {
 
 function emitStatus(state, detail) {
   const token = `${String(state || "")}|${String(detail || "")}`;
-  if (runtime.lastStatusToken === token) return;
-  runtime.lastStatusToken = token;
-  maxApi.outlet(["status", state, detail || ""]);
+  if (runtime.lastStatusToken !== token) {
+    runtime.lastStatusToken = token;
+    runtime.lastStatusState = String(state || "");
+    runtime.lastStatusDetail = String(detail || "");
+    maxApi.outlet(["status", "A", state, detail || ""]);
+    if (targetIsActive("A")) {
+      maxApi.outlet(["status", state, detail || ""]);
+    }
+  }
   emitTarget();
 }
 
@@ -392,27 +491,108 @@ function postDebug(line) {
   }
 }
 
-function emitTarget() {
+function emitTargetForExtra(target) {
   maxApi.outlet([
     "target",
+    String(target.id || ""),
+    String(target.ip || ""),
+    String(target.port || ""),
+    String(target.deviceName || ""),
+    target.connected ? 1 : 0,
+    String(target.lastConnectedHost || ""),
+    String(target.mode || "http"),
+    target.enabled ? 1 : 0,
+    String(target.lastStatusState || ""),
+    String(target.lastStatusDetail || ""),
+  ]);
+}
+
+function emitTarget() {
+  emitTargetsMeta();
+  maxApi.outlet([
+    "target",
+    "A",
     String(runtime.ip || ""),
     String(runtime.port || ""),
     String(runtime.deviceName || ""),
     runtime.connected ? 1 : 0,
     String(runtime.lastConnectedHost || ""),
     String(runtime.mode || ""),
+    1,
+    String(runtime.lastStatusState || ""),
+    String(runtime.lastStatusDetail || ""),
   ]);
+  const b = extraTargets.B;
+  const c = extraTargets.C;
+  emitTargetForExtra(b);
+  emitTargetForExtra(c);
+
+  if (targetIsActive("A")) {
+    maxApi.outlet([
+      "target",
+      String(runtime.ip || ""),
+      String(runtime.port || ""),
+      String(runtime.deviceName || ""),
+      runtime.connected ? 1 : 0,
+      String(runtime.lastConnectedHost || ""),
+      String(runtime.mode || ""),
+    ]);
+    return;
+  }
+
+  const activeExtra = targetIsActive("B") ? b : targetIsActive("C") ? c : null;
+  if (activeExtra) {
+    maxApi.outlet([
+      "target",
+      String(activeExtra.ip || ""),
+      String(activeExtra.port || ""),
+      String(activeExtra.deviceName || ""),
+      activeExtra.connected ? 1 : 0,
+      String(activeExtra.lastConnectedHost || ""),
+      String(activeExtra.mode || "http"),
+    ]);
+  }
 }
 
 function emitJson(tag, data) {
-  maxApi.outlet([tag, JSON.stringify(data || {})]);
+  const json = JSON.stringify(data || {});
+  maxApi.outlet([tag, "A", json]);
+  if (targetIsActive("A")) {
+    maxApi.outlet([tag, json]);
+  }
+}
+
+function emitJsonForExtra(tag, targetId, data) {
+  const target = getExtraTarget(targetId);
+  if (!target) return;
+  const json = JSON.stringify(data || {});
+  maxApi.outlet([tag, target.id, json]);
+  if (targetIsActive(target.id)) {
+    maxApi.outlet([tag, json]);
+  }
 }
 
 function emitPlant(data) {
   const value = asNumber(data.value, 0);
   const raw = asNumber(data.raw, 0);
   const raw2 = asNumber(data.raw2, 0);
-  maxApi.outlet(["plant", value, raw, raw2]);
+  maxApi.outlet(["plant", "A", value, raw, raw2]);
+  if (targetIsActive("A")) {
+    maxApi.outlet(["plant", value, raw, raw2]);
+  }
+}
+
+function emitPlantForExtra(targetId, data) {
+  const target = getExtraTarget(targetId);
+  if (!target) return;
+  const value = asNumber(data.value, 0);
+  const raw = asNumber(data.raw, 0);
+  const raw2 = asNumber(data.raw2, 0);
+  target.lastPlant = { value, raw, raw2 };
+  maxApi.outlet(["plant", target.id, value, raw, raw2]);
+  if (targetIsActive(target.id)) {
+    maxApi.outlet(["plant", value, raw, raw2]);
+  }
 }
 
 function emitMidiStatus(payload) {
@@ -420,7 +600,39 @@ function emitMidiStatus(payload) {
   const vel = asNumber(payload.vel, 0);
   const ch = asNumber(payload.ch, 1);
   const on = !!payload.on;
-  maxApi.outlet(["midi_event", on ? 1 : 0, note, vel, ch]);
+  maxApi.outlet(["midi_event", "A", on ? 1 : 0, note, vel, ch]);
+  if (targetIsActive("A")) {
+    maxApi.outlet(["midi_event", on ? 1 : 0, note, vel, ch]);
+  }
+}
+
+function emitMidiStatusForExtra(targetId, payload) {
+  const target = getExtraTarget(targetId);
+  if (!target) return;
+  const note = asNumber(payload.note, 0);
+  const vel = asNumber(payload.vel, 0);
+  const ch = asNumber(payload.ch, 1);
+  const on = !!payload.on;
+  maxApi.outlet(["midi_event", target.id, on ? 1 : 0, note, vel, ch]);
+  if (targetIsActive(target.id)) {
+    maxApi.outlet(["midi_event", on ? 1 : 0, note, vel, ch]);
+  }
+}
+
+function emitStatusForExtra(target, state, detail) {
+  if (!target) return;
+  const safeState = String(state || "");
+  const safeDetail = String(detail || "");
+  const token = `${safeState}|${safeDetail}`;
+  if (target.lastStatusToken === token) return;
+  target.lastStatusToken = token;
+  target.lastStatusState = safeState;
+  target.lastStatusDetail = safeDetail;
+  maxApi.outlet(["status", target.id, safeState, safeDetail]);
+  if (targetIsActive(target.id)) {
+    maxApi.outlet(["status", safeState, safeDetail]);
+  }
+  emitTarget();
 }
 
 function emitMidiBytes(on, note, vel, ch) {
@@ -1091,7 +1303,7 @@ function applyNotesSnapshot(snapshot) {
   for (const note of runtime.activeNotes.keys()) {
     if (!nextSet.has(note)) {
       runtime.activeNotes.delete(note);
-      if (runtime.emitMode === "reemit") {
+      if (runtime.emitMode === "reemit" && targetIsActive("A")) {
         emitMidiBytes(false, note, 0, ch);
       }
       emitMidiStatus({ on: false, note, vel: 0, ch });
@@ -1101,14 +1313,17 @@ function applyNotesSnapshot(snapshot) {
   for (const note of notes) {
     if (!runtime.activeNotes.has(note)) {
       runtime.activeNotes.set(note, vel);
-      if (runtime.emitMode === "reemit") {
+      if (runtime.emitMode === "reemit" && targetIsActive("A")) {
         emitMidiBytes(true, note, vel, ch);
       }
       emitMidiStatus({ on: true, note, vel, ch });
     }
   }
 
-  maxApi.outlet(["note_grid", notes.join(","), vel, ch]);
+  maxApi.outlet(["note_grid", "A", notes.join(","), vel, ch]);
+  if (targetIsActive("A")) {
+    maxApi.outlet(["note_grid", notes.join(","), vel, ch]);
+  }
 }
 
 function parseSerialMidiHex(line) {
@@ -1204,7 +1419,7 @@ function handleSerialLine(line) {
     }
     if (evt.type === "midi") {
       emitMidiStatus(evt);
-      if (runtime.emitMode === "reemit") {
+      if (runtime.emitMode === "reemit" && targetIsActive("A")) {
         emitMidiBytes(!!evt.on, asNumber(evt.note, 0), asNumber(evt.on ? evt.vel : 0, 0), asNumber(evt.ch, 1));
       }
       return;
@@ -1237,7 +1452,7 @@ function handleSerialLine(line) {
     const evt = parseSerialMidiHex(trimmed);
     if (!evt) return;
     emitMidiStatus(evt);
-    if (runtime.emitMode === "reemit") {
+    if (runtime.emitMode === "reemit" && targetIsActive("A")) {
       emitMidiBytes(!!evt.on, evt.note, evt.on ? evt.vel : 0, evt.ch);
     }
   }
@@ -1389,6 +1604,363 @@ async function findResponsiveHost(candidates, port) {
   if (quick) return quick;
   if (!tail.length) return null;
   return probeCandidateBatch(tail, port, 12);
+}
+
+function allExtraTargets() {
+  return [extraTargets.B, extraTargets.C];
+}
+
+function buildDiscoveryCandidatesForTarget(target) {
+  const candidates = [];
+  const seen = new Set();
+  const add = (value) => {
+    const host = normalizeHostValue(value);
+    if (!host || seen.has(host)) return;
+    seen.add(host);
+    candidates.push(host);
+  };
+
+  add(target.lastConnectedHost);
+  add(target.ip);
+  const name = normalizeDeviceName(target.deviceName);
+  if (name) {
+    add(name);
+    add(`${name}.local`);
+  }
+  add("beca.local");
+  add("beca");
+  add("beca-blk.local");
+  add("beca-blk");
+  add("192.168.4.1");
+  add("192.168.0.11");
+
+  const interfaces = os.networkInterfaces ? os.networkInterfaces() : {};
+  const prefixes = new Set();
+  Object.keys(interfaces || {}).forEach((ifaceName) => {
+    const list = interfaces[ifaceName] || [];
+    list.forEach((entry) => {
+      if (!entry || entry.internal) return;
+      const family = String(entry.family || "");
+      if (family !== "IPv4" && family !== "4") return;
+      if (!isPrivateIpv4(entry.address)) return;
+      const parts = String(entry.address).split(".");
+      if (parts.length !== 4) return;
+      prefixes.add(`${parts[0]}.${parts[1]}.${parts[2]}`);
+    });
+  });
+
+  const subnetSweep = [1, 2, 3, 4, 5, 8, 10, 11, 12, 16, 20, 24, 30, 40, 50, 64, 80, 96, 100, 120, 150, 180, 200];
+  for (const prefix of prefixes) {
+    for (const host of subnetSweep) add(`${prefix}.${host}`);
+  }
+
+  return candidates;
+}
+
+function stopExtraTarget(target, emit = true) {
+  if (!target) return;
+  if (target.pollTimer) clearInterval(target.pollTimer);
+  if (target.fastTimer) clearInterval(target.fastTimer);
+  if (target.setTimer) clearInterval(target.setTimer);
+  if (target.discoveryTimer) clearTimeout(target.discoveryTimer);
+  target.pollTimer = null;
+  target.fastTimer = null;
+  target.setTimer = null;
+  target.discoveryTimer = null;
+  target.connected = false;
+  target.connecting = false;
+  target.setInFlight = false;
+  target.pendingSet = [];
+  target.activeNotes.clear();
+  if (emit) {
+    emitStatusForExtra(target, "disconnected", "");
+    emitTarget();
+  }
+}
+
+function queueSetForExtra(target, key, value) {
+  const deduped = target.pendingSet.filter((item) => item.key !== key);
+  deduped.push({ key, value, attempts: 0 });
+  target.pendingSet = deduped;
+}
+
+async function sendSetToExtra(target, key, value) {
+  const k = String(key || "").toLowerCase();
+  const v = String(value || "");
+
+  try {
+    if (k === "outputmode") {
+      const body = new URLSearchParams({ mode: v }).toString();
+      await requestJsonTarget(target.ip, target.port, "POST", "/api/outputmode", body, 1200);
+      return;
+    }
+    if (k === "mute" || k === "io_muted") {
+      const body = new URLSearchParams({ v: String(legacyFlag(v)) }).toString();
+      await requestJsonTarget(target.ip, target.port, "POST", "/api/mute", body, 1200);
+      return;
+    }
+    if (k === "sync" || k === "daw_sync") {
+      const body = new URLSearchParams({ v: String(legacyFlag(v)) }).toString();
+      await requestJsonTarget(target.ip, target.port, "POST", "/api/sync", body, 1200);
+      return;
+    }
+    if (isSynthSetKey(k)) {
+      const patch = new URLSearchParams();
+      if (k === "preset_reset") patch.set("reset", legacyFlag(v) ? "1" : "0");
+      else patch.set(k, v);
+      const synth = await requestJsonTarget(target.ip, target.port, "POST", "/api/synth", patch.toString(), 1200);
+      emitJsonForExtra("synth", target.id, synth);
+      return;
+    }
+    const legacyPath = buildLegacyGetPath(k, v);
+    if (legacyPath.length) {
+      await requestTextTarget(target.ip, target.port, "GET", legacyPath, "", 1200);
+      return;
+    }
+    const body = new URLSearchParams({ key: String(k), value: String(v) }).toString();
+    await requestJsonTarget(target.ip, target.port, "POST", "/api/set", body, 1200);
+  } catch (legacyErr) {
+    const body = new URLSearchParams({ key: String(k), value: String(v) }).toString();
+    await requestJsonTarget(target.ip, target.port, "POST", "/api/set", body, 1200).catch(() => {
+      throw legacyErr;
+    });
+  }
+}
+
+function flushExtraSetQueue(target) {
+  if (!target || !target.enabled) return;
+  if (target.setInFlight) return;
+  if (!target.pendingSet.length) return;
+  const minGapMs = 66;
+  const waitMs = Math.max(0, minGapMs - (nowMs() - target.lastSetSentAt));
+  if (waitMs > 0) return;
+
+  const next = target.pendingSet.shift();
+  target.lastSetSentAt = nowMs();
+  target.setInFlight = true;
+  sendSetToExtra(target, next.key, next.value)
+    .then(() => {
+      target.setInFlight = false;
+      target.connected = true;
+      target.lastConnectedHost = target.ip;
+      emitTarget();
+    })
+    .catch((err) => {
+      target.setInFlight = false;
+      const msg = String((err && err.message) || err || "set failed");
+      const attempts = (Number(next.attempts) || 0) + 1;
+      if (attempts <= 4) {
+        target.pendingSet.unshift({ key: next.key, value: next.value, attempts });
+      } else {
+        emitStatusForExtra(target, "warn", `set ${next.key} failed: ${msg}`);
+      }
+    });
+}
+
+function emitExtraNoteGrid(target, notes, vel, ch) {
+  maxApi.outlet(["note_grid", target.id, notes.join(","), vel, ch]);
+  if (targetIsActive(target.id)) {
+    maxApi.outlet(["note_grid", notes.join(","), vel, ch]);
+  }
+}
+
+function applyNotesSnapshotForExtra(target, snapshot) {
+  const notes = Array.isArray(snapshot.notes)
+    ? snapshot.notes.map((n) => Number(n)).filter((n) => Number.isFinite(n))
+    : [];
+  const vel = asNumber(snapshot.vel || snapshot.last_vel, 96);
+  const ch = 1;
+
+  const nextSet = new Set(notes);
+  for (const note of target.activeNotes.keys()) {
+    if (!nextSet.has(note)) {
+      target.activeNotes.delete(note);
+      emitMidiStatusForExtra(target.id, { on: false, note, vel: 0, ch });
+      if (runtime.emitMode === "reemit" && targetIsActive(target.id)) {
+        emitMidiBytes(false, note, 0, ch);
+      }
+    }
+  }
+
+  for (const note of notes) {
+    if (!target.activeNotes.has(note)) {
+      target.activeNotes.set(note, vel);
+      emitMidiStatusForExtra(target.id, { on: true, note, vel, ch });
+      if (runtime.emitMode === "reemit" && targetIsActive(target.id)) {
+        emitMidiBytes(true, note, vel, ch);
+      }
+    }
+  }
+
+  emitExtraNoteGrid(target, notes, vel, ch);
+}
+
+async function pollExtraState(target) {
+  if (!target || !target.enabled) return;
+  try {
+    const state = await requestJsonTarget(target.ip, target.port, "GET", "/api/state", "", runtime.discoveryTimeoutMs);
+    target.connected = true;
+    target.connecting = false;
+    target.lastConnectedHost = target.ip;
+    emitJsonForExtra("state", target.id, state);
+    emitTarget();
+    emitStatusForExtra(target, "connected", `${target.ip}:${target.port}`);
+  } catch (err) {
+    target.connected = false;
+    target.connecting = false;
+    emitTarget();
+    emitStatusForExtra(target, "warn", String((err && err.message) || err || "state poll failed"));
+  }
+}
+
+async function pollExtraFast(target) {
+  if (!target || !target.enabled) return;
+  if (target.setInFlight || target.pendingSet.length) return;
+  if ((nowMs() - target.lastSetSentAt) < 140) return;
+  try {
+    const [plant, notes] = await Promise.all([
+      requestJsonTarget(target.ip, target.port, "GET", "/api/plant", "", runtime.discoveryTimeoutMs),
+      requestJsonTarget(target.ip, target.port, "GET", "/api/notes", "", runtime.discoveryTimeoutMs),
+    ]);
+    emitPlantForExtra(target.id, plant);
+    applyNotesSnapshotForExtra(target, notes);
+    target.connected = true;
+    target.lastConnectedHost = target.ip;
+    emitTarget();
+  } catch (_err) {
+    // keep fast polling best-effort
+  }
+}
+
+async function pollExtraParams(target) {
+  if (!target || !target.enabled) return;
+  try {
+    const params = await requestJsonTarget(target.ip, target.port, "GET", "/api/params", "", 1200);
+    emitJsonForExtra("params", target.id, params);
+  } catch (_err) {
+    // optional
+  }
+}
+
+async function pollExtraSynth(target) {
+  if (!target || !target.enabled) return;
+  try {
+    const synth = await requestJsonTarget(target.ip, target.port, "GET", "/api/synth", "", 1200);
+    emitJsonForExtra("synth", target.id, synth);
+  } catch (_err) {
+    // optional
+  }
+}
+
+function scheduleExtraDiscovery(target, reason, delayMs = 80) {
+  if (!target || !target.enabled || !runtime.autoReconnect) return;
+  if (target.discoveryTimer) clearTimeout(target.discoveryTimer);
+  target.discoveryTimer = setTimeout(() => {
+    target.discoveryTimer = null;
+    discoverAndAdoptExtraTarget(target, reason).catch(() => {});
+  }, Math.max(0, Number(delayMs) || 0));
+}
+
+async function discoverAndAdoptExtraTarget(target, reason) {
+  if (!target || !target.enabled) return false;
+  if (target.connected) return false;
+  if (target.discoveryInFlight) return false;
+
+  const elapsed = nowMs() - target.lastDiscoveryAt;
+  if (elapsed < runtime.discoveryCooldownMs) return false;
+
+  target.discoveryInFlight = true;
+  target.lastDiscoveryAt = nowMs();
+  target.connecting = true;
+  emitStatusForExtra(target, "discovering", reason || "searching for BECA");
+  try {
+    const candidates = buildDiscoveryCandidatesForTarget(target);
+    const found = await findResponsiveHost(candidates, target.port);
+    if (!found || !found.host) {
+      target.connecting = false;
+      emitStatusForExtra(target, "warn", "auto-discovery did not find BECA");
+      return false;
+    }
+
+    const resolvedHost = normalizeHostValue(found.adoptedHost) || normalizeHostValue(found.host);
+    target.ip = resolvedHost;
+    target.lastConnectedHost = resolvedHost;
+    if (found.info && found.info.name) {
+      const maybeName = normalizeDeviceName(found.info.name);
+      if (maybeName) target.deviceName = maybeName;
+    }
+    emitTarget();
+    emitStatusForExtra(target, "identified", `${resolvedHost}:${target.port}`);
+    pollExtraState(target);
+    pollExtraFast(target);
+    pollExtraParams(target);
+    pollExtraSynth(target);
+    return true;
+  } finally {
+    target.discoveryInFlight = false;
+  }
+}
+
+function startExtraTarget(target, reason) {
+  if (!target) return;
+  if (!target.enabled) {
+    stopExtraTarget(target, true);
+    return;
+  }
+
+  if (target.pollTimer) clearInterval(target.pollTimer);
+  if (target.fastTimer) clearInterval(target.fastTimer);
+  if (target.setTimer) clearInterval(target.setTimer);
+  if (target.discoveryTimer) clearTimeout(target.discoveryTimer);
+
+  target.connected = false;
+  target.connecting = true;
+  target.setInFlight = false;
+  emitStatusForExtra(target, "connecting", reason || `${target.ip}:${target.port}`);
+  emitTarget();
+
+  target.pollTimer = setInterval(() => pollExtraState(target), runtime.statePollMs);
+  target.fastTimer = setInterval(() => pollExtraFast(target), runtime.fastPollMs);
+  target.setTimer = setInterval(() => flushExtraSetQueue(target), 25);
+
+  pollExtraState(target);
+  pollExtraFast(target);
+  pollExtraParams(target);
+  pollExtraSynth(target);
+  scheduleExtraDiscovery(target, "extra target startup", 180);
+}
+
+function startAllExtraTargets() {
+  allExtraTargets().forEach((target) => {
+    if (target.enabled) startExtraTarget(target, "startup");
+    else stopExtraTarget(target, false);
+  });
+}
+
+function resolveTargetsForControl(targetHint) {
+  const hinted = normalizeTargetId(targetHint || "");
+  if (hinted === "B" || hinted === "C") {
+    const target = getExtraTarget(hinted);
+    return target && target.enabled ? [target] : [];
+  }
+  if (hinted === "A" && String(targetHint || "").trim().length) {
+    return [{ id: "A" }];
+  }
+
+  if (runtime.linkMode) {
+    const out = [{ id: "A" }];
+    allExtraTargets().forEach((target) => {
+      if (target.enabled) out.push(target);
+    });
+    return out;
+  }
+
+  const active = normalizeTargetId(runtime.activeTargetId || "A");
+  if (active === "B" || active === "C") {
+    const target = getExtraTarget(active);
+    return target && target.enabled ? [target] : [{ id: "A" }];
+  }
+  return [{ id: "A" }];
 }
 
 function scheduleDiscovery(reason, delayMs = 80) {
@@ -1581,6 +2153,8 @@ function beginHttpMode() {
   pollHttpParams();
   pollHttpSynth();
   scheduleDiscovery("http startup", 180);
+  startAllExtraTargets();
+  emitTarget();
 }
 
 function serialSnapshotTick() {
@@ -1592,6 +2166,7 @@ function serialSnapshotTick() {
 
 async function beginSerialMode(path, baudRate) {
   stopAllTimers();
+  allExtraTargets().forEach((target) => stopExtraTarget(target, false));
   runtime.mode = "serial";
   runtime.httpLegacy = false;
   runtime.serialStatusTicker = 0;
@@ -1672,6 +2247,7 @@ function applyMockParam(key, value) {
 
 function beginMockMode() {
   stopAllTimers();
+  allExtraTargets().forEach((target) => stopExtraTarget(target, false));
   runtime.mode = "mock";
   runtime.httpLegacy = false;
   runtime.connected = true;
@@ -1690,14 +2266,17 @@ function beginMockMode() {
       const note = 48 + Math.floor(Math.random() * 24);
       const vel = 70 + Math.floor(Math.random() * 56);
       const ch = 1;
-      if (runtime.emitMode === "reemit") {
+      if (runtime.emitMode === "reemit" && targetIsActive("A")) {
         emitMidiBytes(true, note, vel, ch);
         setTimeout(() => emitMidiBytes(false, note, 0, ch), 160 + Math.floor(Math.random() * 220));
       }
       emitMidiStatus({ on: true, note, vel, ch });
       runtime.mockState.last = String(note);
       runtime.mockState.vel = vel;
-      maxApi.outlet(["note_grid", String(note), vel, ch]);
+      maxApi.outlet(["note_grid", "A", String(note), vel, ch]);
+      if (targetIsActive("A")) {
+        maxApi.outlet(["note_grid", String(note), vel, ch]);
+      }
     }
 
     runtime.mockState.ver += 1;
@@ -1713,20 +2292,37 @@ function disconnectAll() {
   closeSerialPort();
   runtime.httpLegacy = false;
   runtime.connected = false;
+  runtime.activeTargetId = normalizeTargetId(runtime.activeTargetId);
   emitTarget();
   runtime.pendingSet = [];
   runtime.activeNotes.clear();
+  allExtraTargets().forEach((target) => stopExtraTarget(target, false));
+  emitTarget();
   emitStatus("disconnected", "");
 }
 
-maxApi.addHandler("connect_http", (ip, port) => {
+maxApi.addHandler("connect_http", (ip, port, targetId) => {
+  const tid = normalizeTargetId(targetId);
   const host = normalizeHostValue(ip);
-  if (host) runtime.ip = host;
-  const fromLocalName = runtime.ip.endsWith(".local");
-  if (fromLocalName) runtime.deviceName = normalizeDeviceName(runtime.ip);
-  runtime.port = Math.max(1, Number(port || runtime.port) || runtime.port);
+  if (tid === "A") {
+    if (host) runtime.ip = host;
+    const fromLocalName = runtime.ip.endsWith(".local");
+    if (fromLocalName) runtime.deviceName = normalizeDeviceName(runtime.ip);
+    runtime.port = Math.max(1, Number(port || runtime.port) || runtime.port);
+    emitTarget();
+    beginHttpMode();
+    return;
+  }
+
+  const target = getExtraTarget(tid);
+  if (!target) return;
+  if (host) target.ip = host;
+  target.port = Math.max(1, Number(port || target.port) || target.port);
+  const fromLocalName = target.ip.endsWith(".local");
+  if (fromLocalName) target.deviceName = normalizeDeviceName(target.ip);
+  target.enabled = true;
   emitTarget();
-  beginHttpMode();
+  startExtraTarget(target, "manual connect");
 });
 
 maxApi.addHandler("connect_serial", (port, baud) => {
@@ -1743,21 +2339,59 @@ maxApi.addHandler("connect_mock", () => {
   beginMockMode();
 });
 
-maxApi.addHandler("disconnect", () => {
-  disconnectAll();
+maxApi.addHandler("disconnect", (targetId) => {
+  const raw = String(targetId || "").trim();
+  if (!raw.length) {
+    disconnectAll();
+    return;
+  }
+  const tid = normalizeTargetId(raw);
+  if (tid === "A") {
+    stopAllTimers();
+    closeSerialPort();
+    runtime.httpLegacy = false;
+    runtime.connected = false;
+    runtime.pendingSet = [];
+    runtime.activeNotes.clear();
+    emitTarget();
+    emitStatus("disconnected", "");
+    return;
+  }
+  const target = getExtraTarget(tid);
+  if (!target) return;
+  stopExtraTarget(target);
 });
 
-maxApi.addHandler("set_mode", (mode) => {
+maxApi.addHandler("set_mode", (mode, targetId) => {
+  const tid = normalizeTargetId(targetId);
   const next = normalizeMode(String(mode || "http").toLowerCase());
-  if (next === "serial") beginSerialMode(runtime.serialPortPath, runtime.serialBaud);
-  else if (next === "mock") beginMockMode();
-  else beginHttpMode();
+  if (tid === "A") {
+    if (next === "serial") beginSerialMode(runtime.serialPortPath, runtime.serialBaud);
+    else if (next === "mock") beginMockMode();
+    else beginHttpMode();
+    return;
+  }
+  const target = getExtraTarget(tid);
+  if (!target) return;
+  if (next !== "http") {
+    emitStatusForExtra(target, "warn", `mode ${next} unavailable for slot ${tid}; using http`);
+  }
+  target.mode = "http";
+  if (target.enabled) startExtraTarget(target, "mode update");
 });
 
 maxApi.addHandler("set_auto_reconnect", (flag) => {
   runtime.autoReconnect = Number(flag || 0) !== 0;
+  emitTargetsMeta();
   if (runtime.mode === "http" && runtime.autoReconnect && !runtime.connected) {
     scheduleDiscovery("auto reconnect enabled", 30);
+  }
+  if (runtime.autoReconnect) {
+    allExtraTargets().forEach((target) => {
+      if (target.enabled && !target.connected) {
+        scheduleExtraDiscovery(target, "auto reconnect enabled", 30);
+      }
+    });
   }
 });
 
@@ -1766,43 +2400,199 @@ maxApi.addHandler("set_emit_mode", (mode) => {
   runtime.emitMode = next === "monitor" ? "monitor" : "reemit";
 });
 
-maxApi.addHandler("set_param", (key, value) => {
-  if (typeof key === "undefined") return;
-  queueSet(String(key), String(value));
+maxApi.addHandler("set_link_mode", (flag) => {
+  runtime.linkMode = Number(flag || 0) !== 0;
+  emitTargetsMeta();
 });
 
-maxApi.addHandler("set_http_host", (host) => {
+maxApi.addHandler("set_active_target", (targetId) => {
+  runtime.activeTargetId = normalizeTargetId(targetId);
+  emitTarget();
+  if (runtime.activeTargetId === "A") {
+    if (runtime.mode === "serial") {
+      sendSerialControl("STATE");
+      sendSerialControl("PARAMS");
+      sendSerialControl("SYNTH");
+      sendSerialControl("PLANT");
+      sendSerialControl("NOTES");
+    } else if (runtime.mode === "http") {
+      pollHttpState();
+      pollHttpParams();
+      pollHttpSynth();
+      pollHttpFast();
+    } else if (runtime.mode === "mock") {
+      emitJson("state", runtime.mockState);
+      emitJson("params", runtime.params);
+      emitJson("synth", runtime.synth);
+    }
+  } else {
+    const target = getExtraTarget(runtime.activeTargetId);
+    if (!target) return;
+    pollExtraState(target);
+    pollExtraParams(target);
+    pollExtraSynth(target);
+    pollExtraFast(target);
+    emitPlantForExtra(target.id, target.lastPlant || { value: 0, raw: 0, raw2: 0 });
+  }
+});
+
+maxApi.addHandler("set_param", (key, value, targetId) => {
+  if (typeof key === "undefined") return;
+  const k = String(key);
+  const v = String(value);
+  const targets = resolveTargetsForControl(targetId);
+  targets.forEach((target) => {
+    if (target.id === "A") queueSet(k, v);
+    else queueSetForExtra(target, k, v);
+  });
+});
+
+maxApi.addHandler("set_http_host", (host, targetId) => {
   const next = normalizeHostValue(host);
   if (!next.length) return;
-  runtime.ip = next;
+  const tid = normalizeTargetId(targetId);
+  if (tid === "A") {
+    runtime.ip = next;
+    emitTarget();
+    if (runtime.mode === "http" && runtime.autoReconnect && !runtime.connected) {
+      scheduleDiscovery("host updated", 20);
+    }
+    return;
+  }
+  const target = getExtraTarget(tid);
+  if (!target) return;
+  target.ip = next;
   emitTarget();
-  if (runtime.mode === "http" && runtime.autoReconnect && !runtime.connected) {
-    scheduleDiscovery("host updated", 20);
+  if (target.enabled && runtime.autoReconnect && !target.connected) {
+    scheduleExtraDiscovery(target, "host updated", 20);
   }
 });
 
-maxApi.addHandler("set_http_port", (port) => {
-  runtime.port = Math.max(1, Number(port || runtime.port) || runtime.port);
+maxApi.addHandler("set_http_port", (port, targetId) => {
+  const tid = normalizeTargetId(targetId);
+  if (tid === "A") {
+    runtime.port = Math.max(1, Number(port || runtime.port) || runtime.port);
+    emitTarget();
+    if (runtime.mode === "http" && runtime.autoReconnect && !runtime.connected) {
+      scheduleDiscovery("port updated", 20);
+    }
+    return;
+  }
+  const target = getExtraTarget(tid);
+  if (!target) return;
+  target.port = Math.max(1, Number(port || target.port) || target.port);
   emitTarget();
-  if (runtime.mode === "http" && runtime.autoReconnect && !runtime.connected) {
-    scheduleDiscovery("port updated", 20);
+  if (target.enabled && runtime.autoReconnect && !target.connected) {
+    scheduleExtraDiscovery(target, "port updated", 20);
   }
 });
 
-maxApi.addHandler("set_device_name", (name) => {
+maxApi.addHandler("set_device_name", (name, targetId) => {
   const next = normalizeDeviceName(name);
   if (!next.length) return;
-  runtime.deviceName = next;
+  const tid = normalizeTargetId(targetId);
+  if (tid === "A") {
+    runtime.deviceName = next;
+    emitTarget();
+    if (runtime.mode === "http" && runtime.autoReconnect && !runtime.connected) {
+      scheduleDiscovery("device name updated", 20);
+    }
+    return;
+  }
+  const target = getExtraTarget(tid);
+  if (!target) return;
+  target.deviceName = next;
   emitTarget();
-  if (runtime.mode === "http" && runtime.autoReconnect && !runtime.connected) {
-    scheduleDiscovery("device name updated", 20);
+  if (target.enabled && runtime.autoReconnect && !target.connected) {
+    scheduleExtraDiscovery(target, "device name updated", 20);
   }
 });
 
-maxApi.addHandler("auto_connect", () => {
+maxApi.addHandler("set_target_enabled", (targetId, flag) => {
+  const tid = normalizeTargetId(targetId);
+  if (tid === "A") return;
+  const target = getExtraTarget(tid);
+  if (!target) return;
+  target.enabled = Number(flag || 0) !== 0;
+  if (target.enabled) startExtraTarget(target, "slot enabled");
+  else stopExtraTarget(target);
+  emitTarget();
+});
+
+maxApi.addHandler("set_target_host", (targetId, host) => {
+  const tid = normalizeTargetId(targetId);
+  const target = getExtraTarget(tid);
+  if (!target) return;
+  const next = normalizeHostValue(host);
+  if (!next.length) return;
+  target.ip = next;
+  emitTarget();
+  if (target.enabled && runtime.autoReconnect && !target.connected) {
+    scheduleExtraDiscovery(target, "target host updated", 20);
+  }
+});
+
+maxApi.addHandler("set_target_port", (targetId, port) => {
+  const tid = normalizeTargetId(targetId);
+  const target = getExtraTarget(tid);
+  if (!target) return;
+  target.port = Math.max(1, Number(port || target.port) || target.port);
+  emitTarget();
+  if (target.enabled && runtime.autoReconnect && !target.connected) {
+    scheduleExtraDiscovery(target, "target port updated", 20);
+  }
+});
+
+maxApi.addHandler("set_target_device_name", (targetId, name) => {
+  const tid = normalizeTargetId(targetId);
+  const target = getExtraTarget(tid);
+  if (!target) return;
+  const next = normalizeDeviceName(name);
+  if (!next.length) return;
+  target.deviceName = next;
+  emitTarget();
+  if (target.enabled && runtime.autoReconnect && !target.connected) {
+    scheduleExtraDiscovery(target, "target name updated", 20);
+  }
+});
+
+maxApi.addHandler("connect_target", (targetId) => {
+  const tid = normalizeTargetId(targetId);
+  if (tid === "A") {
+    beginHttpMode();
+    return;
+  }
+  const target = getExtraTarget(tid);
+  if (!target) return;
+  target.enabled = true;
+  startExtraTarget(target, "manual target connect");
+});
+
+maxApi.addHandler("auto_connect", (targetId) => {
+  const raw = String(targetId || "").trim();
+  if (raw.length) {
+    const tid = normalizeTargetId(raw);
+    if (tid === "A") {
+      if (runtime.mode === "http" && !runtime.connected) {
+        scheduleDiscovery("auto-connect", 0);
+      }
+      return;
+    }
+    const target = getExtraTarget(tid);
+    if (target && target.enabled && !target.connected) {
+      scheduleExtraDiscovery(target, "auto-connect", 0);
+    }
+    return;
+  }
+
   if (runtime.mode === "http" && !runtime.connected) {
     scheduleDiscovery("auto-connect", 0);
   }
+  allExtraTargets().forEach((target) => {
+    if (target.enabled && !target.connected) {
+      scheduleExtraDiscovery(target, "auto-connect", 0);
+    }
+  });
 });
 
 maxApi.addHandler("manual_note", (on, note, vel, ch) => {
@@ -1810,8 +2600,42 @@ maxApi.addHandler("manual_note", (on, note, vel, ch) => {
   const midiNote = asNumber(note, 60);
   const midiVel = asNumber(vel, active ? 100 : 0);
   const midiCh = asNumber(ch, 1);
-  emitMidiStatus({ on: active, note: midiNote, vel: midiVel, ch: midiCh });
+  if (normalizeTargetId(runtime.activeTargetId) === "A") {
+    emitMidiStatus({ on: active, note: midiNote, vel: midiVel, ch: midiCh });
+  } else {
+    emitMidiStatusForExtra(runtime.activeTargetId, { on: active, note: midiNote, vel: midiVel, ch: midiCh });
+  }
   emitMidiBytes(active, midiNote, midiVel, midiCh);
+});
+
+maxApi.addHandler("sync_scale", (source, currentScale, currentRoot, targetId) => {
+  const src = normalizeScaleSyncSource(source);
+  const scale = Math.max(0, Math.min(14, asInt(currentScale, 0)));
+  const root = Math.max(0, Math.min(11, asInt(currentRoot, 0)));
+  const tid = normalizeTargetId(targetId || runtime.activeTargetId);
+
+  maxApi.outlet(["scale_sync_status", tid, "pending", "Reading Ableton scale", src]);
+  maxApi.outlet(["scale_sync_status", "pending", "Reading Ableton scale", src]);
+  if (src === "manual") {
+    applySyncedScale(scale, root, src, tid);
+    return;
+  }
+  maxApi.outlet(["request_scale_sync", src, scale, root, tid]);
+});
+
+maxApi.addHandler("apply_scale_from_ableton", (scaleIndex, rootIndex, source, targetId) => {
+  applySyncedScale(scaleIndex, rootIndex, normalizeScaleSyncSource(source), targetId || runtime.activeTargetId);
+});
+
+maxApi.addHandler("scale_sync_status", (state, detail, source, scaleIndex, rootIndex) => {
+  const tid = normalizeTargetId(runtime.activeTargetId);
+  const safeState = String(state || "info");
+  const safeDetail = String(detail || "");
+  const safeSource = normalizeScaleSyncSource(source);
+  const s = typeof scaleIndex === "undefined" ? "" : scaleIndex;
+  const r = typeof rootIndex === "undefined" ? "" : rootIndex;
+  maxApi.outlet(["scale_sync_status", tid, safeState, safeDetail, safeSource, s, r]);
+  maxApi.outlet(["scale_sync_status", safeState, safeDetail, safeSource, s, r]);
 });
 
 maxApi.addHandler("serial_line", (line) => {
@@ -1819,38 +2643,75 @@ maxApi.addHandler("serial_line", (line) => {
   handleSerialLine(line);
 });
 
-maxApi.addHandler("request_state", () => {
-  if (runtime.mode === "serial") sendSerialControl("STATE");
-  else if (runtime.mode === "http") pollHttpState();
-  else if (runtime.mode === "mock") emitJson("state", runtime.mockState);
+maxApi.addHandler("request_state", (targetId) => {
+  const tid = normalizeTargetId(targetId);
+  if (tid === "A") {
+    if (runtime.mode === "serial") sendSerialControl("STATE");
+    else if (runtime.mode === "http") pollHttpState();
+    else if (runtime.mode === "mock") emitJson("state", runtime.mockState);
+    return;
+  }
+  const target = getExtraTarget(tid);
+  if (target && target.enabled) pollExtraState(target);
 });
 
-maxApi.addHandler("request_target", () => {
+maxApi.addHandler("request_target", (targetId) => {
   emitTarget();
-  if (runtime.mode === "http" && runtime.autoReconnect && !runtime.connected) {
+  const tid = normalizeTargetId(targetId);
+  if (tid === "A" && runtime.mode === "http" && runtime.autoReconnect && !runtime.connected) {
     scheduleDiscovery("target request", 0);
   }
-});
-
-maxApi.addHandler("request_fast", () => {
-  if (runtime.mode === "serial") {
-    sendSerialControl("PLANT");
-    sendSerialControl("NOTES");
-  } else if (runtime.mode === "http") {
-    pollHttpFast();
+  if ((tid === "B" || tid === "C") && String(targetId || "").trim().length) {
+    const target = getExtraTarget(tid);
+    if (target && target.enabled && runtime.autoReconnect && !target.connected) {
+      scheduleExtraDiscovery(target, "target request", 0);
+    }
+    return;
   }
+  allExtraTargets().forEach((target) => {
+    if (target.enabled && runtime.autoReconnect && !target.connected) {
+      scheduleExtraDiscovery(target, "target request", 0);
+    }
+  });
 });
 
-maxApi.addHandler("request_params", () => {
-  if (runtime.mode === "serial") sendSerialControl("PARAMS");
-  else if (runtime.mode === "http") pollHttpParams();
-  else emitJson("params", runtime.params);
+maxApi.addHandler("request_fast", (targetId) => {
+  const tid = normalizeTargetId(targetId);
+  if (tid === "A") {
+    if (runtime.mode === "serial") {
+      sendSerialControl("PLANT");
+      sendSerialControl("NOTES");
+    } else if (runtime.mode === "http") {
+      pollHttpFast();
+    }
+    return;
+  }
+  const target = getExtraTarget(tid);
+  if (target && target.enabled) pollExtraFast(target);
 });
 
-maxApi.addHandler("request_synth", () => {
-  if (runtime.mode === "serial") sendSerialControl("SYNTH");
-  else if (runtime.mode === "http") pollHttpSynth();
-  else emitJson("synth", runtime.synth);
+maxApi.addHandler("request_params", (targetId) => {
+  const tid = normalizeTargetId(targetId);
+  if (tid === "A") {
+    if (runtime.mode === "serial") sendSerialControl("PARAMS");
+    else if (runtime.mode === "http") pollHttpParams();
+    else emitJson("params", runtime.params);
+    return;
+  }
+  const target = getExtraTarget(tid);
+  if (target && target.enabled) pollExtraParams(target);
+});
+
+maxApi.addHandler("request_synth", (targetId) => {
+  const tid = normalizeTargetId(targetId);
+  if (tid === "A") {
+    if (runtime.mode === "serial") sendSerialControl("SYNTH");
+    else if (runtime.mode === "http") pollHttpSynth();
+    else emitJson("synth", runtime.synth);
+    return;
+  }
+  const target = getExtraTarget(tid);
+  if (target && target.enabled) pollExtraSynth(target);
 });
 
 maxApi.addHandler("enable_serial_telemetry", (flag) => {
@@ -1865,3 +2726,4 @@ updateSynth(DEFAULT_SYNTH);
 emitTarget();
 emitStatus("ready", "beca_control_node loaded");
 scheduleDiscovery("initial startup", 250);
+startAllExtraTargets();

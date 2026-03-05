@@ -195,6 +195,32 @@
                     ],
                     "text": "v10 Live-safe height tuning: controls always visible at Ableton max device lane height"
                 }
+            },
+            {
+                "box": {
+                    "id": "obj-14",
+                    "maxclass": "newobj",
+                    "patching_rect": [
+                        340,
+                        78,
+                        150,
+                        22
+                    ],
+                    "text": "route request_scale_sync"
+                }
+            },
+            {
+                "box": {
+                    "id": "obj-15",
+                    "maxclass": "newobj",
+                    "patching_rect": [
+                        500,
+                        78,
+                        170,
+                        22
+                    ],
+                    "text": "js code/beca_scale_sync.js"
+                }
             }
         ],
         "lines": [
@@ -241,7 +267,43 @@
                         1
                     ],
                     "destination": [
+                        "obj-14",
+                        0
+                    ]
+                }
+            },
+            {
+                "patchline": {
+                    "source": [
+                        "obj-14",
+                        0
+                    ],
+                    "destination": [
+                        "obj-15",
+                        0
+                    ]
+                }
+            },
+            {
+                "patchline": {
+                    "source": [
+                        "obj-14",
+                        1
+                    ],
+                    "destination": [
                         "obj-5",
+                        0
+                    ]
+                }
+            },
+            {
+                "patchline": {
+                    "source": [
+                        "obj-15",
+                        0
+                    ],
+                    "destination": [
+                        "obj-2",
                         0
                     ]
                 }
