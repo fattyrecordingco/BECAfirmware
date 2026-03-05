@@ -566,11 +566,11 @@ function activeControls() {
 }
 
 function compactControlGeometry(areaW) {
-  var leftShare = areaW >= 1460 ? 0.34 : areaW >= 1180 ? 0.37 : areaW >= 980 ? 0.41 : 0.46;
+  var leftShare = areaW >= 1460 ? 0.40 : areaW >= 1180 ? 0.44 : areaW >= 980 ? 0.48 : 0.54;
   var leftW = Math.floor(areaW * leftShare);
-  if ((areaW - leftW) < 330) leftW = areaW - 330;
-  leftW = clip(leftW, 280, areaW - 220);
-  var cols = leftW >= 470 ? 3 : leftW >= 320 ? 2 : 1;
+  if ((areaW - leftW) < 320) leftW = areaW - 320;
+  leftW = clip(leftW, 320, areaW - 220);
+  var cols = leftW >= 640 ? 3 : 2;
   var rows = 2;
   return {
     leftW: leftW,
@@ -595,7 +595,7 @@ function sectionPaging(sectionId, perPage) {
 
 function drawHeader(w, h) {
   var compact = h < 175 || w < 980;
-  var topH = compact ? 23 : 27;
+  var topH = compact ? 25 : 29;
   var top = rect(4, 4, w - 8, topH);
   fillRect(top, COLORS.panelSoft);
   strokeRect(top, COLORS.border, 1);
@@ -605,7 +605,7 @@ function drawHeader(w, h) {
   var modeGap = 2;
   var modeBtnW = Math.floor((modeW - modeGap * 2) / 3);
   var modeX = top.x + top.w - modeW - 4;
-  var modeY = top.y + Math.floor((top.h - 15) * 0.5);
+  var modeY = top.y + Math.floor((top.h - 16) * 0.5);
 
   var textX = top.x + 6;
   var textW = modeX - textX - 8;
@@ -625,7 +625,7 @@ function drawHeader(w, h) {
   var i;
   for (i = 0; i < 3; i++) {
     var bx = modeX + i * (modeBtnW + modeGap);
-    var r = rect(bx, modeY, modeBtnW, 15);
+    var r = rect(bx, modeY, modeBtnW, 16);
     fillRect(r, i === om ? [COLORS.accent[0], COLORS.accent[1], COLORS.accent[2], 0.34] : COLORS.panelDeep);
     strokeRect(r, i === om ? COLORS.accent : COLORS.border, 1);
     drawText(labels[i], r.x + r.w * 0.5, r.y + 11, 7.0, COLORS.text, "center");
@@ -635,8 +635,8 @@ function drawHeader(w, h) {
 
 function drawTabs(w, h) {
   var compact = h < 175 || w < 980;
-  var barY = compact ? 27 : 31;
-  var barH = compact ? 18 : 19;
+  var barY = compact ? 31 : 35;
+  var barH = compact ? 20 : 21;
   var bar = rect(4, barY, w - 8, barH);
   fillRect(bar, COLORS.panelSoft);
   strokeRect(bar, COLORS.border, 1);
@@ -765,13 +765,13 @@ function drawEncoder(control, r) {
   var value = getValue(control);
   var compactCard = r.h < 64;
   var tinyCard = r.h < 48;
-  var labelSize = tinyCard ? 6.4 : compactCard ? 6.9 : 7.3;
-  var valueSize = tinyCard ? 6.4 : 7.0;
+  var labelSize = tinyCard ? 6.8 : compactCard ? 7.2 : 7.6;
+  var valueSize = tinyCard ? 6.8 : 7.3;
   var labelText = fitText(control.label, r.w - 6, labelSize);
 
   if (control.kind === "choice") {
     drawText(labelText, r.x + 3, r.y + 11, labelSize, COLORS.dim, "left");
-    var dropH = tinyCard ? 14 : 17;
+    var dropH = tinyCard ? 15 : 18;
     var drop = rect(r.x + 3, r.y + r.h - (dropH + 3), r.w - 6, dropH);
     var arrW = dropH;
     fillRect(drop, COLORS.panelDeep);
@@ -795,7 +795,7 @@ function drawEncoder(control, r) {
   if (control.kind === "toggle") {
     drawText(labelText, r.x + r.w * 0.5, r.y + 11, labelSize, COLORS.dim, "center");
     var on = asInt(value, 0) ? 1 : 0;
-    var tH = tinyCard ? 14 : 17;
+    var tH = tinyCard ? 15 : 18;
     var t = rect(r.x + 5, r.y + r.h - (tH + 3), r.w - 10, tH);
     fillRect(t, on ? [COLORS.good[0], COLORS.good[1], COLORS.good[2], 0.34] : COLORS.panelDeep);
     strokeRect(t, on ? COLORS.good : COLORS.border, 1);
@@ -806,7 +806,7 @@ function drawEncoder(control, r) {
 
   if (control.kind === "action") {
     drawText(labelText, r.x + r.w * 0.5, r.y + 11, labelSize, COLORS.dim, "center");
-    var aH = tinyCard ? 14 : 17;
+    var aH = tinyCard ? 15 : 18;
     var a = rect(r.x + 5, r.y + r.h - (aH + 3), r.w - 10, aH);
     fillRect(a, [COLORS.amber[0], COLORS.amber[1], COLORS.amber[2], 0.22]);
     strokeRect(a, COLORS.amber, 1);
@@ -819,7 +819,7 @@ function drawEncoder(control, r) {
   var cx = r.x + r.w * 0.5;
   var cy = r.y + (compactCard ? r.h * 0.50 : r.h * 0.44);
   var rad = Math.min(r.w * (compactCard ? 0.29 : 0.31), r.h * (compactCard ? 0.30 : 0.34));
-  if (rad < 7) rad = 7;
+  if (rad < 8) rad = 8;
 
   var start = Math.PI * 0.72;
   var span = Math.PI * 1.56;
@@ -995,7 +995,7 @@ function drawAllCompact(w, h, yStart) {
 }
 
 function drawControls(w, h, topY) {
-  if (typeof topY === "undefined") topY = h < 170 ? 46 : 54;
+  if (typeof topY === "undefined") topY = h < 170 ? 54 : 60;
   var area = rect(4, topY, w - 8, h - (topY + 4));
   if (area.h <= 34) return;
   fillRect(area, COLORS.panelSoft);
@@ -1100,39 +1100,38 @@ function drawMidiPanel169(panel) {
 }
 
 function drawCompact169(w, h) {
-  var content = rect(3, 46, w - 6, h - 49);
+  var content = rect(4, 54, w - 8, h - 58);
   if (content.h <= 42) {
-    drawControls(w, h, 46);
+    drawControls(w, h, 54);
     return;
   }
 
   fillRect(content, COLORS.panelSoft);
   strokeRect(content, COLORS.border, 1);
 
-  var gap = 3;
+  var gap = 6;
   var inner = rect(content.x + 1, content.y + 1, content.w - 2, content.h - 2);
   var geo = compactControlGeometry(inner.w);
   var leftPanel = rect(inner.x, inner.y, geo.leftW, inner.h);
   var rightPanel = rect(leftPanel.x + leftPanel.w + gap, inner.y, inner.w - leftPanel.w - gap, inner.h);
 
-  if (rightPanel.w < 220) {
-    drawControls(w, h, 46);
+  if (rightPanel.w < 240) {
+    drawControls(w, h, 54);
     return;
   }
 
   fillRect(leftPanel, COLORS.panel);
   strokeRect(leftPanel, COLORS.border, 1);
-  var head = rect(leftPanel.x + 1, leftPanel.y + 1, leftPanel.w - 2, 12);
+  var head = rect(leftPanel.x + 1, leftPanel.y + 1, leftPanel.w - 2, 14);
   fillRect(head, COLORS.panelDeep);
   strokeRect(head, COLORS.border, 1);
-  drawText(sectionLabel(ui.section), head.x + 4, head.y + 9, 6.9, COLORS.text, "left");
+  drawText(sectionLabel(ui.section), head.x + 4, head.y + 10, 7.1, COLORS.text, "left");
 
   var pageInfo = sectionPaging(ui.section, geo.perPage);
-  drawText((pageInfo.page + 1) + "/" + pageInfo.pages, head.x + head.w - 58, head.y + 9, 6.5, COLORS.dim, "right");
-  drawText(pageInfo.pages > 1 ? "drag" : "drag / < >", head.x + head.w - 6, head.y + 9, 6.0, COLORS.dim, "right");
+  drawText((pageInfo.page + 1) + "/" + pageInfo.pages, head.x + head.w - 6, head.y + 10, 6.5, COLORS.dim, "right");
   if (pageInfo.pages > 1) {
-    var prev = rect(head.x + head.w - 32, head.y + 1, 14, 10);
-    var next = rect(head.x + head.w - 16, head.y + 1, 14, 10);
+    var prev = rect(head.x + head.w - 32, head.y + 2, 14, 10);
+    var next = rect(head.x + head.w - 16, head.y + 2, 14, 10);
     fillRect(prev, COLORS.panelDeep);
     fillRect(next, COLORS.panelDeep);
     strokeRect(prev, COLORS.border, 1);
@@ -1143,10 +1142,10 @@ function drawCompact169(w, h) {
     addHotspot(next, "section_page_next", ui.section);
   }
 
-  var grid = rect(leftPanel.x + 3, leftPanel.y + 14, leftPanel.w - 6, leftPanel.h - 16);
+  var grid = rect(leftPanel.x + 4, leftPanel.y + 17, leftPanel.w - 8, leftPanel.h - 21);
   var cols = geo.cols;
   var rows = geo.rows;
-  var cellGap = 3;
+  var cellGap = 5;
   var cw = (grid.w - cellGap * (cols - 1)) / cols;
   var ch = (grid.h - cellGap * (rows - 1)) / rows;
   var i;
@@ -1177,7 +1176,7 @@ function drawAll() {
     drawCompact169(w, h);
     return;
   }
-  var contentY = compactTop ? 46 : 51;
+  var contentY = compactTop ? 54 : 61;
   var available = h - contentY - 4;
   var controlsMin = h >= 260 ? 106 : h >= 210 ? 86 : 72;
   var meterTarget = h >= 300 ? 88 : h >= 240 ? 74 : h >= 190 ? 52 : 42;
