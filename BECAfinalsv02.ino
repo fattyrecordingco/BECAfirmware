@@ -375,6 +375,8 @@ static inline void serviceNoteOffs() {
 const float   EMA_ALPHA         = 0.03f;
 const float   BASELINE_ALPHA    = 0.0012f;
 const float   NOISE_TRACK_ALPHA = 0.0007f;
+const float   PLANT_FLOOR_MAX   = 2.6f;
+const float   PLANT_SCALE_MAX   = 80.0f;
 
 float ema1 = 0, ema2 = 0, base1 = 0, base2 = 0;
 float noise1 = 1.0f, noise2 = 1.0f;
@@ -384,6 +386,15 @@ const float ENV_ATTACK  = 0.35f;
 const float ENV_RELEASE = 0.05f;
 
 float sens = 0.2f;
+const float AGC_ACTIVITY_GATE = 0.030f;
+const float AGC_TARGET_LEVEL  = 0.30f;
+const float AGC_MIN_GAIN      = 0.70f;
+const float AGC_MAX_GAIN      = 3.80f;
+const float AGC_LEVEL_ATTACK  = 0.09f;
+const float AGC_LEVEL_RELEASE = 0.02f;
+const float AGC_GAIN_SLEW     = 0.08f;
+float agcLevel = AGC_TARGET_LEVEL;
+float agcGain  = 1.0f;
 
 // Cached features for UI (SSE)
 volatile float   gFeatDeg    = 0.0f;
@@ -1202,8 +1213,13 @@ extern uint32_t gLastWifiOkMs;
 extern uint32_t gLastWifiAttemptMs;
 extern uint8_t  gWifiFailCount;
 extern bool     gMdnsStarted;
+extern String   gMdnsName;
+extern uint32_t gLastMdnsAttemptMs;
 extern volatile int32_t gLastStaDisconnectReason;
 static inline void startMDNS();
+static inline void serviceMDNS(uint32_t now);
+static inline String sanitizeDeviceName(const String &raw);
+static inline void normalizeDeviceName();
 static inline bool setupPortalActive();
 
 static void WiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
@@ -1215,11 +1231,14 @@ static void WiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
       gLastWifiAttemptMs = 0;
       MDNS.end();
       gMdnsStarted = false;
+      gMdnsName = "";
+      gLastMdnsAttemptMs = 0;
       break;
     case ARDUINO_EVENT_WIFI_STA_GOT_IP:
       gIsSta = true;
       gLastWifiOkMs = millis();
       gWifiFailCount = 0;
+      gLastMdnsAttemptMs = 0;
       startMDNS();
       break;
     case ARDUINO_EVENT_WIFI_STA_LOST_IP:
@@ -1295,18 +1314,34 @@ static inline void samplePlant(float &fDeg, float &fOct, uint8_t &velOut, float 
   float envNoise = max(noise1, noise2);
   const float MIN_FLOOR = 0.25f;
   float floorLevel = max(MIN_FLOOR, envNoise * 0.15f);
+  floorLevel = clampf(floorLevel, MIN_FLOOR, PLANT_FLOOR_MAX);
 
   if (d1 < floorLevel) d1 = 0.0f;
   if (d2 < floorLevel) d2 = 0.0f;
 
   float scale = envNoise;
   if (scale < 4.0f)   scale = 4.0f;
-  if (scale > 120.0f) scale = 120.0f;
+  if (scale > PLANT_SCALE_MAX) scale = PLANT_SCALE_MAX;
 
   float a1 = (d1 / scale) * sens * 2.5f;
   float a2 = (d2 / scale) * sens * 2.5f;
   a1 = clampf(a1, 0.0f, 3.0f);
   a2 = clampf(a2, 0.0f, 3.0f);
+
+  // Adaptive gain keeps sensor response consistent across different power/noise setups.
+  float ampPre = clampf((a1 + a2) * 0.5f, 0.0f, 1.6f);
+  if (ampPre > AGC_ACTIVITY_GATE) {
+    const float levelAlpha = (ampPre > agcLevel) ? AGC_LEVEL_ATTACK : AGC_LEVEL_RELEASE;
+    agcLevel += levelAlpha * (ampPre - agcLevel);
+  } else {
+    agcLevel += 0.0015f * (AGC_TARGET_LEVEL - agcLevel);
+  }
+  float gainTarget = clampf(AGC_TARGET_LEVEL / max(0.06f, agcLevel), AGC_MIN_GAIN, AGC_MAX_GAIN);
+  if (ampPre <= AGC_ACTIVITY_GATE) gainTarget = 1.0f;
+  agcGain += AGC_GAIN_SLEW * (gainTarget - agcGain);
+
+  a1 = clampf(a1 * agcGain, 0.0f, 3.0f);
+  a2 = clampf(a2 * agcGain, 0.0f, 3.0f);
 
   float amp = clampf((a1 + a2) * 0.5f, 0.0f, 1.6f);
   if (amp > env) env += ENV_ATTACK  * (amp - env);
@@ -1566,8 +1601,10 @@ static inline void transportTick() {
 
 // -------------------- WebServer + SSE --------------------
 WebServer server(80);
+static inline void noteWebActivity() {}
 
 static inline void sendNoCacheHeaders() {
+  noteWebActivity();
   server.sendHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
   server.sendHeader("Pragma", "no-cache");
   server.sendHeader("Expires", "0");
@@ -1655,6 +1692,7 @@ static inline void sseSend(const char* event, const char* data) {
 }
 
 static inline void handleEvents() {
+  noteWebActivity();
   WiFiClient c = server.client();
   c.setNoDelay(true);
 
@@ -1842,6 +1880,7 @@ static inline void pushStateIfChanged(bool force=false) {
 // ✅ FULL HTML moved to index_html.h (generated from index.html)
 
 static inline void handleLogo() {
+  noteWebActivity();
   server.sendHeader("Content-Encoding", "gzip");
   server.sendHeader("Cache-Control", "public, max-age=31536000, immutable");
   server.send_P(200, "image/svg+xml", (const char*)LOGO_SVG_GZ, LOGO_SVG_GZ_LEN);
@@ -1864,11 +1903,13 @@ static inline void handleSetupPage() {
 
 // -------------------- JSON lists for selects --------------------
 static inline void handleEffects() {
+  noteWebActivity();
   server.sendHeader("Cache-Control","public, max-age=86400");
   server.send_P(200, "application/json", EFFECTS_JSON);
 }
 
 static inline void handlePalettes() {
+  noteWebActivity();
   server.sendHeader("Cache-Control","public, max-age=86400");
   server.send_P(200, "application/json", PALETTES_JSON);
 }
@@ -2525,6 +2566,8 @@ uint32_t gLastWifiAttemptMs = 0;
 uint32_t gLastWifiResetMs = 0;
 uint8_t  gWifiFailCount = 0;
 bool     gMdnsStarted = false;
+String   gMdnsName;
+uint32_t gLastMdnsAttemptMs = 0;
 volatile int32_t gLastStaDisconnectReason = 0;
 String gWifiLastError;
 String gWifiLastHint;
@@ -2532,6 +2575,7 @@ const uint32_t WIFI_CHECK_MS = 1000;
 const uint32_t WIFI_RECONNECT_MS = 5000;
 const uint32_t WIFI_RESET_MS = 30000;
 const uint32_t WIFI_RESET_COOLDOWN_MS = 60000;
+const uint32_t MDNS_RETRY_MS = 10000;
 char gSerialCtrlBuf[192];
 uint16_t gSerialCtrlLen = 0;
 bool gSerialCtrlCollect = false;
@@ -2572,21 +2616,84 @@ static inline String shortChipId() {
   return String(id);
 }
 
-static inline void startMDNS() {
-  if (gDeviceName.length() == 0) gDeviceName = "beca-" + shortChipId();
-  if (gMdnsStarted) return;
-  if (MDNS.begin(gDeviceName.c_str())) {
-    if (MDNS.addService("http", "tcp", 80)) {
-      gMdnsStarted = true;
-    } else {
-      MDNS.end();
-      gMdnsStarted = false;
+static inline String sanitizeDeviceName(const String &raw) {
+  String in = raw;
+  in.trim();
+  in.toLowerCase();
+
+  String out;
+  out.reserve(in.length());
+  bool prevDash = false;
+  for (size_t i = 0; i < in.length(); ++i) {
+    const char c = in.charAt(i);
+    const bool isAlnum = ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9'));
+    if (isAlnum) {
+      out += c;
+      prevDash = false;
+      continue;
+    }
+    const bool isSep = (c == '-' || c == '_' || c == ' ' || c == '.');
+    if (isSep && !prevDash && out.length() > 0) {
+      out += '-';
+      prevDash = true;
     }
   }
+
+  while (out.length() > 0 && out.charAt(out.length() - 1) == '-') out.remove(out.length() - 1);
+  if (out.length() == 0) out = "beca-" + shortChipId();
+  if (out.length() > 63) out = out.substring(0, 63);
+  while (out.length() > 0 && out.charAt(out.length() - 1) == '-') out.remove(out.length() - 1);
+  if (out.length() == 0) out = "beca";
+  return out;
+}
+
+static inline void normalizeDeviceName() {
+  const String clean = sanitizeDeviceName(gDeviceName);
+  if (clean != gDeviceName) {
+    Serial.printf("@I DEVICE NAME NORMALIZED %s\n", clean.c_str());
+  }
+  gDeviceName = clean;
+}
+
+static inline bool wifiReady();
+
+static inline void startMDNS() {
+  normalizeDeviceName();
+  if (!wifiReady()) return;
+  if (gMdnsStarted && gMdnsName == gDeviceName) return;
+
+  if (gMdnsStarted) {
+    MDNS.end();
+    gMdnsStarted = false;
+    gMdnsName = "";
+  }
+
+  gLastMdnsAttemptMs = millis();
+  if (!MDNS.begin(gDeviceName.c_str())) {
+    Serial.printf("@W MDNS START FAIL %s.local\n", gDeviceName.c_str());
+    return;
+  }
+
+  if (!MDNS.addService("http", "tcp", 80)) {
+    MDNS.end();
+    Serial.printf("@W MDNS HTTP SERVICE FAIL %s.local\n", gDeviceName.c_str());
+    return;
+  }
+
+  gMdnsStarted = true;
+  gMdnsName = gDeviceName;
+  Serial.printf("@I MDNS READY %s.local\n", gMdnsName.c_str());
 }
 
 static inline bool wifiReady() {
   return WiFi.status() == WL_CONNECTED && WiFi.localIP() != IPAddress(0,0,0,0);
+}
+
+static inline void serviceMDNS(uint32_t now) {
+  if (!gIsSta || !wifiReady()) return;
+  if (gMdnsStarted) return;
+  if ((int32_t)(now - gLastMdnsAttemptMs) < (int32_t)MDNS_RETRY_MS) return;
+  startMDNS();
 }
 
 static inline void maintainWiFi(uint32_t now) {
@@ -2612,6 +2719,7 @@ static inline void maintainWiFi(uint32_t now) {
       gLastWifiResetMs = now;
       WiFi.disconnect(true, true);
       WiFi.mode(WIFI_STA);
+      normalizeDeviceName();
       WiFi.setHostname(gDeviceName.c_str());
       WiFi.begin(gStaSsid.c_str(), gStaPass.c_str());
     } else {
@@ -2756,6 +2864,7 @@ static inline void handleApiInfo() {
 
 static inline bool testStaFromPortal(const String &ssid, const String &pass, String &msg, String &hint, uint32_t timeoutMs = 15000) {
   gLastStaDisconnectReason = 0;
+  normalizeDeviceName();
   WiFi.mode(WIFI_AP_STA);
   WiFi.setHostname(gDeviceName.c_str());
   WiFi.begin(ssid.c_str(), pass.c_str());
@@ -2794,7 +2903,7 @@ static inline bool applyWifiProvisioning(
   String &msg,
   String &hint
 ) {
-  gDeviceName = nextName;
+  gDeviceName = sanitizeDeviceName(nextName);
   bool ok = testStaFromPortal(nextSsid, nextPass, msg, hint);
   if (ok) {
     gStaSsid = nextSsid;
@@ -2834,7 +2943,7 @@ static inline void handleWifiSave() {
   String nextPass = server.hasArg("pass") ? server.arg("pass") : "";
   nextName.trim();
   nextSsid.trim();
-  if (nextName.length() == 0) nextName = "beca-" + shortChipId();
+  nextName = sanitizeDeviceName(nextName);
 
   sendNoCacheHeaders();
   if (nextSsid.length() == 0) {
@@ -3101,6 +3210,7 @@ static inline bool tryConnectSTA(const String &ssid, const String &pass, uint32_
   WiFi.mode(WIFI_STA);
   delay(100);
 
+  normalizeDeviceName();
   WiFi.setHostname(gDeviceName.c_str());
 
   Serial.printf("Connecting STA to \"%s\" ...\n", ssid.c_str());
@@ -3127,6 +3237,9 @@ static inline bool tryConnectSTA(const String &ssid, const String &pass, uint32_
     Serial.print("IP address: ");
     Serial.println(WiFi.localIP());
     Serial.print("Open UI: http://");
+    Serial.print(WiFi.localIP());
+    Serial.println("/");
+    Serial.print("Open UI (mDNS): http://");
     Serial.print(gDeviceName);
     Serial.println(".local/");
 
@@ -3150,6 +3263,7 @@ static inline bool tryConnectSTA(const String &ssid, const String &pass, uint32_
 
 static inline void startAPPortal() {
   gIsSta = false;
+  normalizeDeviceName();
   if (gStaSsid.length() == 0 && gWifiLastError.length() == 0) {
     gWifiLastError = "No Wi-Fi saved yet.";
     gWifiLastHint = "Pick a 2.4GHz Wi-Fi network and tap Save and Connect.";
@@ -3262,6 +3376,7 @@ void setup() {
 
   prefs.end();
   if (gDeviceName.length() == 0) gDeviceName = "beca-" + shortChipId();
+  normalizeDeviceName();
 
   bool staOK = false;
   if (gStaSsid.length()) staOK = tryConnectSTA(gStaSsid, gStaPass);
@@ -3390,6 +3505,7 @@ void loop() {
   server.handleClient();
   serviceSerialControlCommands();
   maintainWiFi(now);
+  serviceMDNS(now);
   applyEncoder();
 
   // keep WDT + WiFi/BLE happy
