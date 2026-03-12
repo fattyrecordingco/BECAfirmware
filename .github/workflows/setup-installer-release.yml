@@ -79,6 +79,20 @@ jobs:
       - name: Install espflash sidecar
         run: cargo install espflash --locked --version 4.2.0
 
+      - name: Download esptool sidecar (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $version = "5.2.0"
+          $zip = Join-Path $env:RUNNER_TEMP "esptool-v$version-windows-amd64.zip"
+          $extract = Join-Path $env:RUNNER_TEMP "esptool-v$version-windows-amd64"
+          Invoke-WebRequest -Uri "https://github.com/espressif/esptool/releases/download/v$version/esptool-v$version-windows-amd64.zip" -OutFile $zip
+          if (Test-Path $extract) { Remove-Item $extract -Recurse -Force }
+          Expand-Archive -Path $zip -DestinationPath $extract -Force
+          $exe = Get-ChildItem $extract -Recurse -Filter "esptool.exe" | Select-Object -First 1 -ExpandProperty FullName
+          if (-not $exe) { throw "esptool.exe not found in downloaded archive." }
+          Copy-Item $exe "$env:RUNNER_TEMP\\esptool.exe" -Force
+
       - name: Copy sidecars (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
@@ -86,6 +100,7 @@ jobs:
           Copy-Item target\release\beca-bridge.exe apps\beca-setup\src-tauri\binaries\beca-bridge.exe -Force
           Copy-Item target\release\beca-flasher.exe apps\beca-setup\src-tauri\binaries\beca-flasher.exe -Force
           Copy-Item $env:USERPROFILE\.cargo\bin\espflash.exe apps\beca-setup\src-tauri\binaries\espflash.exe -Force
+          Copy-Item $env:RUNNER_TEMP\esptool.exe apps\beca-setup\src-tauri\binaries\esptool.exe -Force
 
       - name: Copy sidecars (macOS/Linux)
         if: runner.os == 'macOS'

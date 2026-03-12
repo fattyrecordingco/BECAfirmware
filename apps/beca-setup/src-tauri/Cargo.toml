@@ -25,4 +25,5 @@ tokio = { version = "1.43", features = ["macros", "process", "rt-multi-thread", 
 tracing = "0.1"
 tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 zip = { version = "2.2", default-features = false, features = ["deflate"] }

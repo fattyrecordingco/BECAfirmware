@@ -48,25 +48,32 @@ impl FirmwareManifest {
         self.firmware
             .iter()
             .filter(|fw| fw.channel.eq_ignore_ascii_case("stable"))
-            .filter(|fw| fw.supported_hardware.iter().any(|h| h.eq_ignore_ascii_case(hardware)))
+            .filter(|fw| {
+                fw.supported_hardware
+                    .iter()
+                    .any(|h| h.eq_ignore_ascii_case(hardware))
+            })
             .max_by(|a, b| version_key(&a.version).cmp(&version_key(&b.version)))
     }
 
-    pub fn by_version_for_hardware(&self, version: &str, hardware: &str) -> Option<&FirmwareRelease> {
-        self.firmware
-            .iter()
-            .find(|fw| {
-                fw.version == version
-                    && fw
-                        .supported_hardware
-                        .iter()
-                        .any(|h| h.eq_ignore_ascii_case(hardware))
-            })
+    pub fn by_version_for_hardware(
+        &self,
+        version: &str,
+        hardware: &str,
+    ) -> Option<&FirmwareRelease> {
+        self.firmware.iter().find(|fw| {
+            fw.version == version
+                && fw
+                    .supported_hardware
+                    .iter()
+                    .any(|h| h.eq_ignore_ascii_case(hardware))
+        })
     }
 }
 
 pub fn parse_manifest(raw: &str) -> Result<FirmwareManifest> {
-    let manifest: FirmwareManifest = serde_json::from_str(raw).context("failed to parse firmware manifest JSON")?;
+    let manifest: FirmwareManifest =
+        serde_json::from_str(raw).context("failed to parse firmware manifest JSON")?;
     if manifest.schema_version.trim().is_empty() {
         return Err(anyhow!("manifest schema_version cannot be empty"));
     }
@@ -123,8 +130,7 @@ Create a GitHub Release and attach firmware-manifest.json."
         .iter()
         .find(|r| {
             !r.draft
-                && r
-                    .assets
+                && r.assets
                     .iter()
                     .any(|a| a.name.eq_ignore_ascii_case("firmware-manifest.json"))
         })
@@ -153,8 +159,12 @@ Attach firmware-manifest.json to a published release."
         .await
         .context("failed to read firmware manifest body")?;
 
-    parse_manifest(&raw)
-        .with_context(|| format!("failed to parse firmware-manifest.json from release '{}'", release.tag_name))
+    parse_manifest(&raw).with_context(|| {
+        format!(
+            "failed to parse firmware-manifest.json from release '{}'",
+            release.tag_name
+        )
+    })
 }
 
 fn version_key(version: &str) -> Vec<u32> {

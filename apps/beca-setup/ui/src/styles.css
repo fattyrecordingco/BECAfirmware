@@ -165,6 +165,31 @@ label {
   color: var(--text-muted);
 }
 
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--edge);
+  border-radius: 12px;
+  color: var(--text);
+  background:
+    linear-gradient(150deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.05)),
+    rgba(226, 236, 230, 0.86);
+  box-shadow: 0 3px 8px rgba(18, 30, 24, 0.08);
+}
+
+.toggle input {
+  width: auto;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  box-shadow: none;
+  accent-color: var(--accent);
+}
+
 button,
 select,
 input {

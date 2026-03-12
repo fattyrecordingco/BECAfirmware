@@ -3,17 +3,20 @@
 use anyhow::{anyhow, Context};
 use beca_bridge::dependency::{resolve_bridge_runtime, BridgeRuntimeInput};
 use beca_bridge::list_midi_outputs as bridge_list_midi_outputs;
-use beca_flasher::flash::{download_firmware, flash_firmware as run_flash, FlashCommandConfig, FlashTool};
+use beca_flasher::flash::{
+    download_firmware, flash_firmware as run_flash, FlashCommandConfig, FlashTool,
+};
 use beca_flasher::{
-    backup_nvs, detect_beca_ports, fetch_latest_manifest, parse_manifest, resolve_flash_tool, restore_nvs,
-    select_best_port, FirmwareManifest,
+    backup_nvs, detect_beca_ports, fetch_latest_manifest, parse_manifest, resolve_flash_tool,
+    restore_nvs, select_best_port, FirmwareManifest,
 };
 use chrono::Utc;
+use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fs::{self, File};
 use std::io::{ErrorKind, Read, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -27,6 +30,8 @@ use zip::write::SimpleFileOptions;
 const DEFAULT_FIRMWARE_REPO: &str = "fattyrecordingco/BECAfirmware";
 const HARDWARE_ID: &str = "ESP32-PICO-V3";
 const SERIAL_CTRL_BAUD: u32 = 115200;
+const ESPFLASH_SIDECAR_VERSION: &str = "4.2.0";
+const ESPTOOL_SIDECAR_VERSION: &str = "5.2.0";
 
 #[derive(Default)]
 struct RuntimeState {
@@ -100,7 +105,10 @@ struct WifiProvisionResult {
 async fn ensure_bridge_not_running(state: &State<'_, RuntimeState>) -> Result<(), String> {
     let lock = state.bridge_child.lock().await;
     if lock.is_some() {
-        return Err("Bridge is running and owns the serial port. Stop Bridge, then retry Wi-Fi setup.".to_string());
+        return Err(
+            "Bridge is running and owns the serial port. Stop Bridge, then retry Wi-Fi setup."
+                .to_string(),
+        );
     }
     Ok(())
 }
@@ -198,7 +206,7 @@ async fn flash_firmware(
         .map_err(err_to_string)?;
 
     emit_flash_progress(&app, 65, "Preparing flash tool...");
-    let (tool, tool_path) = resolve_flash_tool_for_app(&app)?;
+    let (tool, tool_path) = resolve_flash_tool_for_app(&app).await?;
 
     let baud_plan: &[u32] = if cfg!(target_os = "windows") {
         &[460_800, 230_400, 115_200]
@@ -238,8 +246,55 @@ async fn flash_firmware(
             }
         }
     }
+    let primary_error = last_error.unwrap_or_else(|| "Firmware flash failed.".to_string());
+    if matches!(tool, FlashTool::Espflash) && is_flash_connect_error(&primary_error) {
+        emit_flash_progress(
+            &app,
+            83,
+            "espflash could not connect. Switching to esptool fallback...",
+        );
+        let esptool_path = ensure_esptool_sidecar(&app).await.map_err(err_to_string)?;
 
-    Err(last_error.unwrap_or_else(|| "Firmware flash failed.".to_string()))
+        let mut fallback_error: Option<String> = None;
+        for (idx, baud) in baud_plan.iter().enumerate() {
+            let message = if idx == 0 {
+                format!("Fallback flash (esptool) at {} baud...", baud)
+            } else {
+                format!("Fallback retry (esptool) at {} baud...", baud)
+            };
+            emit_flash_progress(&app, 86, &message);
+
+            let config = FlashCommandConfig {
+                tool: FlashTool::Esptool,
+                tool_path: esptool_path.clone(),
+                port: serial_port.clone(),
+                baud: *baud,
+                firmware_path: binary_path.clone(),
+                offset: "0x0".to_string(),
+            };
+
+            match run_flash(&config).await {
+                Ok(_) => {
+                    emit_flash_progress(&app, 100, "Flash complete.");
+                    return Ok(());
+                }
+                Err(err) => {
+                    fallback_error = Some(err_to_string(err));
+                    if idx + 1 < baud_plan.len() {
+                        emit_flash_progress(&app, 84, "Retrying esptool fallback...");
+                        std::thread::sleep(Duration::from_millis(1200));
+                    }
+                }
+            }
+        }
+
+        let fallback = fallback_error.unwrap_or_else(|| "esptool fallback failed.".to_string());
+        return Err(format!(
+            "{primary_error}\n\nesptool fallback also failed: {fallback}"
+        ));
+    }
+
+    Err(primary_error)
 }
 
 #[tauri::command]
@@ -318,7 +373,8 @@ async fn scan_wifi_networks(
     ensure_bridge_not_running(&state).await?;
     let _serial_guard = state.serial_op_lock.lock().await;
     tokio::task::spawn_blocking(move || {
-        let payload = run_serial_command_json(&serial_port, "@C WIFI_SCAN", "WIFI_SCAN", 20_000, 3)?;
+        let payload =
+            run_serial_command_json(&serial_port, "@C WIFI_SCAN", "WIFI_SCAN", 20_000, 3)?;
         let mut list = Vec::new();
         if let Some(items) = payload.get("list").and_then(|v| v.as_array()) {
             for item in items {
@@ -344,7 +400,8 @@ async fn get_wifi_setup_info(
     ensure_bridge_not_running(&state).await?;
     let _serial_guard = state.serial_op_lock.lock().await;
     tokio::task::spawn_blocking(move || {
-        let payload = run_serial_command_json(&serial_port, "@C WIFI_INFO", "WIFI_INFO", 18_000, 3)?;
+        let payload =
+            run_serial_command_json(&serial_port, "@C WIFI_INFO", "WIFI_INFO", 18_000, 3)?;
         let info: SerialWifiInfo =
             serde_json::from_value(payload).context("invalid WIFI_INFO payload from device")?;
         Ok::<WifiSetupInfo, anyhow::Error>(WifiSetupInfo {
@@ -375,10 +432,7 @@ async fn save_wifi_credentials(
         let safe_name = sanitize_serial_field(&name);
         let safe_ssid = sanitize_serial_field(&ssid);
         let safe_pass = sanitize_serial_field(&pass);
-        let command = format!(
-            "@C WIFI_SAVE {}\t{}\t{}",
-            safe_name, safe_ssid, safe_pass
-        );
+        let command = format!("@C WIFI_SAVE {}\t{}\t{}", safe_name, safe_ssid, safe_pass);
         let payload = run_serial_command_json(&serial_port, &command, "WIFI_SAVE", 25_000, 1)?;
         Ok::<WifiProvisionResult, anyhow::Error>(WifiProvisionResult {
             ok: json_flag(&payload, "ok"),
@@ -407,7 +461,8 @@ async fn forget_wifi_credentials(
     ensure_bridge_not_running(&state).await?;
     let _serial_guard = state.serial_op_lock.lock().await;
     tokio::task::spawn_blocking(move || {
-        let payload = run_serial_command_json(&serial_port, "@C WIFI_FORGET", "WIFI_FORGET", 8_000, 1)?;
+        let payload =
+            run_serial_command_json(&serial_port, "@C WIFI_FORGET", "WIFI_FORGET", 8_000, 1)?;
         Ok::<WifiProvisionResult, anyhow::Error>(WifiProvisionResult {
             ok: json_flag(&payload, "ok"),
             msg: payload
@@ -428,10 +483,7 @@ async fn forget_wifi_credentials(
 }
 
 #[tauri::command]
-async fn reboot_device(
-    state: State<'_, RuntimeState>,
-    serial_port: String,
-) -> Result<(), String> {
+async fn reboot_device(state: State<'_, RuntimeState>, serial_port: String) -> Result<(), String> {
     ensure_bridge_not_running(&state).await?;
     let _serial_guard = state.serial_op_lock.lock().await;
     tokio::task::spawn_blocking(move || {
@@ -449,6 +501,7 @@ async fn start_bridge(
     state: State<'_, RuntimeState>,
     serial_port: String,
     midi_port: String,
+    microfreak_mode: bool,
 ) -> Result<(), String> {
     let bridge_path = resolve_binary_for_app(&app, "beca-bridge").map_err(err_to_string)?;
 
@@ -474,8 +527,13 @@ async fn start_bridge(
         .arg("--serial-port")
         .arg(serial_port)
         .arg("--midi-port")
-        .arg(midi_port)
-        .arg("--baud")
+        .arg(midi_port);
+
+    if microfreak_mode {
+        cmd.arg("--microfreak-mode");
+    }
+
+    cmd.arg("--baud")
         .arg("115200")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -527,12 +585,18 @@ async fn send_test_note(app: AppHandle, midi_port: String) -> Result<(), String>
 }
 
 #[tauri::command]
-async fn export_diagnostics(app: AppHandle, state: State<'_, RuntimeState>) -> Result<String, String> {
+async fn export_diagnostics(
+    app: AppHandle,
+    state: State<'_, RuntimeState>,
+) -> Result<String, String> {
     let app_data = app_data_dir(&app)?;
     let diagnostics_dir = app_data.join("diagnostics");
     fs::create_dir_all(&diagnostics_dir).map_err(|e| e.to_string())?;
 
-    let zip_path = diagnostics_dir.join(format!("beca-diagnostics-{}.zip", Utc::now().format("%Y%m%d-%H%M%S")));
+    let zip_path = diagnostics_dir.join(format!(
+        "beca-diagnostics-{}.zip",
+        Utc::now().format("%Y%m%d-%H%M%S")
+    ));
     let file = File::create(&zip_path).map_err(|e| e.to_string())?;
     let mut zip = zip::ZipWriter::new(file);
     let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
@@ -571,7 +635,9 @@ fn default_fix_suggestions() -> Vec<String> {
 
     #[cfg(target_os = "windows")]
     {
-        fixes.push("Install CH340 driver: https://www.wch-ic.com/downloads/CH341SER_EXE.html".to_string());
+        fixes.push(
+            "Install CH340 driver: https://www.wch-ic.com/downloads/CH341SER_EXE.html".to_string(),
+        );
         fixes.push("Install CP210x driver: https://www.silabs.com/developers/usb-to-uart-bridge-vcp-drivers".to_string());
         fixes.push("If COM port is busy, close Arduino Serial Monitor and retry.".to_string());
     }
@@ -583,7 +649,9 @@ fn default_fix_suggestions() -> Vec<String> {
 
     #[cfg(target_os = "linux")]
     {
-        fixes.push("If permission is denied, add your user to the dialout group and relogin.".to_string());
+        fixes.push(
+            "If permission is denied, add your user to the dialout group and relogin.".to_string(),
+        );
     }
 
     fixes
@@ -609,7 +677,10 @@ fn serial_port_candidates(port_name: &str) -> Vec<String> {
     vec![port_name.to_string()]
 }
 
-async fn load_manifest(app: &AppHandle, state: &State<'_, RuntimeState>) -> anyhow::Result<FirmwareManifest> {
+async fn load_manifest(
+    app: &AppHandle,
+    state: &State<'_, RuntimeState>,
+) -> anyhow::Result<FirmwareManifest> {
     {
         let cache = state.manifest_cache.lock().await;
         if let Some(manifest) = cache.clone() {
@@ -686,8 +757,14 @@ where
         while let Ok(Some(line)) = lines.next_line().await {
             if let Ok(value) = serde_json::from_str::<Value>(&line) {
                 if let Some(obj) = value.as_object() {
-                    let event = obj.get("event").and_then(|v| v.as_str()).unwrap_or("status");
-                    let state = obj.get("state").and_then(|v| v.as_str()).unwrap_or("running");
+                    let event = obj
+                        .get("event")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("status");
+                    let state = obj
+                        .get("state")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("running");
                     let detail = obj.get("detail").and_then(|v| v.as_str()).unwrap_or("");
                     emit_bridge_event(&app, event, state, detail);
                     continue;
@@ -716,8 +793,16 @@ fn run_serial_command_json(
     if is_wifi_scan_command {
         per_attempt_timeout_ms = per_attempt_timeout_ms.max(7_000);
     }
-    let port_settle_ms = if cfg!(target_os = "macos") { 2_200 } else { 1_200 };
-    let resend_interval_ms = if cfg!(target_os = "macos") { 1_300 } else { 900 };
+    let port_settle_ms = if cfg!(target_os = "macos") {
+        2_200
+    } else {
+        1_200
+    };
+    let resend_interval_ms = if cfg!(target_os = "macos") {
+        1_300
+    } else {
+        900
+    };
     let mut last_error: Option<String> = None;
     let mut last_port = requested_port.clone();
     let mut saw_any_line = false;
@@ -809,9 +894,12 @@ fn run_serial_command_json(
                             let tag = split.next().unwrap_or("").trim();
                             let payload = split.next().unwrap_or("{}").trim();
                             if tag.eq_ignore_ascii_case(expected_tag) {
-                                let value: Value = serde_json::from_str(payload).with_context(|| {
-                                    format!("invalid JSON payload for {expected_tag}: {payload}")
-                                })?;
+                                let value: Value =
+                                    serde_json::from_str(payload).with_context(|| {
+                                        format!(
+                                            "invalid JSON payload for {expected_tag}: {payload}"
+                                        )
+                                    })?;
                                 return Ok(value);
                             }
                             if tag.eq_ignore_ascii_case("ERR") {
@@ -881,7 +969,12 @@ fn is_port_busy_text(input: &str) -> bool {
         || txt.contains("port is busy")
 }
 
-fn format_serial_timeout_hint(expected_tag: &str, requested_port: &str, active_port: &str, prefix: &str) -> String {
+fn format_serial_timeout_hint(
+    expected_tag: &str,
+    requested_port: &str,
+    active_port: &str,
+    prefix: &str,
+) -> String {
     if requested_port == active_port {
         return format!("{prefix} for {expected_tag} on {active_port}. Wait 10 seconds and retry.");
     }
@@ -911,15 +1004,51 @@ fn sanitize_serial_field(input: &str) -> String {
     out
 }
 
-fn resolve_flash_tool_for_app(app: &AppHandle) -> Result<(FlashTool, PathBuf), String> {
-    let dirs = candidate_binary_dirs(app);
-    for dir in dirs {
-        if let Some(found) = resolve_flash_tool(&dir) {
-            return Ok(found);
-        }
+async fn resolve_flash_tool_for_app(app: &AppHandle) -> Result<(FlashTool, PathBuf), String> {
+    if let Some(found) = resolve_flash_tool_from_candidates(app) {
+        return Ok(found);
     }
 
-    Err("No bundled flash tool found. Expected espflash or esptool in app binaries.".to_string())
+    if let Some(path) = resolve_tool_on_path("espflash") {
+        return Ok((FlashTool::Espflash, path));
+    }
+    if let Some(path) = resolve_tool_on_path("esptool") {
+        return Ok((FlashTool::Esptool, path));
+    }
+
+    emit_flash_progress(
+        app,
+        68,
+        "Bundled flash tool missing. Repairing flash tool...",
+    );
+    match ensure_espflash_sidecar(app).await {
+        Ok(path) => {
+            emit_flash_progress(app, 72, "Flash tool repaired.");
+            Ok((FlashTool::Espflash, path))
+        }
+        Err(err) => {
+            error!("flash tool auto-repair failed: {err}");
+            Err(format!(
+                "No flash tool found. Auto-repair failed: {err}. Use installer build BECA Setup_*_x64-setup.exe, or retry on a network that allows GitHub downloads."
+            ))
+        }
+    }
+}
+
+fn resolve_flash_tool_from_candidates(app: &AppHandle) -> Option<(FlashTool, PathBuf)> {
+    let dirs = candidate_binary_dirs(app);
+    for dir in dirs {
+        if cfg!(target_os = "windows") {
+            let esptool = dir.join(executable_name("esptool"));
+            if esptool.exists() {
+                return Some((FlashTool::Esptool, esptool));
+            }
+        }
+        if let Some(found) = resolve_flash_tool(&dir) {
+            return Some(found);
+        }
+    }
+    None
 }
 
 fn resolve_named_tool_for_app(app: &AppHandle, tool_name: &str) -> Option<PathBuf> {
@@ -928,6 +1057,7 @@ fn resolve_named_tool_for_app(app: &AppHandle, tool_name: &str) -> Option<PathBu
         .into_iter()
         .map(|dir| dir.join(&file))
         .find(|path| path.exists())
+        .or_else(|| resolve_tool_on_path(tool_name))
 }
 
 fn resolve_binary_for_app(app: &AppHandle, binary_name: &str) -> anyhow::Result<PathBuf> {
@@ -939,7 +1069,10 @@ fn resolve_binary_for_app(app: &AppHandle, binary_name: &str) -> anyhow::Result<
         }
     }
 
-    Err(anyhow!("Binary {} was not found in bundled resources", file))
+    Err(anyhow!(
+        "Binary {} was not found in bundled resources",
+        file
+    ))
 }
 
 fn candidate_binary_dirs(app: &AppHandle) -> Vec<PathBuf> {
@@ -954,13 +1087,277 @@ fn candidate_binary_dirs(app: &AppHandle) -> Vec<PathBuf> {
         if let Some(parent) = exe_path.parent() {
             dirs.push(parent.to_path_buf());
             dirs.push(parent.join("binaries"));
+            dirs.push(parent.join("resources"));
+            dirs.push(parent.join("resources").join("binaries"));
         }
+    }
+
+    if let Ok(data_dir) = app.path().app_data_dir() {
+        dirs.push(data_dir.join("tools"));
     }
 
     dirs.push(PathBuf::from("apps/beca-setup/src-tauri/binaries"));
     dirs.push(PathBuf::from("tools/bridge/target/debug"));
     dirs.push(PathBuf::from("tools/flasher/target/debug"));
-    dirs
+
+    let mut unique_dirs = Vec::with_capacity(dirs.len());
+    for dir in dirs {
+        if !unique_dirs.iter().any(|existing| existing == &dir) {
+            unique_dirs.push(dir);
+        }
+    }
+    unique_dirs
+}
+
+fn resolve_tool_on_path(tool_name: &str) -> Option<PathBuf> {
+    let file = executable_name(tool_name);
+    let path_var = std::env::var_os("PATH")?;
+    for dir in std::env::split_paths(&path_var) {
+        let candidate = dir.join(&file);
+        if candidate.exists() {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
+fn is_flash_connect_error(input: &str) -> bool {
+    let txt = input.to_ascii_lowercase();
+    txt.contains("error while connecting to device")
+        || txt.contains("failed to connect")
+        || txt.contains("timed out waiting for packet header")
+        || txt.contains("serial port")
+}
+
+fn espflash_download_url_for_target() -> Option<String> {
+    #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+    let triple = "x86_64-pc-windows-msvc";
+    #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
+    let triple = "x86_64-apple-darwin";
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    let triple = "aarch64-apple-darwin";
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    let triple = "x86_64-unknown-linux-gnu";
+    #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
+    let triple = "aarch64-unknown-linux-gnu";
+    #[cfg(all(target_os = "linux", target_arch = "arm"))]
+    let triple = "armv7-unknown-linux-gnueabihf";
+    #[cfg(not(any(
+        all(target_os = "windows", target_arch = "x86_64"),
+        all(target_os = "macos", target_arch = "x86_64"),
+        all(target_os = "macos", target_arch = "aarch64"),
+        all(target_os = "linux", target_arch = "x86_64"),
+        all(target_os = "linux", target_arch = "aarch64"),
+        all(target_os = "linux", target_arch = "arm")
+    )))]
+    return None;
+
+    Some(format!(
+        "https://github.com/esp-rs/espflash/releases/download/v{ESPFLASH_SIDECAR_VERSION}/espflash-{triple}.zip"
+    ))
+}
+
+fn esptool_download_url_for_target() -> Option<String> {
+    #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+    let asset = format!("esptool-v{ESPTOOL_SIDECAR_VERSION}-windows-amd64.zip");
+    #[cfg(not(all(target_os = "windows", target_arch = "x86_64")))]
+    return None;
+
+    Some(format!(
+        "https://github.com/espressif/esptool/releases/download/v{ESPTOOL_SIDECAR_VERSION}/{asset}"
+    ))
+}
+
+async fn ensure_espflash_sidecar(app: &AppHandle) -> anyhow::Result<PathBuf> {
+    let tools_dir = app_data_dir(app).map_err(|e| anyhow!(e))?.join("tools");
+    fs::create_dir_all(&tools_dir)?;
+
+    let binary_name = executable_name("espflash");
+    let binary_path = tools_dir.join(&binary_name);
+    if binary_path.exists() {
+        return Ok(binary_path);
+    }
+
+    let download_url = espflash_download_url_for_target().ok_or_else(|| {
+        anyhow!(
+            "unsupported platform for espflash auto-repair: {}-{}",
+            std::env::consts::OS,
+            std::env::consts::ARCH
+        )
+    })?;
+    let archive_path = tools_dir.join(format!("espflash-{ESPFLASH_SIDECAR_VERSION}.zip"));
+
+    info!("downloading espflash sidecar from {}", download_url);
+    let client = Client::new();
+    let response = client
+        .get(&download_url)
+        .header(
+            "User-Agent",
+            format!("beca-setup/{}", env!("CARGO_PKG_VERSION")),
+        )
+        .send()
+        .await
+        .context("failed to download espflash sidecar")?
+        .error_for_status()
+        .context("espflash download returned non-success status")?;
+    let bytes = response
+        .bytes()
+        .await
+        .context("failed to read espflash download")?;
+    tokio_fs::write(&archive_path, &bytes)
+        .await
+        .with_context(|| {
+            format!(
+                "failed to write sidecar archive: {}",
+                archive_path.display()
+            )
+        })?;
+
+    let archive_path_for_extract = archive_path.clone();
+    let binary_path_for_extract = binary_path.clone();
+    tokio::task::spawn_blocking(move || {
+        extract_sidecar_binary_from_zip(
+            &archive_path_for_extract,
+            &binary_path_for_extract,
+            "espflash",
+        )
+    })
+    .await
+    .context("espflash extraction task failed")??;
+
+    if !binary_path.exists() {
+        return Err(anyhow!(
+            "espflash extraction did not produce {}",
+            binary_path.display()
+        ));
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        let mut perms = fs::metadata(&binary_path)?.permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&binary_path, perms)?;
+    }
+
+    Ok(binary_path)
+}
+
+async fn ensure_esptool_sidecar(app: &AppHandle) -> anyhow::Result<PathBuf> {
+    if let Some(existing) = resolve_named_tool_for_app(app, "esptool") {
+        return Ok(existing);
+    }
+
+    let tools_dir = app_data_dir(app).map_err(|e| anyhow!(e))?.join("tools");
+    fs::create_dir_all(&tools_dir)?;
+
+    let binary_name = executable_name("esptool");
+    let binary_path = tools_dir.join(&binary_name);
+    if binary_path.exists() {
+        return Ok(binary_path);
+    }
+
+    let download_url = esptool_download_url_for_target().ok_or_else(|| {
+        anyhow!(
+            "unsupported platform for esptool fallback: {}-{}",
+            std::env::consts::OS,
+            std::env::consts::ARCH
+        )
+    })?;
+    let archive_path = tools_dir.join(format!("esptool-{ESPTOOL_SIDECAR_VERSION}.zip"));
+
+    info!("downloading esptool sidecar from {}", download_url);
+    let client = Client::new();
+    let response = client
+        .get(&download_url)
+        .header(
+            "User-Agent",
+            format!("beca-setup/{}", env!("CARGO_PKG_VERSION")),
+        )
+        .send()
+        .await
+        .context("failed to download esptool sidecar")?
+        .error_for_status()
+        .context("esptool download returned non-success status")?;
+    let bytes = response
+        .bytes()
+        .await
+        .context("failed to read esptool download")?;
+    tokio_fs::write(&archive_path, &bytes)
+        .await
+        .with_context(|| {
+            format!(
+                "failed to write sidecar archive: {}",
+                archive_path.display()
+            )
+        })?;
+
+    let archive_path_for_extract = archive_path.clone();
+    let binary_path_for_extract = binary_path.clone();
+    tokio::task::spawn_blocking(move || {
+        extract_sidecar_binary_from_zip(
+            &archive_path_for_extract,
+            &binary_path_for_extract,
+            "esptool",
+        )
+    })
+    .await
+    .context("esptool extraction task failed")??;
+
+    if !binary_path.exists() {
+        return Err(anyhow!(
+            "esptool extraction did not produce {}",
+            binary_path.display()
+        ));
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        let mut perms = fs::metadata(&binary_path)?.permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&binary_path, perms)?;
+    }
+
+    Ok(binary_path)
+}
+
+fn extract_sidecar_binary_from_zip(
+    archive_path: &Path,
+    output_binary: &Path,
+    binary_base: &str,
+) -> anyhow::Result<()> {
+    let archive_file = File::open(archive_path)
+        .with_context(|| format!("failed to open archive: {}", archive_path.display()))?;
+    let mut archive = zip::ZipArchive::new(archive_file).context("invalid sidecar zip archive")?;
+    let expected_name = executable_name(binary_base);
+
+    for index in 0..archive.len() {
+        let mut entry = archive.by_index(index)?;
+        if entry.is_dir() {
+            continue;
+        }
+        let entry_name = entry.name().replace('\\', "/");
+        if entry_name.ends_with(&format!("/{expected_name}")) || entry_name == expected_name {
+            let mut out = File::create(output_binary).with_context(|| {
+                format!(
+                    "failed to create sidecar output: {}",
+                    output_binary.display()
+                )
+            })?;
+            std::io::copy(&mut entry, &mut out)
+                .with_context(|| format!("failed to extract {}", expected_name))?;
+            out.flush()?;
+            return Ok(());
+        }
+    }
+
+    Err(anyhow!(
+        "downloaded sidecar archive did not contain {}",
+        expected_name
+    ))
 }
 
 fn executable_name(base: &str) -> String {

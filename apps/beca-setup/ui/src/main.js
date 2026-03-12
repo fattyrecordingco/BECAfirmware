@@ -14,6 +14,7 @@ const el = {
   wifiSsidManual: document.querySelector("#wifi-ssid-manual"),
   wifiPass: document.querySelector("#wifi-pass"),
   midiSelect: document.querySelector("#midi-select"),
+  microfreakMode: document.querySelector("#microfreak-mode"),
   bridgeStatus: document.querySelector("#bridge-status"),
   activity: document.querySelector("#activity"),
   logView: document.querySelector("#log-view"),
@@ -508,10 +509,11 @@ async function startBridge() {
   try {
     await invoke("start_bridge", {
       serialPort: state.selectedPort,
-      midiPort: el.midiSelect.value
+      midiPort: el.midiSelect.value,
+      microfreakMode: el.microfreakMode.checked
     });
     el.bridgeStatus.textContent = "Connected";
-    addLog("Bridge started.");
+    addLog(`Bridge started${el.microfreakMode.checked ? " (MicroFreak mode)" : ""}.`);
   } catch (err) {
     el.bridgeStatus.textContent = `Bridge error: ${err}`;
     addLog(`Bridge start failed: ${err}`);

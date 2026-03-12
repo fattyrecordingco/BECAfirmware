@@ -1,5 +1,44 @@
 # CHANGELOG
 
+## 2026-02-28 - BECA Control M4L Milestone (feature/ableton-m4l-control)
+
+### Added
+
+- Ableton-node readiness bootstrap in `beca_control_ui.js` so init commands wait until `node.script` is ready.
+- Pending-value protection in `jsui` merge path to reduce stale poll overwrite during rapid edits.
+- Additional M4L transport debug lines (`[BECA] ...`) for set/write diagnostics in Max Console.
+
+### Changed
+
+- M4L write path now matches BECA web UI behavior first:
+  - legacy endpoint-style parameter writes are attempted first (`/mode`, `/scale`, `/root`, `/lo`, `/hi`, `/ts`, etc.),
+  - modern `POST /api/set` is kept as fallback.
+- HTTP transport set pipeline hardened:
+  - single-flight set dispatch,
+  - retry/backoff on transient failures,
+  - state resync after set completion,
+  - polling guards while set queue is in-flight.
+- `BECA Control.maxpat` updated for fixed-height (`169 px`) compact lane behavior and improved accessibility.
+- Build flow (`ableton/m4l/build_amxd.py`) now treats `BECA Control.amxd` as the single canonical AMXD and removes legacy aliases during sync/copy.
+
+### Removed
+
+- Legacy AMXD aliases:
+  - `BECA Control v2.amxd`
+  - `BECA Control Native.amxd`
+  - `BECA Control Fresh.amxd`
+  - `BECA Control Pro.amxd`
+- Deprecated native-page controller stack:
+  - `ableton/m4l/beca_native_controller.js`
+  - `ableton/m4l/code/beca_native_controller.js`
+  - `ableton/m4l/pages/*.maxpat`
+
+### Fixed
+
+- Resolved `node.script not ready can't handle message ...` startup race by deferring init message burst until Node readiness is observed.
+- Resolved UI interactions freezing/snap-back behavior where controls changed visually but reverted before backend state commit.
+- Preserved full control-key mapping parity for BECA processing while maintaining existing `/api/set` and serial `SET` semantics.
+
 ## 2026-02-26 - Ableton Integration (feature/ableton-m4l-control)
 
 ### Added

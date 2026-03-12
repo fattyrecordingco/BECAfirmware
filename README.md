@@ -341,11 +341,12 @@ Use BECA Setup for the easiest end-user flow:
 7. Wait for `Flash complete` status.
 8. In Step 3, choose Wi-Fi SSID/password and click `Save and Reboot`.
 9. In Step 4, select your MIDI output and click `Start Bridge`.
-10. Click `Test Note` and confirm activity in your DAW.
+10. If routing directly to an Arturia MicroFreak, select the MicroFreak MIDI port and enable `MicroFreak mode (notes only, ch. 1)`.
+11. Click `Test Note` and confirm activity in your DAW or on the MicroFreak.
 
 Windows notes:
 - Prefer installer `.exe` over a loose copied `beca-setup.exe`.
-- Portable mode requires both `beca-setup.exe` and `WebView2Loader.dll` in the same folder.
+- Portable mode requires `beca-setup.exe`, `WebView2Loader.dll`, and a sibling `binaries/` folder.
 - If WebView2 runtime is missing, install it:
   https://go.microsoft.com/fwlink/p/?LinkId=2124703
 - If no MIDI destinations exist, install/start loopMIDI and create one port.
@@ -407,6 +408,17 @@ Follow this section one line at a time, in order.
 7. Create or select one instrument/MIDI track.
 8. Arm/record-enable that track.
 9. Move/touch your plant sensor and watch for MIDI activity.
+
+### Direct MicroFreak path (serial bridge, no Ableton required)
+
+1. Open `BECA Setup`.
+2. In Step 4, select the MicroFreak MIDI output port.
+3. Enable `MicroFreak mode (notes only, ch. 1)`.
+4. Click `Start Bridge`.
+5. Open BECA control page in browser.
+6. Set output mode to `SERIAL`.
+7. Set the MicroFreak MIDI input channel to `1`.
+8. Click `Test Note` in BECA Setup, then test plant input.
 
 ### If you do not hear sound yet
 
@@ -568,7 +580,9 @@ If something fails, start here first.
 2. Click `Rescan Device` in Step 1.
 3. Try flash again in Step 2 (setup app now auto-retries with safer baud rates).
 4. If your board has a `BOOT` button, hold it as flash starts.
-5. If error mentions `unexpected argument '--port'`, install BECA Setup `0.1.3` or newer.
+5. If log shows `Error while connecting to device` from `espflash`, latest app builds auto-fallback to `esptool` on Windows. Retry once.
+6. If log says `No bundled flash tool found`, keep internet connected and retry once (setup app auto-repairs by downloading `espflash`).
+7. If error mentions `unexpected argument '--port'`, install BECA Setup `0.1.3` or newer.
 
 ### Problem: BECA Setup opens, but firmware list does not load
 
@@ -583,6 +597,13 @@ If something fails, start here first.
 2. Stop bridge, wait 3 seconds, start bridge again.
 3. Unplug/replug BECA if needed.
 4. Keep only one app connected to BECA serial at a time.
+
+### Problem: MicroFreak is not listed in Step 4 MIDI outputs
+
+1. Confirm the MicroFreak is powered on and connected directly by USB.
+2. Reopen BECA Setup and rescan Step 4 MIDI outputs.
+3. Check Windows Device Manager and Arturia driver/MIDI Control Center installation.
+4. If the MicroFreak still does not appear in the MIDI output list, treat this as a Windows/driver/device-enumeration issue, not a BECA note-format issue.
 
 ### Problem: Step 3 Wi-Fi scan/info times out or says serial port busy
 
@@ -638,7 +659,7 @@ If something fails, start here first.
 ### Problem: Windows says `WebView2Loader.dll was not found`
 
 1. Use installer build `BECA Setup_*_x64-setup.exe`.
-2. If using portable build, keep `beca-setup.exe` and `WebView2Loader.dll` together.
+2. If using portable build, keep `beca-setup.exe`, `WebView2Loader.dll`, and `binaries/` together.
 3. Install/repair Microsoft Edge WebView2 Runtime:
    https://go.microsoft.com/fwlink/p/?LinkId=2124703
 

@@ -1,5 +1,7 @@
 use anyhow::{anyhow, Context, Result};
-use beca_bridge::{list_midi_outputs, list_serial_ports, parse_beca_midi_line};
+use beca_bridge::{
+    list_midi_outputs, list_serial_ports, parse_beca_midi_line, transform_bridge_packet,
+};
 use clap::{Parser, Subcommand};
 use midir::{MidiOutput, MidiOutputConnection};
 use serde::Serialize;
@@ -30,6 +32,8 @@ enum Commands {
         serial_port: String,
         #[arg(long)]
         midi_port: String,
+        #[arg(long)]
+        microfreak_mode: bool,
         #[arg(long, default_value_t = 115200)]
         baud: u32,
         #[arg(long, default_value_t = 1500)]
@@ -60,10 +64,17 @@ fn main() -> Result<()> {
         Commands::Run {
             serial_port,
             midi_port,
+            microfreak_mode,
             baud,
             reconnect_ms,
         } => {
-            run_bridge(&serial_port, &midi_port, baud, reconnect_ms)?;
+            run_bridge(
+                &serial_port,
+                &midi_port,
+                microfreak_mode,
+                baud,
+                reconnect_ms,
+            )?;
         }
         Commands::TestNote { midi_port } => {
             let mut out = open_midi_output(&midi_port)?;
@@ -75,7 +86,13 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn run_bridge(serial_port_name: &str, midi_port_name: &str, baud: u32, reconnect_ms: u64) -> Result<()> {
+fn run_bridge(
+    serial_port_name: &str,
+    midi_port_name: &str,
+    microfreak_mode: bool,
+    baud: u32,
+    reconnect_ms: u64,
+) -> Result<()> {
     let running = Arc::new(AtomicBool::new(true));
     let running_for_handler = running.clone();
     ctrlc::set_handler(move || {
@@ -84,7 +101,11 @@ fn run_bridge(serial_port_name: &str, midi_port_name: &str, baud: u32, reconnect
     .context("failed to install signal handler")?;
 
     let mut midi_out = open_midi_output(midi_port_name)?;
-    emit_status("status", "connected", &format!("MIDI output ready: {midi_port_name}"));
+    emit_status(
+        "status",
+        "connected",
+        &format!("MIDI output ready: {midi_port_name}"),
+    );
 
     while running.load(Ordering::SeqCst) {
         match serialport::new(serial_port_name, baud)
@@ -98,8 +119,14 @@ fn run_bridge(serial_port_name: &str, midi_port_name: &str, baud: u32, reconnect
                     &format!("Serial connected: {serial_port_name} @ {baud}"),
                 );
                 let mut sent = 0usize;
-                if let Err(err) = run_bridge_session(port, &mut midi_out, &running, &mut sent) {
-                    emit_status("status", "reconnecting", &format!("Serial disconnected: {err}"));
+                if let Err(err) =
+                    run_bridge_session(port, &mut midi_out, &running, microfreak_mode, &mut sent)
+                {
+                    emit_status(
+                        "status",
+                        "reconnecting",
+                        &format!("Serial disconnected: {err}"),
+                    );
                 }
             }
             Err(err) => {
@@ -124,6 +151,7 @@ fn run_bridge_session(
     port: Box<dyn SerialPort>,
     midi_out: &mut MidiOutputConnection,
     running: &AtomicBool,
+    microfreak_mode: bool,
     sent_count: &mut usize,
 ) -> Result<()> {
     let mut reader = BufReader::new(port);
@@ -139,12 +167,18 @@ fn run_bridge_session(
                     continue;
                 }
                 if let Some(packet) = parse_beca_midi_line(&line) {
-                    midi_out
-                        .send(&packet.as_bytes())
-                        .context("failed to send midi packet")?;
-                    *sent_count += 1;
-                    if *sent_count % 16 == 0 {
-                        emit_status("activity", "running", &format!("midi_packets={sent_count}"));
+                    if let Some(packet) = transform_bridge_packet(&packet, microfreak_mode) {
+                        midi_out
+                            .send(&packet.as_bytes())
+                            .context("failed to send midi packet")?;
+                        *sent_count += 1;
+                        if *sent_count % 16 == 0 {
+                            emit_status(
+                                "activity",
+                                "running",
+                                &format!("midi_packets={sent_count}"),
+                            );
+                        }
                     }
                 }
             }
@@ -188,7 +222,11 @@ fn open_midi_output(target_name: &str) -> Result<MidiOutputConnection> {
 
     for port in &ports {
         let name = midi_out.port_name(port)?;
-        if name.eq_ignore_ascii_case(target_name) || name.to_ascii_lowercase().contains(&target_name.to_ascii_lowercase()) {
+        if name.eq_ignore_ascii_case(target_name)
+            || name
+                .to_ascii_lowercase()
+                .contains(&target_name.to_ascii_lowercase())
+        {
             return midi_out
                 .connect(port, "BECA Bridge")
                 .with_context(|| format!("failed to open MIDI output {name}"));

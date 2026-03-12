@@ -62,6 +62,8 @@ Named baseline for this cycle:
 - `Latest Stable` is selected by default.
 - Firmware binary is downloaded and SHA256 verified before flash.
 - Flash uses bundled `espflash` (or `esptool` if provided).
+- If bundled flash tooling is missing, app auto-repair downloads `espflash` (`v4.2.0`) and retries.
+- If `espflash` cannot connect to some CH340/CP210x boards, app auto-fallback retries with `esptool` (`v5.2.0` on Windows).
 - Flash now retries with safer baud rates when high-speed flashing fails (improves CH340/CP210x reliability on Windows/macOS/Linux).
 
 3. **Set Wi-Fi**
@@ -76,6 +78,7 @@ Named baseline for this cycle:
 - Starts bundled native `beca-bridge` process.
 - Auto-reconnects on serial disconnect.
 - Supports `Test Note` to verify MIDI routing.
+- Includes an optional `MicroFreak mode` toggle for direct Arturia MicroFreak note routing over the serial bridge.
 
 ## UI cohesion with BECA control page
 
@@ -158,7 +161,7 @@ Before packaging, copy sidecars into `apps/beca-setup/src-tauri/binaries/`:
 - `beca-bridge`
 - `beca-flasher`
 - `espflash`
-- `esptool` (optional, needed for backup/restore)
+- `esptool` (recommended for flash fallback and backup/restore)
 
 ## Diagnostics
 
@@ -172,7 +175,7 @@ Logs are written to the app data folder:
 ## Windows WebView2 notes
 
 - Prefer installer package (`BECA Setup_*_x64-setup.exe`) for end users.
-- Portable mode must ship `beca-setup.exe` and `WebView2Loader.dll` together.
+- Portable mode must ship `beca-setup.exe`, `WebView2Loader.dll`, and `binaries/` together.
 - If WebView2 runtime is missing, install:
   - https://go.microsoft.com/fwlink/p/?LinkId=2124703
 
