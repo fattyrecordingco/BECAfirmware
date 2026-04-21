@@ -46,25 +46,17 @@ try {
 
   $dest = "$shortPath\apps\beca-setup\dist-installer\windows"
   New-Item -ItemType Directory -Force $dest | Out-Null
-  $portableDir = "$dest\portable"
-  New-Item -ItemType Directory -Force $portableDir | Out-Null
   $destBinaries = "$dest\binaries"
   New-Item -ItemType Directory -Force $destBinaries | Out-Null
-  $portableBinaries = "$portableDir\binaries"
-  New-Item -ItemType Directory -Force $portableBinaries | Out-Null
   $nsis = Get-ChildItem "$shortPath\target\release\bundle\nsis" -Filter "*.exe" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
   $msi = Get-ChildItem "$shortPath\target\release\bundle\msi" -Filter "*.msi" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
   if (-not $nsis) { throw "NSIS installer not found in target\\release\\bundle\\nsis" }
   if (-not $msi) { throw "MSI installer not found in target\\release\\bundle\\msi" }
   Copy-Item $nsis.FullName "$dest\$($nsis.Name)" -Force
   Copy-Item $msi.FullName "$dest\$($msi.Name)" -Force
-  Copy-Item "$shortPath\target\release\beca-setup.exe" "$dest\$productName`_$version`_portable.exe" -Force
+  Copy-Item "$shortPath\target\release\beca-setup.exe" "$dest\BECA.exe" -Force
   Copy-Item "$shortPath\target\release\WebView2Loader.dll" "$dest\WebView2Loader.dll" -Force
   Copy-Item "$shortPath\target\release\binaries\*" "$destBinaries\" -Recurse -Force
-  Copy-Item "$shortPath\target\release\beca-setup.exe" "$portableDir\beca-setup.exe" -Force
-  Copy-Item "$shortPath\target\release\WebView2Loader.dll" "$portableDir\WebView2Loader.dll" -Force
-  Copy-Item "$shortPath\target\release\binaries\*" "$portableBinaries\" -Recurse -Force
-  Compress-Archive -Path "$portableDir\*" -DestinationPath "$dest\$productName`_$version`_portable.zip" -Force
 
   Write-Host "Build complete. Artifacts: $dest"
 }

@@ -8,6 +8,17 @@ Follow it top-to-bottom to install, flash, and use BECA successfully.
 This section is the easiest path for first-time users on Windows, macOS, or Linux.
 No coding is required.
 
+### Important: desktop-first control
+
+`BECA` is now the primary desktop app for:
+- firmware flashing
+- Wi-Fi setup
+- live control
+- Serial -> MIDI bridge
+- diagnostics
+
+The ESP32 browser page is now a lightweight fallback/recovery page, not the main control surface.
+
 ### What to prepare before you start
 
 1. Your BECA device.
@@ -27,17 +38,17 @@ If your OS installer is missing there, use `Releases` as fallback.
 - `apps/beca-setup/dist-installer/windows/`
 - `apps/beca-setup/dist-installer/macos/`
 2. Download exactly one file for your OS:
-- Windows: `BECA Setup_*_x64-setup.exe`
-- macOS: `BECA Setup_*.dmg`
+- Windows: `BECA_*_x64-setup.exe`
+- macOS: `BECA_*.dmg`
 3. If your OS file is not present in ZIP, open GitHub `Releases` and download the same OS file there.
 4. Linux installers are temporarily paused while CI packaging is stabilized.
 
 ### Step B: Install by operating system
 
 Windows:
-1. Double-click `BECA Setup_*_x64-setup.exe`.
+1. Double-click `BECA_*_x64-setup.exe`.
 2. Finish setup with default options.
-3. Open `BECA Setup` from Start Menu.
+3. Open `BECA` from Start Menu.
 4. If Windows shows missing WebView2 runtime, install:
    https://go.microsoft.com/fwlink/p/?LinkId=2124703
 5. If BECA is not detected, install the matching USB serial driver:
@@ -45,8 +56,8 @@ Windows:
 - CP210x: https://www.silabs.com/developers/usb-to-uart-bridge-vcp-drivers
 
 macOS:
-1. Open `BECA Setup_*.dmg`.
-2. Drag `BECA Setup` into `Applications`.
+1. Open `BECA_*.dmg`.
+2. Drag `BECA` into `Applications`.
 3. Open app from `Applications`.
 4. If blocked on first run, right-click app and choose `Open`.
 5. If BECA is not detected, reconnect cable and close other serial apps.
@@ -58,21 +69,20 @@ Linux:
 ### Step C: In-app setup (same on all OS)
 
 1. Connect BECA by USB.
-2. In BECA Setup Step 1, confirm your device/port appears.
+2. In `BECA`, confirm your device/port appears.
 3. In Step 2, keep `Latest Stable` selected and click `Flash Selected Firmware`.
 4. Wait for success message (`Flash complete`).
 5. In Step 3, choose your Wi-Fi network, enter password, and click `Save and Reboot`.
 6. macOS fallback: if scan/info is unreliable, type SSID manually and use `Flash + Save Wi-Fi`.
 7. In Step 4, choose MIDI output and click `Start Bridge`.
-8. Click `Test Note` and check your DAW receives MIDI.
+8. Open the in-app `Control` view and click `Test Note` if you want a quick routing check.
 
-### Step D: Open BECA control page in browser
+### Step D: Use the BECA control surface
 
-1. After Step 3 Wi-Fi setup in BECA Setup, wait for reboot.
-2. Open:
-- `http://<device-ip>/` or
-- `http://<device-name>.local/`
-3. If USB Wi-Fi setup is unavailable on older firmware, use fallback AP setup:
+1. After Step 3 Wi-Fi setup in `BECA`, wait for reboot.
+2. In the same desktop app, go to `Control`.
+3. BECA auto-discovers the device over USB and local Wi-Fi, then chooses the best available control transport.
+4. If USB Wi-Fi setup is unavailable on older firmware, use fallback AP setup:
 - Connect to Wi-Fi `BECA-XXXX`
 - Open `http://192.168.4.1/setup`
 - Enter home Wi-Fi details and save
@@ -89,7 +99,7 @@ If you are a normal end user, focus on:
 1. `Start Here (Master Branch Users)`
 2. `Section 10` (one-click app flow)
 3. `Section 11` (connect to DAW)
-4. `Section 12` (open BECA web UI)
+4. `Section 12` (use BECA control)
 5. `Section 16` (troubleshooting)
 
 You can ignore advanced sections unless you are developing firmware.
@@ -108,7 +118,7 @@ You can ignore advanced sections unless you are developing firmware.
 To keep firmware and installer updates separate and predictable, use these branches:
 
 - `official-system-updates`: firmware/system source of truth (ESP32 sketch + web UI + firmware docs)
-- `official-app-updates`: BECA Setup desktop app source of truth (installer, flasher wrapper, bridge, CI packaging)
+- `official-app-updates`: BECA desktop app source of truth (installer, flasher wrapper, bridge, CI packaging)
 
 Current firmware baseline label:
 - `verBECAbetav1.0.1` (based on commit `27559f9`, "README Update")
@@ -119,7 +129,7 @@ Publish flow:
 `beca-x.y.z-merged.bin` + `firmware-manifest.json` (via `.github/workflows/firmware-release.yml`).
 3. Land installer/app changes in `official-app-updates`.
 4. Publish installer release with tag `setup-vx.y.z` (triggers `.github/workflows/setup-installer-release.yml`).
-5. BECA Setup resolves firmware from the most recent published release that includes `firmware-manifest.json`.
+5. BECA resolves firmware from the most recent published release that includes `firmware-manifest.json`.
 
 ## 1) What BECA Does
 
@@ -153,7 +163,7 @@ Hardware:
 - Optional for `AUX OUT`: PCM5102A DAC + speakers/headphones
 
 Software:
-- BECA Setup installer from GitHub Releases (recommended for all users)
+- BECA installer from GitHub Releases (recommended for all users)
 - Arduino IDE 2.x: https://www.arduino.cc/en/software
 - PlatformIO (optional): https://platformio.org/platformio-ide
 - Git (optional): https://git-scm.com/downloads
@@ -171,7 +181,7 @@ Windows tip:
 
 ## 4) Download the Project Source (Optional)
 
-Most end users can skip this section and use BECA Setup from Releases.
+Most end users can skip this section and use BECA from Releases.
 
 If you still want a local copy of source/docs:
 
@@ -268,7 +278,7 @@ pio run -t upload
 
 Preferred path (latest firmware + setup app):
 
-1. Connect BECA by USB and open `BECA Setup`.
+1. Connect BECA by USB and open `BECA`.
 2. In app Step 3 (`Set Wi-Fi`), select SSID, enter password, and click `Save and Reboot`.
 3. Wait for reboot.
 4. Open BECA UI using either:
@@ -324,7 +334,7 @@ Notes:
 
 ## 10) One-Click Setup App (Recommended)
 
-Use BECA Setup for the easiest end-user flow:
+Use BECA for the easiest end-user flow:
 - Detect BECA over USB
 - Flash latest stable firmware
 - Set Wi-Fi credentials directly over USB
@@ -332,9 +342,9 @@ Use BECA Setup for the easiest end-user flow:
 
 ### Windows install and first run
 
-1. Open GitHub Releases and download `BECA Setup_*_x64-setup.exe`.
+1. Open GitHub Releases and download `BECA_*_x64-setup.exe`.
 2. Run installer and complete setup.
-3. Launch `BECA Setup` from Start Menu.
+3. Launch `BECA` from Start Menu.
 4. Plug in BECA using a USB data cable.
 5. In Step 1, confirm detected port (example: `COM5`).
 6. In Step 2, leave firmware set to `Latest Stable` and click `Flash Selected Firmware`.
@@ -345,30 +355,30 @@ Use BECA Setup for the easiest end-user flow:
 11. Click `Test Note` and confirm activity in your DAW or on the MicroFreak.
 
 Windows notes:
-- Prefer installer `.exe` over a loose copied `beca-setup.exe`.
-- Portable mode requires `beca-setup.exe`, `WebView2Loader.dll`, and a sibling `binaries/` folder.
+- Prefer installer `.exe` over a loose copied `BECA.exe`.
+- Portable mode requires `BECA.exe`, `WebView2Loader.dll`, and a sibling `binaries/` folder.
 - If WebView2 runtime is missing, install it:
   https://go.microsoft.com/fwlink/p/?LinkId=2124703
 - If no MIDI destinations exist, install/start loopMIDI and create one port.
 
 ### macOS install and first run
 
-1. Download `BECA Setup_*.dmg` from Releases.
-2. Open `.dmg` and drag `BECA Setup` into `Applications`.
-3. Open `BECA Setup` from Applications.
+1. Download `BECA_*.dmg` from Releases.
+2. Open `.dmg` and drag `BECA` into `Applications`.
+3. Open `BECA` from Applications.
 4. If macOS blocks first launch, right-click app -> `Open`.
 5. Connect BECA via USB and complete Step 1 through Step 4 in the app.
 6. In your DAW, choose the same MIDI destination you selected in Step 4.
 
 macOS notes:
 - If serial access is denied, close any app already using the serial port.
-- Keep BECA Setup and DAW open while bridging in `SERIAL` mode.
+- Keep BECA and DAW open while bridging in `SERIAL` mode.
 - If Gatekeeper keeps blocking launch, install to `Applications` and run once:
-  `xattr -dr com.apple.quarantine "/Applications/BECA Setup.app"`
+  `xattr -dr com.apple.quarantine "/Applications/BECA.app"`
 
 ### Linux install and first run
 
-1. Download `BECA Setup_*.AppImage` from Releases.
+1. Download `BECA_*.AppImage` from Releases.
 2. Make it executable:
 
 ```bash
@@ -399,33 +409,33 @@ Follow this section one line at a time, in order.
 
 ### One simple path that works for most people (recommended)
 
-1. Open `BECA Setup`.
+1. Open `BECA`.
 2. In Step 4, click `Start Bridge`.
 3. Open BECA control page in browser.
 4. Set output mode to `SERIAL`.
 5. Open your DAW.
-6. In DAW MIDI settings, enable the same MIDI port name shown in BECA Setup.
+6. In DAW MIDI settings, enable the same MIDI port name shown in BECA.
 7. Create or select one instrument/MIDI track.
 8. Arm/record-enable that track.
 9. Move/touch your plant sensor and watch for MIDI activity.
 
 ### Direct MicroFreak path (serial bridge, no Ableton required)
 
-1. Open `BECA Setup`.
+1. Open `BECA`.
 2. In Step 4, select the MicroFreak MIDI output port.
 3. Enable `MicroFreak mode (notes only, ch. 1)`.
 4. Click `Start Bridge`.
 5. Open BECA control page in browser.
 6. Set output mode to `SERIAL`.
 7. Set the MicroFreak MIDI input channel to `1`.
-8. Click `Test Note` in BECA Setup, then test plant input.
+8. Click `Test Note` in BECA, then test plant input.
 
 ### If you do not hear sound yet
 
 1. Confirm your DAW track has an instrument loaded (piano/synth/etc).
 2. Confirm track monitoring is on.
-3. Confirm the selected MIDI input matches BECA Setup Step 4 exactly.
-4. Click `Test Note` in BECA Setup.
+3. Confirm the selected MIDI input matches BECA Step 4 exactly.
+4. Click `Test Note` in BECA.
 5. If Test Note works but plant data does not, re-check BECA mode is `SERIAL`.
 
 ### DAW menu cheat sheet (where to look)
@@ -484,7 +494,7 @@ Serial mode note:
 
 After flashing and reboot, open the BECA control page in a browser:
 
-1. Preferred: configure Wi-Fi in BECA Setup Step 3 (`Set Wi-Fi`) over USB.
+1. Preferred: configure Wi-Fi in BECA Step 3 (`Set Wi-Fi`) over USB.
 2. If needed, fallback to AP portal: connect to `BECA-XXXX`, then open `http://192.168.4.1/setup`.
 3. After BECA joins your Wi-Fi, open either:
 - `http://<device-ip>/`
@@ -493,7 +503,7 @@ After flashing and reboot, open the BECA control page in a browser:
 
 ## 13) Legacy Serial MIDI Setup (Advanced / Manual)
 
-Use this only if you are not using BECA Setup app.
+Use this only if you are not using BECA app.
 
 ### Windows (legacy python bridge)
 
@@ -562,7 +572,7 @@ If something fails, start here first.
 2. Unplug BECA USB.
 3. Wait 5 seconds.
 4. Plug BECA USB back in.
-5. Open only `BECA Setup`.
+5. Open only `BECA`.
 6. Run Step 1 -> Step 2 -> Step 3 -> Step 4 again.
 
 ### Problem: BECA not detected (no COM/serial port)
@@ -582,12 +592,12 @@ If something fails, start here first.
 4. If your board has a `BOOT` button, hold it as flash starts.
 5. If log shows `Error while connecting to device` from `espflash`, latest app builds auto-fallback to `esptool` on Windows. Retry once.
 6. If log says `No bundled flash tool found`, keep internet connected and retry once (setup app auto-repairs by downloading `espflash`).
-7. If error mentions `unexpected argument '--port'`, install BECA Setup `0.1.3` or newer.
+7. If error mentions `unexpected argument '--port'`, install BECA `0.1.3` or newer.
 
-### Problem: BECA Setup opens, but firmware list does not load
+### Problem: BECA opens, but firmware list does not load
 
 1. Confirm internet access is available.
-2. Close and reopen BECA Setup.
+2. Close and reopen BECA.
 3. Click `Rescan Device`.
 4. If still failing, use `Copy Logs` and `Export Diagnostics Zip`.
 
@@ -601,7 +611,7 @@ If something fails, start here first.
 ### Problem: MicroFreak is not listed in Step 4 MIDI outputs
 
 1. Confirm the MicroFreak is powered on and connected directly by USB.
-2. Reopen BECA Setup and rescan Step 4 MIDI outputs.
+2. Reopen BECA and rescan Step 4 MIDI outputs.
 3. Check Windows Device Manager and Arturia driver/MIDI Control Center installation.
 4. If the MicroFreak still does not appear in the MIDI output list, treat this as a Windows/driver/device-enumeration issue, not a BECA note-format issue.
 
@@ -619,11 +629,11 @@ If something fails, start here first.
 
 ### Problem: DAW gets no notes in SERIAL mode
 
-1. Start bridge first in BECA Setup Step 4.
+1. Start bridge first in BECA Step 4.
 2. Set BECA output mode to `SERIAL` in web UI.
 3. Enable the same MIDI port in DAW settings.
 4. Arm/record-enable a track.
-5. Press `Test Note` in BECA Setup to confirm routing.
+5. Press `Test Note` in BECA to confirm routing.
 
 ### Problem: DAW Sync shows ARM and never reaches LOCK
 
@@ -642,7 +652,7 @@ If something fails, start here first.
 
 ### Problem: BECA web page does not open
 
-1. In BECA Setup Step 3, run `Set Wi-Fi` again and wait for reboot.
+1. In BECA Step 3, run `Set Wi-Fi` again and wait for reboot.
 2. Open `http://<device-ip>/` from the same LAN.
 3. For `.local`, use the mDNS-safe name (lowercase letters/numbers/hyphens). Example: `http://beca-blk.local/`.
 4. If `.local` does not resolve, use direct IP.
@@ -658,8 +668,8 @@ If something fails, start here first.
 
 ### Problem: Windows says `WebView2Loader.dll was not found`
 
-1. Use installer build `BECA Setup_*_x64-setup.exe`.
-2. If using portable build, keep `beca-setup.exe`, `WebView2Loader.dll`, and `binaries/` together.
+1. Use installer build `BECA_*_x64-setup.exe`.
+2. If using portable build, keep `BECA.exe`, `WebView2Loader.dll`, and `binaries/` together.
 3. Install/repair Microsoft Edge WebView2 Runtime:
    https://go.microsoft.com/fwlink/p/?LinkId=2124703
 

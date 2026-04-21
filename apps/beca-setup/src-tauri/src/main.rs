@@ -1,5 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod control;
+
 use anyhow::{anyhow, Context};
 use beca_bridge::dependency::{resolve_bridge_runtime, BridgeRuntimeInput};
 use beca_bridge::list_midi_outputs as bridge_list_midi_outputs;
@@ -11,6 +13,10 @@ use beca_flasher::{
     restore_nvs, select_best_port, FirmwareManifest,
 };
 use chrono::Utc;
+use control::{
+    control_request, control_snapshot, current_control_target, discover_beca_targets,
+    select_control_target, ControlTarget,
+};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -41,6 +47,8 @@ struct RuntimeState {
     latest_backup: Mutex<Option<PathBuf>>,
     log_file: Mutex<Option<PathBuf>>,
     log_guard: Mutex<Option<tracing_appender::non_blocking::WorkerGuard>>,
+    control_targets: Mutex<Vec<ControlTarget>>,
+    selected_control_target: Mutex<Option<String>>,
 }
 
 #[derive(Debug, Serialize)]
@@ -604,7 +612,7 @@ async fn export_diagnostics(
     if let Some(log_path) = state.log_file.lock().await.clone() {
         if log_path.exists() {
             let content = fs::read(&log_path).map_err(|e| e.to_string())?;
-            zip.start_file("logs/beca-setup.log", options)
+            zip.start_file("logs/beca.log", options)
                 .map_err(|e| e.to_string())?;
             zip.write_all(&content).map_err(|e| e.to_string())?;
         }
@@ -776,7 +784,7 @@ where
     });
 }
 
-fn run_serial_command_json(
+pub(crate) fn run_serial_command_json(
     serial_port: &str,
     command: &str,
     expected_tag: &str,
@@ -983,7 +991,7 @@ fn format_serial_timeout_hint(
     )
 }
 
-fn json_flag(payload: &Value, key: &str) -> bool {
+pub(crate) fn json_flag(payload: &Value, key: &str) -> bool {
     payload.get(key).map_or(false, |v| match v {
         Value::Bool(b) => *b,
         Value::Number(n) => n.as_i64().unwrap_or(0) != 0,
@@ -1029,7 +1037,7 @@ async fn resolve_flash_tool_for_app(app: &AppHandle) -> Result<(FlashTool, PathB
         Err(err) => {
             error!("flash tool auto-repair failed: {err}");
             Err(format!(
-                "No flash tool found. Auto-repair failed: {err}. Use installer build BECA Setup_*_x64-setup.exe, or retry on a network that allows GitHub downloads."
+                "No flash tool found. Auto-repair failed: {err}. Use installer build BECA_*_x64-setup.exe, or retry on a network that allows GitHub downloads."
             ))
         }
     }
@@ -1399,9 +1407,9 @@ fn app_data_dir(app: &AppHandle) -> Result<PathBuf, String> {
 fn init_logging(app: &AppHandle, state: &RuntimeState) -> anyhow::Result<()> {
     let log_dir = app_data_dir(app).map_err(|e| anyhow!(e))?.join("logs");
     fs::create_dir_all(&log_dir)?;
-    let log_file = log_dir.join("beca-setup.log");
+    let log_file = log_dir.join("beca.log");
 
-    let file_appender = tracing_appender::rolling::never(&log_dir, "beca-setup.log");
+    let file_appender = tracing_appender::rolling::never(&log_dir, "beca.log");
     let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
     let subscriber = tracing_subscriber::fmt()
         .with_ansi(false)
@@ -1439,6 +1447,11 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             detect_beca_device,
+            discover_beca_targets,
+            select_control_target,
+            current_control_target,
+            control_request,
+            control_snapshot,
             list_firmware_versions,
             flash_firmware,
             backup_settings,

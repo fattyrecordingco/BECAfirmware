@@ -1,6 +1,6 @@
-# BECA Setup App
+# BECA Desktop App
 
-`BECA Setup` is a desktop installer/wizard for flashing BECA firmware, provisioning Wi-Fi over USB, and running the Serial -> MIDI bridge without manual terminal steps.
+`BECA` is the unified desktop app for flashing BECA firmware, provisioning Wi-Fi over USB, running the Serial -> MIDI bridge, and hosting the live control UI locally instead of on the ESP32.
 
 ## End-user manual
 
@@ -134,7 +134,7 @@ Notes:
 - `beca-x.y.z-merged.bin`
 - `firmware-manifest.json`
 4. App release branch: `official-app-updates`.
-5. Publish BECA Setup release tag as `setup-vx.y.z` to trigger `.github/workflows/setup-installer-release.yml`.
+5. Publish BECA release tag as `setup-vx.y.z` to trigger `.github/workflows/setup-installer-release.yml`.
 6. Keep firmware and app releases separate so manifest lookup remains stable.
 
 ## Local development
@@ -174,14 +174,14 @@ Logs are written to the app data folder:
 
 ## Windows WebView2 notes
 
-- Prefer installer package (`BECA Setup_*_x64-setup.exe`) for end users.
-- Portable mode must ship `beca-setup.exe`, `WebView2Loader.dll`, and `binaries/` together.
+- Prefer installer package (`BECA_*_x64-setup.exe`) for end users.
+- Portable mode must ship `BECA.exe`, `WebView2Loader.dll`, and `binaries/` together.
 - If WebView2 runtime is missing, install:
   - https://go.microsoft.com/fwlink/p/?LinkId=2124703
 
 ## Firmware manifest troubleshooting
 
-If BECA Setup logs indicate manifest fetch failure:
+If BECA logs indicate manifest fetch failure:
 - It usually means no recent published release includes `firmware-manifest.json`.
 - Create/publish a release in `fattyrecordingco/BECAfirmware`.
 - Ensure release includes `firmware-manifest.json` asset.

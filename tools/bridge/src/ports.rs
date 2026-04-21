@@ -46,7 +46,7 @@ pub fn list_serial_ports() -> Vec<SerialPortSummary> {
 }
 
 pub fn list_midi_outputs() -> Result<Vec<MidiOutPort>> {
-    let midi_out = MidiOutput::new("BECA Setup")?;
+    let midi_out = MidiOutput::new("BECA")?;
     let ports = midi_out
         .ports()
         .into_iter()

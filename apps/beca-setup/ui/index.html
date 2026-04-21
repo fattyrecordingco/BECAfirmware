@@ -3,105 +3,170 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>BECA Setup</title>
+    <title>BECA</title>
     <link rel="stylesheet" href="./src/styles.css" />
   </head>
   <body>
     <main class="shell">
       <header class="topbar">
         <div class="brand">
-          <h1>BECA Setup</h1>
-          <p>Plant Synth Installer + Wi-Fi Setup + Serial MIDI Bridge</p>
+          <h1>BECA</h1>
+          <p>Unified setup, control, firmware updates, and bridge management</p>
         </div>
-        <div class="pill">ESP32-PICO-V3</div>
+        <div class="topbar-stack">
+          <div class="pill">ESP32-PICO-V3</div>
+          <div class="pill accent" id="transport-pill">No device selected</div>
+        </div>
       </header>
 
-      <section class="card" id="step-connect">
-        <div class="step-head">
-          <span class="badge">Step 1</span>
-          <h2>Connect BECA</h2>
+      <section class="card hero-card">
+        <div class="hero-head">
+          <div>
+            <div class="badge">Device</div>
+            <h2>Find BECA Automatically</h2>
+          </div>
+          <div class="row">
+            <button id="btn-discover">Refresh Devices</button>
+            <button id="btn-open-control" class="primary">Open Live Control</button>
+          </div>
         </div>
-        <p id="connect-status">Scanning USB serial ports...</p>
-        <div class="row">
-          <button id="btn-scan">Rescan Device</button>
-          <span id="port-chip" class="hint"></span>
+        <div class="hero-grid">
+          <div>
+            <label for="device-select">Detected BECA devices</label>
+            <select id="device-select">
+              <option value="">Scanning devices...</option>
+            </select>
+            <p id="selected-target-status" class="hint">Looking for BECA over USB and local Wi-Fi.</p>
+          </div>
+          <div class="device-summary">
+            <div>
+              <span class="label-inline">Selected Device</span>
+              <strong id="target-name">Waiting for discovery...</strong>
+            </div>
+            <div>
+              <span class="label-inline">Chosen Transport</span>
+              <strong id="target-transport">--</strong>
+            </div>
+            <div>
+              <span class="label-inline">Connection Detail</span>
+              <strong id="target-detail">No device selected yet.</strong>
+            </div>
+          </div>
         </div>
-        <ul id="port-fixes" class="hint-list"></ul>
       </section>
 
-      <section class="card" id="step-firmware">
-        <div class="step-head">
-          <span class="badge">Step 2</span>
-          <h2>Update Firmware</h2>
-        </div>
-        <label for="firmware-select">Firmware version</label>
-        <select id="firmware-select"></select>
-        <div class="row">
-          <button id="btn-backup">Backup Settings</button>
-          <button id="btn-flash" class="primary">Flash Selected Firmware</button>
-          <button id="btn-restore">Restore Settings</button>
-        </div>
-        <progress id="flash-progress" max="100" value="0"></progress>
-        <p id="flash-status" class="hint">Waiting to flash.</p>
+      <nav class="view-switch" aria-label="BECA app sections">
+        <button class="view-tab active" data-screen="control">Control</button>
+        <button class="view-tab" data-screen="setup">Setup</button>
+        <button class="view-tab" data-screen="diagnostics">Diagnostics</button>
+      </nav>
+
+      <section class="screen active" data-screen-view="control">
+        <section class="card control-card">
+          <div class="step-head">
+            <span class="badge">Live</span>
+            <h2>BECA Control Surface</h2>
+          </div>
+          <p class="hint" id="control-status">Loading the BECA control surface inside the desktop app.</p>
+          <div id="control-host" class="control-host"></div>
+        </section>
       </section>
 
-      <section class="card" id="step-wifi">
-        <div class="step-head">
-          <span class="badge">Step 3</span>
-          <h2>Set Wi-Fi</h2>
-        </div>
-        <p id="wifi-status" class="hint">Connect BECA first to configure Wi-Fi over USB.</p>
-        <label for="wifi-name">Device Name (.local)</label>
-        <input id="wifi-name" type="text" placeholder="beca-xxxx" />
-        <label for="wifi-ssid">Wi-Fi Network (2.4GHz)</label>
-        <div class="row">
-          <select id="wifi-ssid">
-            <option value="">Scan networks</option>
-          </select>
-          <button id="btn-wifi-scan">Rescan Networks</button>
-        </div>
-        <label for="wifi-ssid-manual">Wi-Fi Network (manual entry)</label>
-        <input id="wifi-ssid-manual" type="text" placeholder="Type SSID if scan is unreliable on macOS" />
-        <label for="wifi-pass">Password</label>
-        <input id="wifi-pass" type="password" placeholder="********" />
-        <div class="row">
-          <button id="btn-flash-wifi">Flash + Save Wi-Fi</button>
-          <button id="btn-wifi-save" class="primary">Save and Reboot</button>
-          <button id="btn-wifi-forget">Forget Wi-Fi</button>
-        </div>
-        <p class="hint">macOS fallback: if scan/info keeps timing out, type SSID manually and use Flash + Save Wi-Fi.</p>
+      <section class="screen" data-screen-view="setup">
+        <section class="card" id="step-connect">
+          <div class="step-head">
+            <span class="badge">Step 1</span>
+            <h2>Connect BECA</h2>
+          </div>
+          <p id="connect-status">Scanning USB serial ports...</p>
+          <div class="row">
+            <button id="btn-scan">Rescan USB</button>
+            <span id="port-chip" class="hint"></span>
+          </div>
+          <ul id="port-fixes" class="hint-list"></ul>
+        </section>
+
+        <section class="card" id="step-firmware">
+          <div class="step-head">
+            <span class="badge">Step 2</span>
+            <h2>Update Firmware</h2>
+          </div>
+          <label for="firmware-select">Firmware version</label>
+          <select id="firmware-select"></select>
+          <div class="row">
+            <button id="btn-backup">Backup Settings</button>
+            <button id="btn-flash" class="primary">Flash Selected Firmware</button>
+            <button id="btn-restore">Restore Settings</button>
+          </div>
+          <progress id="flash-progress" max="100" value="0"></progress>
+          <p id="flash-status" class="hint">Waiting to flash.</p>
+        </section>
+
+        <section class="card" id="step-wifi">
+          <div class="step-head">
+            <span class="badge">Step 3</span>
+            <h2>Set Wi-Fi</h2>
+          </div>
+          <p id="wifi-status" class="hint">Connect BECA first to configure Wi-Fi over USB.</p>
+          <label for="wifi-name">Device Name (.local)</label>
+          <input id="wifi-name" type="text" placeholder="beca-xxxx" />
+          <label for="wifi-ssid">Wi-Fi Network (2.4GHz)</label>
+          <div class="row">
+            <select id="wifi-ssid">
+              <option value="">Scan networks</option>
+            </select>
+            <button id="btn-wifi-scan">Rescan Networks</button>
+          </div>
+          <label for="wifi-ssid-manual">Wi-Fi Network (manual entry)</label>
+          <input id="wifi-ssid-manual" type="text" placeholder="Type SSID if scan is unreliable on macOS" />
+          <label for="wifi-pass">Password</label>
+          <input id="wifi-pass" type="password" placeholder="********" />
+          <div class="row">
+            <button id="btn-flash-wifi">Flash + Save Wi-Fi</button>
+            <button id="btn-wifi-save" class="primary">Save and Reboot</button>
+            <button id="btn-wifi-forget">Forget Wi-Fi</button>
+          </div>
+          <p class="hint">macOS fallback: if scan/info keeps timing out, type SSID manually and use Flash + Save Wi-Fi.</p>
+        </section>
+
+        <section class="card" id="step-bridge">
+          <div class="step-head">
+            <span class="badge">Step 4</span>
+            <h2>Start Bridge</h2>
+          </div>
+          <label for="midi-select">MIDI Output</label>
+          <select id="midi-select"></select>
+          <label class="toggle" for="microfreak-mode">
+            <input id="microfreak-mode" type="checkbox" />
+            <span>MicroFreak mode (notes only, ch. 1)</span>
+          </label>
+          <p class="hint">Direct MicroFreak target, fixed to MIDI channel 1, drum notes blocked.</p>
+          <div class="row">
+            <button id="btn-start-bridge" class="primary">Start Bridge</button>
+            <button id="btn-stop-bridge">Stop Bridge</button>
+            <button id="btn-test-note">Test Note</button>
+          </div>
+          <p id="bridge-status" class="hint">Bridge not running.</p>
+          <div id="activity" class="activity-dot"></div>
+        </section>
       </section>
 
-      <section class="card" id="step-bridge">
-        <div class="step-head">
-          <span class="badge">Step 4</span>
-          <h2>Start Bridge</h2>
-        </div>
-        <label for="midi-select">MIDI Output</label>
-        <select id="midi-select"></select>
-        <label class="toggle" for="microfreak-mode">
-          <input id="microfreak-mode" type="checkbox" />
-          <span>MicroFreak mode (notes only, ch. 1)</span>
-        </label>
-        <p class="hint">Direct MicroFreak target, fixed to MIDI channel 1, drum notes blocked.</p>
-        <div class="row">
-          <button id="btn-start-bridge" class="primary">Start Bridge</button>
-          <button id="btn-stop-bridge">Stop Bridge</button>
-          <button id="btn-test-note">Test Note</button>
-        </div>
-        <p id="bridge-status" class="hint">Bridge not running.</p>
-        <div id="activity" class="activity-dot"></div>
-      </section>
-
-      <section class="card details">
-        <div class="row row-spread">
-          <button id="btn-export">Export Diagnostics Zip</button>
-          <button id="btn-copy">Copy Logs</button>
-        </div>
-        <details>
-          <summary>Show details</summary>
-          <pre id="log-view"></pre>
-        </details>
+      <section class="screen" data-screen-view="diagnostics">
+        <section class="card details">
+          <div class="step-head">
+            <span class="badge">Logs</span>
+            <h2>Diagnostics</h2>
+          </div>
+          <p class="hint">Use this when flashing, Wi-Fi setup, discovery, or bridge behavior needs a closer look.</p>
+          <div class="row row-spread">
+            <button id="btn-export">Export Diagnostics Zip</button>
+            <button id="btn-copy">Copy Logs</button>
+          </div>
+          <details open>
+            <summary>Show details</summary>
+            <pre id="log-view"></pre>
+          </details>
+        </section>
       </section>
     </main>
 

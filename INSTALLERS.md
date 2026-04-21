@@ -1,13 +1,13 @@
-# BECA Setup Installers (All OS)
+# BECA Installers (All OS)
 
 If you downloaded the `master` ZIP, open:
 
 `apps/beca-setup/dist-installer/`
 
 Use the folder for your OS:
-- `windows/` -> `BECA Setup_*_x64-setup.exe`
-- `macos/` -> `BECA Setup_*.dmg`
-- `linux/` -> `BECA Setup_*.AppImage` (or `.deb`)
+- `windows/` -> `BECA_*_x64-setup.exe`
+- `macos/` -> `BECA_*.dmg`
+- `linux/` -> `BECA_*.AppImage` (or `.deb`)
 
 Current app baseline in repo config:
 - `0.1.3` (`apps/beca-setup/src-tauri/tauri.conf.json`)

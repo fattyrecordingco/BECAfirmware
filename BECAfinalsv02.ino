@@ -2493,6 +2493,19 @@ static inline void handleApiNotesGet() {
   server.send(200, "application/json", buf);
 }
 
+static inline void handleApiDrumGet() {
+  sendNoCacheHeaders();
+  char buf[128];
+  snprintf(
+    buf, sizeof(buf),
+    "{\"hit\":%u,\"sel\":%u,\"ts\":%lu}",
+    (unsigned)drumHitMaskNow(),
+    (unsigned)((uint8_t)drumSelMask),
+    (unsigned long)millis()
+  );
+  server.send(200, "application/json", buf);
+}
+
 static inline void handleApiParamsGet() {
   sendNoCacheHeaders();
   server.send(200, "application/json", buildApiParamsJson());
@@ -3067,6 +3080,29 @@ static inline void handleSerialControlLine(const char *line) {
     return;
   }
 
+  if (strcmp(cmd, "DRUM") == 0) {
+    char buf[128];
+    snprintf(
+      buf, sizeof(buf),
+      "{\"hit\":%u,\"sel\":%u,\"ts\":%lu}",
+      (unsigned)drumHitMaskNow(),
+      (unsigned)((uint8_t)drumSelMask),
+      (unsigned long)millis()
+    );
+    serialCtrlReply("DRUM", String(buf));
+    return;
+  }
+
+  if (strcmp(cmd, "EFFECTS") == 0) {
+    serialCtrlReply("EFFECTS", String(EFFECTS_JSON));
+    return;
+  }
+
+  if (strcmp(cmd, "PALETTES") == 0) {
+    serialCtrlReply("PALETTES", String(PALETTES_JSON));
+    return;
+  }
+
   if (strcmp(cmd, "TELEMETRY") == 0) {
     char buf[64];
     snprintf(buf, sizeof(buf), "{\"ok\":1,\"enabled\":%u}", gSerialJsonTelemetry ? 1u : 0u);
@@ -3118,6 +3154,47 @@ static inline void handleSerialControlLine(const char *line) {
 
     pushStateIfChanged(true);
     serialCtrlReply("SET", "{\"ok\":1}");
+    return;
+  }
+
+  if (strcmp(cmd, "SYNTH_TEST") == 0) {
+    if (ioMuteActive()) {
+      serialCtrlReply("SYNTH_TEST", "{\"ok\":0,\"err\":\"I/O muted\"}");
+      return;
+    }
+    if (!outputModeIsAux()) {
+      serialCtrlReply("SYNTH_TEST", "{\"ok\":0,\"err\":\"AUX mode required\"}");
+      return;
+    }
+    if (!gSynth.running() && !startAuxAudio()) {
+      serialCtrlReply("SYNTH_TEST", "{\"ok\":0,\"err\":\"audio start failed\"}");
+      return;
+    }
+    const bool ok = gSynth.triggerTestChord(2000);
+    serialCtrlReply("SYNTH_TEST", ok ? "{\"ok\":1}" : "{\"ok\":0}");
+    return;
+  }
+
+  if (strcmp(cmd, "RANDOMIZE") == 0) {
+    gMode  = (Mode)random(0, drumsAllowedForCurrentOutput() ? 4 : 3);
+    gScale = (ScaleType)random(0, 15);
+    fxMode = (EffectMode)random(0, (int)FX_COUNT);
+    currentPaletteIndex = (uint8_t)random(0, NUM_BUILTIN + NUM_CUSTOM);
+
+    bpm = ((int)random(90, 150) / 5) * 5;
+    lowOct  = random(1, 5);
+    highOct = max<uint8_t>(lowOct, (uint8_t)random(lowOct, 9));
+    sens = clampf(((float)random(0, 11)) / 20.0f, 0.0f, 0.5f);
+    swingPct = (uint8_t)random(0, 40);
+    visSpeed = (uint8_t)random(80, 220);
+    visIntensity = (uint8_t)random(140, 255);
+    restProb = (float)random(5, 20) / 100.0f;
+    avoidRepeats = (random(0, 2) == 1);
+    drumSelMask = (uint8_t)random(1, 256);
+
+    recalcTransport(true);
+    pushStateIfChanged(true);
+    serialCtrlReply("RANDOMIZE", "{\"ok\":1}");
     return;
   }
 
@@ -3435,6 +3512,7 @@ void setup() {
   server.on("/api/state",      HTTP_GET,  handleApiStateGet);
   server.on("/api/plant",      HTTP_GET,  handleApiPlantGet);
   server.on("/api/notes",      HTTP_GET,  handleApiNotesGet);
+  server.on("/api/drum",       HTTP_GET,  handleApiDrumGet);
   server.on("/api/params",     HTTP_GET,  handleApiParamsGet);
   server.on("/api/set",        HTTP_POST, handleApiSetPost);
   server.on("/api/synth",      HTTP_GET,  handleApiSynthGet);

@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { mountControlSurface } from "./control-loader.js";
 
 const el = {
   connectStatus: document.querySelector("#connect-status"),
@@ -30,7 +31,19 @@ const el = {
   btnStopBridge: document.querySelector("#btn-stop-bridge"),
   btnTestNote: document.querySelector("#btn-test-note"),
   btnCopy: document.querySelector("#btn-copy"),
-  btnExport: document.querySelector("#btn-export")
+  btnExport: document.querySelector("#btn-export"),
+  btnDiscover: document.querySelector("#btn-discover"),
+  btnOpenControl: document.querySelector("#btn-open-control"),
+  deviceSelect: document.querySelector("#device-select"),
+  selectedTargetStatus: document.querySelector("#selected-target-status"),
+  targetName: document.querySelector("#target-name"),
+  targetTransport: document.querySelector("#target-transport"),
+  targetDetail: document.querySelector("#target-detail"),
+  transportPill: document.querySelector("#transport-pill"),
+  controlHost: document.querySelector("#control-host"),
+  controlStatus: document.querySelector("#control-status"),
+  viewTabs: Array.from(document.querySelectorAll(".view-tab")),
+  screens: Array.from(document.querySelectorAll("[data-screen-view]"))
 };
 
 const state = {
@@ -38,13 +51,17 @@ const state = {
   logLines: [],
   flashInProgress: false,
   wifiOpInFlight: false,
-  wifiCooldownUntil: 0
+  wifiCooldownUntil: 0,
+  selectedTargetId: null,
+  controlMounted: false,
+  controlReady: false,
+  controlIssue: ""
 };
 
 function addLog(line) {
   const stamped = `[${new Date().toISOString()}] ${line}`;
   state.logLines.push(stamped);
-  if (state.logLines.length > 400) {
+  if (state.logLines.length > 500) {
     state.logLines.shift();
   }
   el.logView.textContent = state.logLines.join("\n");
@@ -52,6 +69,58 @@ function addLog(line) {
 
 function setActivity(active) {
   el.activity.classList.toggle("active", active);
+}
+
+function renderControlPlaceholder(message) {
+  el.controlHost.innerHTML = `
+    <div class="control-placeholder">
+      <strong>Live control is not ready yet</strong>
+      <p>${message}</p>
+    </div>
+  `;
+}
+
+function switchScreen(screenName) {
+  el.viewTabs.forEach((button) => {
+    button.classList.toggle("active", button.dataset.screen === screenName);
+  });
+  el.screens.forEach((screen) => {
+    screen.classList.toggle("active", screen.dataset.screenView === screenName);
+  });
+}
+
+async function ensureControlSurfaceLoaded() {
+  if (!state.selectedTargetId) {
+    renderControlPlaceholder("Select a BECA device first. The live control surface will attach once a target is available.");
+    state.controlMounted = false;
+    el.controlStatus.textContent = "Select a BECA device first. The live control surface will attach once a target is available.";
+    return;
+  }
+  if (!state.controlReady) {
+    renderControlPlaceholder(
+      state.controlIssue ||
+        "BECA was detected, but live control is not ready yet. Update firmware in Setup, then reconnect."
+    );
+    state.controlMounted = false;
+    el.controlStatus.textContent =
+      state.controlIssue ||
+      "BECA was detected, but live control is not ready yet. Update firmware in Setup, then reconnect.";
+    return;
+  }
+  if (state.controlMounted) return;
+  el.controlStatus.textContent = "Loading the BECA control surface inside the desktop app.";
+  try {
+    await mountControlSurface(el.controlHost, {
+      onOpenSetup: () => switchScreen("setup"),
+      onStatus: (message) => {
+        el.controlStatus.textContent = message;
+      }
+    });
+    state.controlMounted = true;
+  } catch (err) {
+    el.controlStatus.textContent = `Control surface failed to load: ${err}`;
+    addLog(`Control surface load failed: ${err}`);
+  }
 }
 
 function setWifiStatus(message, tone = "") {
@@ -136,6 +205,105 @@ function currentWifiPayload() {
   };
 }
 
+function describeTarget(target) {
+  const parts = [];
+  if (target.serial_port) parts.push(`USB ${target.serial_port}`);
+  if (target.network_url) parts.push(target.network_url.replace(/^https?:\/\//, ""));
+  return parts.join(" • ");
+}
+
+function updateTargetSummary(status) {
+  const target = status?.target;
+  state.selectedTargetId = status?.selected_id || null;
+  state.controlReady = Boolean(target?.control_ready && status?.transport);
+  state.controlIssue = target?.issue || status?.detail || "";
+
+  if (!target) {
+    state.controlReady = false;
+    state.controlIssue = "";
+    el.targetName.textContent = "No device selected";
+    el.targetTransport.textContent = "--";
+    el.targetDetail.textContent = "Refresh devices to look for BECA over USB and local Wi-Fi.";
+    el.selectedTargetStatus.textContent = status?.detail || "Looking for BECA devices...";
+    el.transportPill.textContent = "No device selected";
+    return;
+  }
+
+  el.targetName.textContent = target.name || "BECA";
+  el.targetTransport.textContent = status.transport ? status.transport.toUpperCase() : "--";
+  el.targetDetail.textContent = describeTarget(target) || status.detail || "Device connected.";
+  el.selectedTargetStatus.textContent = status.detail || "Device selected.";
+  el.transportPill.textContent = status.transport
+    ? `${status.transport.toUpperCase()} AUTO`
+    : "Target needs attention";
+}
+
+async function refreshControlStatus({ forceReload = false } = {}) {
+  try {
+    const status = await invoke("current_control_target");
+    updateTargetSummary(status);
+    if (state.selectedTargetId && state.controlReady) {
+      await ensureControlSurfaceLoaded();
+      if (forceReload) {
+        el.controlStatus.textContent = "BECA target updated. Control surface is using the latest selection.";
+      }
+    } else if (state.selectedTargetId) {
+      await ensureControlSurfaceLoaded();
+    }
+  } catch (err) {
+    addLog(`Control status refresh failed: ${err}`);
+  }
+}
+
+async function refreshTargets({ forceReload = false } = {}) {
+  try {
+    const result = await invoke("discover_beca_targets");
+    el.deviceSelect.innerHTML = "";
+
+    if (!result.targets.length) {
+      const option = document.createElement("option");
+      option.value = "";
+      option.textContent = "No BECA devices found yet";
+      el.deviceSelect.appendChild(option);
+      updateTargetSummary({ selected_id: null, target: null, transport: null, detail: "No BECA devices found yet." });
+      addLog("Device discovery found no BECA targets.");
+      return;
+    }
+
+    result.targets.forEach((target) => {
+      const option = document.createElement("option");
+      option.value = target.id;
+      option.textContent = `${target.name} (${describeTarget(target) || target.source})`;
+      if (result.selected_id === target.id) {
+        option.selected = true;
+      }
+      el.deviceSelect.appendChild(option);
+    });
+
+    state.selectedTargetId = result.selected_id || result.targets[0]?.id || null;
+    addLog(`Device discovery found ${result.targets.length} BECA target(s).`);
+    await refreshControlStatus({ forceReload });
+  } catch (err) {
+    addLog(`Device discovery failed: ${err}`);
+    el.selectedTargetStatus.textContent = "Could not scan for BECA devices on USB or Wi-Fi.";
+  }
+}
+
+async function chooseTarget(targetId, { forceReload = false } = {}) {
+  if (!targetId) return;
+  try {
+    const status = await invoke("select_control_target", { targetId });
+    updateTargetSummary(status);
+    await ensureControlSurfaceLoaded();
+    if (state.controlReady) {
+      el.controlStatus.textContent = "BECA target selected. Waiting for live state...";
+    }
+    addLog(`Selected control target: ${status?.target?.name || targetId}`);
+  } catch (err) {
+    addLog(`Selecting BECA target failed: ${err}`);
+  }
+}
+
 async function sendWifiSave(payload, { skipCooldownCheck = false } = {}) {
   if (!state.selectedPort) {
     setWifiStatus("Connect BECA first.", "error");
@@ -180,6 +348,7 @@ async function sendWifiSave(payload, { skipCooldownCheck = false } = {}) {
     setWifiCooldown(7000, "Wi-Fi saved. Waiting for BECA reboot.");
     setTimeout(() => {
       refreshDevice().catch((err) => addLog(`Post-reboot rescan failed: ${err}`));
+      refreshTargets({ forceReload: true }).catch((err) => addLog(`Post-reboot network scan failed: ${err}`));
     }, 7000);
     return true;
   } catch (err) {
@@ -309,11 +478,11 @@ async function refreshDevice() {
       });
     }
 
-    addLog(`Device scan result: ${JSON.stringify(result)}`);
+    addLog(`USB scan result: ${JSON.stringify(result)}`);
     setWifiControlsEnabled(Boolean(state.selectedPort) && !state.flashInProgress && !state.wifiOpInFlight);
     await refreshWifiSection();
   } catch (err) {
-    addLog(`Device scan failed: ${err}`);
+    addLog(`USB scan failed: ${err}`);
     el.connectStatus.textContent = "Could not scan serial ports.";
     resetWifiSection();
   }
@@ -406,6 +575,7 @@ async function doFlash({ provisionAfterFlash = false } = {}) {
 
     setTimeout(() => {
       refreshWifiSection().catch((err) => addLog(`Wi-Fi info refresh after flash failed: ${err}`));
+      refreshTargets({ forceReload: true }).catch((err) => addLog(`Network rescan after flash failed: ${err}`));
     }, cooldownMs + 500);
   } catch (err) {
     el.flashStatus.textContent = `Flash failed: ${err}`;
@@ -487,6 +657,7 @@ async function forgetWifi() {
     setWifiCooldown(7000, "Wi-Fi removed. Waiting for BECA reboot.");
     setTimeout(() => {
       refreshDevice().catch((err) => addLog(`Post-forget rescan failed: ${err}`));
+      refreshTargets({ forceReload: true }).catch((err) => addLog(`Post-forget network scan failed: ${err}`));
     }, 7000);
   } catch (err) {
     setWifiStatus(wifiSetupFallbackMessage(err), "error");
@@ -514,6 +685,7 @@ async function startBridge() {
     });
     el.bridgeStatus.textContent = "Connected";
     addLog(`Bridge started${el.microfreakMode.checked ? " (MicroFreak mode)" : ""}.`);
+    await refreshControlStatus();
   } catch (err) {
     el.bridgeStatus.textContent = `Bridge error: ${err}`;
     addLog(`Bridge start failed: ${err}`);
@@ -526,6 +698,7 @@ async function stopBridge() {
     el.bridgeStatus.textContent = "Stopped";
     setActivity(false);
     addLog("Bridge stopped.");
+    await refreshControlStatus();
   } catch (err) {
     addLog(`Bridge stop failed: ${err}`);
   }
@@ -570,17 +743,34 @@ async function bindEvents() {
     }
   });
 
-  await listen("bridge-status", (event) => {
+  await listen("bridge-status", async (event) => {
     const payload = event.payload;
     if (!payload) return;
     el.bridgeStatus.textContent = payload.detail || payload.state;
     setActivity(payload.event === "activity");
     addLog(`Bridge event: ${JSON.stringify(payload)}`);
+    if (payload.event === "status") {
+      await refreshControlStatus();
+    }
   });
 }
 
+el.viewTabs.forEach((button) => {
+  button.addEventListener("click", () => switchScreen(button.dataset.screen));
+});
+
+el.btnDiscover.addEventListener("click", () => refreshTargets({ forceReload: true }));
+el.btnOpenControl.addEventListener("click", () => {
+  switchScreen("control");
+  ensureControlSurfaceLoaded().catch((err) => addLog(`Control surface failed to open: ${err}`));
+});
+el.deviceSelect.addEventListener("change", (event) => {
+  chooseTarget(event.target.value, { forceReload: true }).catch((err) =>
+    addLog(`Device selection failed: ${err}`)
+  );
+});
 el.btnScan.addEventListener("click", refreshDevice);
-el.btnFlash.addEventListener("click", doFlash);
+el.btnFlash.addEventListener("click", () => doFlash());
 el.btnFlashWifi.addEventListener("click", doFlashAndWifi);
 el.btnBackup.addEventListener("click", doBackup);
 el.btnRestore.addEventListener("click", doRestore);
@@ -597,6 +787,10 @@ async function init() {
   resetWifiSection();
   await bindEvents();
   await refreshDevice();
+  await refreshTargets({ forceReload: false });
+  if (state.selectedTargetId) {
+    await ensureControlSurfaceLoaded();
+  }
   await refreshFirmwareOptions();
   await refreshBackupAvailability();
   await refreshMidiOutputs();

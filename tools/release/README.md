@@ -1,6 +1,6 @@
 # Firmware Release Tools
 
-These scripts generate BECA firmware release assets that `BECA Setup` expects.
+These scripts generate BECA firmware release assets that `BECA` expects.
 
 ## Local Windows flow
 

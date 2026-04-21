@@ -1,0 +1,1163 @@
+use crate::{json_flag, run_serial_command_json, RuntimeState};
+use anyhow::{anyhow, Context};
+use beca_flasher::detect_beca_ports;
+use if_addrs::{get_if_addrs, IfAddr};
+use reqwest::header::CONTENT_TYPE;
+use reqwest::Client;
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
+use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
+use std::time::Duration;
+use tauri::State;
+use tokio::sync::Semaphore;
+
+const NETWORK_SCAN_TIMEOUT_MS: u64 = 450;
+const CONTROL_HTTP_TIMEOUT_MS: u64 = 1400;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ControlTarget {
+    pub id: String,
+    pub name: String,
+    pub serial_port: Option<String>,
+    pub network_url: Option<String>,
+    pub ip: Option<String>,
+    pub ssid: Option<String>,
+    pub description: String,
+    pub source: String,
+    pub control_ready: bool,
+    pub serial_ready: bool,
+    pub network_ready: bool,
+    pub issue: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ControlDiscoveryResult {
+    pub targets: Vec<ControlTarget>,
+    pub selected_id: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ControlSelectionStatus {
+    pub selected_id: Option<String>,
+    pub target: Option<ControlTarget>,
+    pub transport: Option<String>,
+    pub detail: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ControlResponse {
+    pub status: u16,
+    pub body: String,
+    pub content_type: String,
+    pub transport: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ControlSnapshot {
+    pub state: Value,
+    pub plant: Value,
+    pub notes: Value,
+    pub drum: Value,
+    pub transport: String,
+    pub target: Option<ControlTarget>,
+}
+
+#[tauri::command]
+pub async fn discover_beca_targets(
+    state: State<'_, RuntimeState>,
+) -> Result<ControlDiscoveryResult, String> {
+    let bridge_running = state.bridge_child.lock().await.is_some();
+    let serial_targets = discover_serial_targets(bridge_running).await;
+    let network_targets = discover_network_targets().await;
+    let targets = merge_targets(serial_targets, network_targets);
+
+    {
+        let mut stored = state.control_targets.lock().await;
+        *stored = targets.clone();
+    }
+
+    let selected_id = {
+        let mut selected = state.selected_control_target.lock().await;
+        let keep_current = selected
+            .as_ref()
+            .and_then(|id| targets.iter().find(|target| target.id == *id))
+            .map(|target| target.id.clone());
+
+        let next = keep_current.or_else(|| targets.first().map(|target| target.id.clone()));
+        *selected = next.clone();
+        next
+    };
+
+    Ok(ControlDiscoveryResult {
+        targets,
+        selected_id,
+    })
+}
+
+#[tauri::command]
+pub async fn select_control_target(
+    state: State<'_, RuntimeState>,
+    target_id: String,
+) -> Result<ControlSelectionStatus, String> {
+    let targets = state.control_targets.lock().await.clone();
+    let selected = targets
+        .iter()
+        .find(|target| target.id == target_id)
+        .cloned()
+        .ok_or_else(|| {
+            "Selected BECA target is no longer available. Refresh devices and retry.".to_string()
+        })?;
+
+    *state.selected_control_target.lock().await = Some(selected.id.clone());
+    build_selection_status(&state, Some(selected)).await
+}
+
+#[tauri::command]
+pub async fn current_control_target(
+    state: State<'_, RuntimeState>,
+) -> Result<ControlSelectionStatus, String> {
+    let target = active_target(&state).await;
+    build_selection_status(&state, target).await
+}
+
+#[tauri::command]
+pub async fn control_request(
+    state: State<'_, RuntimeState>,
+    method: String,
+    path: String,
+    query: Option<BTreeMap<String, String>>,
+    form: Option<BTreeMap<String, String>>,
+) -> Result<ControlResponse, String> {
+    execute_control_request(
+        &state,
+        &method,
+        &path,
+        query.unwrap_or_default(),
+        form.unwrap_or_default(),
+    )
+    .await
+    .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+pub async fn control_snapshot(state: State<'_, RuntimeState>) -> Result<ControlSnapshot, String> {
+    let state_res = execute_control_request(
+        &state,
+        "GET",
+        "/api/state",
+        BTreeMap::new(),
+        BTreeMap::new(),
+    )
+    .await
+    .map_err(|err| err.to_string())?;
+    let plant_res = execute_control_request(
+        &state,
+        "GET",
+        "/api/plant",
+        BTreeMap::new(),
+        BTreeMap::new(),
+    )
+    .await
+    .map_err(|err| err.to_string())?;
+    let notes_res = execute_control_request(
+        &state,
+        "GET",
+        "/api/notes",
+        BTreeMap::new(),
+        BTreeMap::new(),
+    )
+    .await
+    .map_err(|err| err.to_string())?;
+    let drum_res =
+        execute_control_request(&state, "GET", "/api/drum", BTreeMap::new(), BTreeMap::new())
+            .await
+            .map_err(|err| err.to_string())?;
+
+    Ok(ControlSnapshot {
+        state: parse_json_body(&state_res.body),
+        plant: parse_json_body(&plant_res.body),
+        notes: parse_json_body(&notes_res.body),
+        drum: parse_json_body(&drum_res.body),
+        transport: state_res.transport,
+        target: active_target(&state).await,
+    })
+}
+
+async fn build_selection_status(
+    state: &State<'_, RuntimeState>,
+    target: Option<ControlTarget>,
+) -> Result<ControlSelectionStatus, String> {
+    if let Some(target) = target {
+        let transport = preferred_transport(&target, state.bridge_child.lock().await.is_some());
+        let detail = match transport {
+            Some("network") => {
+                let mut detail = format!(
+                    "Connected through Wi-Fi at {}.",
+                    target.network_url.clone().unwrap_or_default()
+                );
+                if let Some(serial_port) = target.serial_port.as_deref() {
+                    detail.push_str(&format!(" USB fallback is available on {serial_port}."));
+                }
+                detail
+            }
+            Some("serial") => {
+                let mut detail = format!(
+                    "Connected over USB serial {}.",
+                    target.serial_port.clone().unwrap_or_default()
+                );
+                if let Some(url) = target.network_url.as_deref() {
+                    detail.push_str(&format!(" Wi-Fi fallback is available at {url}."));
+                }
+                detail
+            }
+            _ => target.issue.clone().unwrap_or_else(|| {
+                "No active control transport is available for this BECA right now.".to_string()
+            }),
+        };
+
+        return Ok(ControlSelectionStatus {
+            selected_id: Some(target.id.clone()),
+            target: Some(target),
+            transport: transport.map(str::to_string),
+            detail,
+        });
+    }
+
+    Ok(ControlSelectionStatus {
+        selected_id: None,
+        target: None,
+        transport: None,
+        detail: "No BECA device is selected yet. Refresh devices and connect one.".to_string(),
+    })
+}
+
+async fn active_target(state: &State<'_, RuntimeState>) -> Option<ControlTarget> {
+    let selected_id = state.selected_control_target.lock().await.clone();
+    let targets = state.control_targets.lock().await.clone();
+
+    if let Some(selected_id) = selected_id {
+        if let Some(found) = targets.iter().find(|target| target.id == selected_id) {
+            return Some(found.clone());
+        }
+    }
+
+    targets.into_iter().next()
+}
+
+async fn execute_control_request(
+    state: &State<'_, RuntimeState>,
+    method: &str,
+    path: &str,
+    query: BTreeMap<String, String>,
+    form: BTreeMap<String, String>,
+) -> anyhow::Result<ControlResponse> {
+    let target = active_target(state)
+        .await
+        .ok_or_else(|| anyhow!("No BECA target selected. Refresh devices first."))?;
+    let bridge_running = state.bridge_child.lock().await.is_some();
+
+    if let Some(url) = target.network_url.as_deref() {
+        match network_request(url, method, path, &query, &form).await {
+            Ok(response) => return Ok(response),
+            Err(network_err) => {
+                if target.serial_port.is_none() || bridge_running {
+                    return Err(network_err);
+                }
+            }
+        }
+    }
+
+    if let Some(serial_port) = target.serial_port.as_deref() {
+        if !target.serial_ready {
+            if let Some(issue) = target.issue.clone() {
+                return Err(anyhow!(issue));
+            }
+        }
+        if bridge_running {
+            return Err(anyhow!(
+                "Bridge is using BECA's USB serial port. Control will work again over serial after you stop Bridge."
+            ));
+        }
+        return serial_request(serial_port, method, path, &query, &form);
+    }
+
+    if let Some(issue) = target.issue {
+        return Err(anyhow!(issue));
+    }
+
+    Err(anyhow!(
+        "BECA is selected but no reachable control transport is available."
+    ))
+}
+
+async fn network_request(
+    base_url: &str,
+    method: &str,
+    path: &str,
+    query: &BTreeMap<String, String>,
+    form: &BTreeMap<String, String>,
+) -> anyhow::Result<ControlResponse> {
+    let client = Client::builder()
+        .timeout(Duration::from_millis(CONTROL_HTTP_TIMEOUT_MS))
+        .build()
+        .context("failed to create HTTP client")?;
+    let url = format!("{}{}", base_url.trim_end_matches('/'), path);
+    let upper = method.to_ascii_uppercase();
+
+    let request = match upper.as_str() {
+        "POST" => client.post(&url),
+        _ => client.get(&url),
+    };
+
+    let request = if !query.is_empty() {
+        request.query(query)
+    } else {
+        request
+    };
+    let request = if upper == "POST" && !form.is_empty() {
+        request.form(form)
+    } else {
+        request
+    };
+
+    let response = request
+        .send()
+        .await
+        .with_context(|| format!("failed to reach {}", url))?;
+    let status = response.status().as_u16();
+    let content_type = response
+        .headers()
+        .get(CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("text/plain")
+        .to_string();
+    let body = response.text().await.unwrap_or_default();
+
+    Ok(ControlResponse {
+        status,
+        body,
+        content_type,
+        transport: "network".to_string(),
+    })
+}
+
+fn serial_request(
+    serial_port: &str,
+    method: &str,
+    path: &str,
+    query: &BTreeMap<String, String>,
+    form: &BTreeMap<String, String>,
+) -> anyhow::Result<ControlResponse> {
+    let upper = method.to_ascii_uppercase();
+
+    let json_response = |value: Value| -> anyhow::Result<ControlResponse> {
+        Ok(ControlResponse {
+            status: 200,
+            body: serde_json::to_string(&value)?,
+            content_type: "application/json".to_string(),
+            transport: "serial".to_string(),
+        })
+    };
+
+    let text_response = |status: u16, text: &str| ControlResponse {
+        status,
+        body: text.to_string(),
+        content_type: "text/plain".to_string(),
+        transport: "serial".to_string(),
+    };
+
+    match (upper.as_str(), path) {
+        ("GET", "/api/state") => json_response(serial_json(serial_port, "@C STATE", "STATE")?),
+        ("GET", "/api/plant") => json_response(serial_json(serial_port, "@C PLANT", "PLANT")?),
+        ("GET", "/api/notes") => json_response(serial_json(serial_port, "@C NOTES", "NOTES")?),
+        ("GET", "/api/params") => json_response(serial_json(serial_port, "@C PARAMS", "PARAMS")?),
+        ("GET", "/api/synth") => json_response(serial_json(serial_port, "@C SYNTH", "SYNTH")?),
+        ("GET", "/api/info") => {
+            json_response(serial_json(serial_port, "@C WIFI_INFO", "WIFI_INFO")?)
+        }
+        ("GET", "/effects") => json_response(serial_json(serial_port, "@C EFFECTS", "EFFECTS")?),
+        ("GET", "/palettes") => json_response(serial_json(serial_port, "@C PALETTES", "PALETTES")?),
+        ("GET", "/api/drum") => json_response(serial_json(serial_port, "@C DRUM", "DRUM")?),
+        ("GET", "/api/mute") => {
+            let state = serial_json(serial_port, "@C STATE", "STATE")?;
+            let payload = json!({
+                "io_muted": json_flag(&state, "io_muted"),
+                "outputmode": state.get("outputmode").cloned().unwrap_or(Value::from(0)),
+                "aux_running": state.get("aux_running").cloned().unwrap_or(Value::from(0)),
+            });
+            json_response(payload)
+        }
+        ("GET", "/api/outputmode") => {
+            let state = serial_json(serial_port, "@C STATE", "STATE")?;
+            let mode_value = state
+                .get("outputmode")
+                .and_then(|value| value.as_u64())
+                .unwrap_or(0);
+            let mode_name = match mode_value {
+                1 => "SERIAL",
+                2 => "AUX OUT",
+                _ => "BLE",
+            };
+            let payload = json!({
+                "mode": mode_name,
+                "value": mode_value,
+                "aux_ready": state.get("aux_ready").cloned().unwrap_or(Value::from(1)),
+                "aux_wait_ms": state.get("aux_wait_ms").cloned().unwrap_or(Value::from(0)),
+            });
+            json_response(payload)
+        }
+        ("POST", "/api/outputmode") => {
+            let mode_value = first_non_empty(form, &["mode", "v", "plain"])
+                .ok_or_else(|| anyhow!("output mode value is required"))?;
+            serial_json(
+                serial_port,
+                &format!("@C SET outputmode {mode_value}"),
+                "SET",
+            )?;
+            let state = serial_json(serial_port, "@C STATE", "STATE")?;
+            let mode_value = state
+                .get("outputmode")
+                .and_then(|value| value.as_u64())
+                .unwrap_or(0);
+            let payload = json!({
+                "mode": match mode_value {
+                    1 => "SERIAL",
+                    2 => "AUX OUT",
+                    _ => "BLE",
+                },
+                "value": mode_value,
+                "aux_ready": state.get("aux_ready").cloned().unwrap_or(Value::from(1)),
+                "aux_wait_ms": state.get("aux_wait_ms").cloned().unwrap_or(Value::from(0)),
+            });
+            json_response(payload)
+        }
+        ("POST", "/api/mute") => {
+            let mute_value = first_non_empty(form, &["v", "mute", "io_muted", "plain"])
+                .ok_or_else(|| anyhow!("mute value is required"))?;
+            serial_json(serial_port, &format!("@C SET mute {mute_value}"), "SET")?;
+            let state = serial_json(serial_port, "@C STATE", "STATE")?;
+            let payload = json!({
+                "io_muted": json_flag(&state, "io_muted"),
+                "outputmode": state.get("outputmode").cloned().unwrap_or(Value::from(0)),
+                "aux_running": state.get("aux_running").cloned().unwrap_or(Value::from(0)),
+            });
+            json_response(payload)
+        }
+        ("POST", "/api/sync") => {
+            let sync_value = first_non_empty(form, &["v", "sync", "plain"])
+                .ok_or_else(|| anyhow!("sync flag is required"))?;
+            serial_json(serial_port, &format!("@C SET sync {sync_value}"), "SET")?;
+            json_response(json!({"ok": 1}))
+        }
+        ("POST", "/api/set") => {
+            let plain_assignment = form
+                .get("plain")
+                .and_then(|plain| parse_plain_assignment(plain));
+            let key = first_non_empty(form, &["key"])
+                .or_else(|| plain_assignment.as_ref().map(|(key, _)| key.clone()))
+                .ok_or_else(|| anyhow!("control key is required"))?;
+            let value = first_non_empty(form, &["value"])
+                .or_else(|| plain_assignment.as_ref().map(|(_, value)| value.clone()))
+                .ok_or_else(|| anyhow!("control value is required"))?;
+            serial_json(serial_port, &format!("@C SET {key} {value}"), "SET")?;
+            json_response(serial_json(serial_port, "@C STATE", "STATE")?)
+        }
+        ("POST", "/api/synth") => {
+            if let Some(reset_value) = form.get("reset") {
+                if reset_value != "0" {
+                    serial_json(serial_port, "@C SET preset_reset 1", "SET")?;
+                }
+            }
+
+            if let Some(preset) = form.get("preset") {
+                serial_json(serial_port, &format!("@C SET preset {preset}"), "SET")?;
+            }
+
+            for (key, value) in form {
+                if key == "reset" || key == "preset" {
+                    continue;
+                }
+                serial_json(serial_port, &format!("@C SET {key} {value}"), "SET")?;
+            }
+
+            json_response(serial_json(serial_port, "@C SYNTH", "SYNTH")?)
+        }
+        ("GET", "/api/synth/test") => {
+            json_response(serial_json(serial_port, "@C SYNTH_TEST", "SYNTH_TEST")?)
+        }
+        ("GET", "/rand") => {
+            serial_json(serial_port, "@C RANDOMIZE", "RANDOMIZE")?;
+            Ok(text_response(200, "OK"))
+        }
+        ("GET", "/bpm") => {
+            set_from_query(serial_port, "bpm", query, &["v"])?;
+            Ok(text_response(200, "OK"))
+        }
+        ("GET", "/swing") => {
+            set_from_query(serial_port, "swing", query, &["v"])?;
+            Ok(text_response(200, "OK"))
+        }
+        ("GET", "/b") => {
+            set_from_query(serial_port, "bright", query, &["v"])?;
+            Ok(text_response(200, "OK"))
+        }
+        ("GET", "/s") => {
+            set_from_query(serial_port, "sens", query, &["v"])?;
+            Ok(text_response(200, "OK"))
+        }
+        ("GET", "/lo") => {
+            set_from_query(serial_port, "lo", query, &["v"])?;
+            Ok(text_response(200, "OK"))
+        }
+        ("GET", "/hi") => {
+            set_from_query(serial_port, "hi", query, &["v"])?;
+            Ok(text_response(200, "OK"))
+        }
+        ("GET", "/mode") => {
+            set_from_query(serial_port, "mode", query, &["i"])?;
+            Ok(text_response(200, "OK"))
+        }
+        ("GET", "/clock") => {
+            set_from_query(serial_port, "clock", query, &["v"])?;
+            Ok(text_response(200, "OK"))
+        }
+        ("GET", "/scale") => {
+            set_from_query(serial_port, "scale", query, &["i"])?;
+            Ok(text_response(200, "OK"))
+        }
+        ("GET", "/root") => {
+            set_from_query(serial_port, "root", query, &["semi"])?;
+            Ok(text_response(200, "OK"))
+        }
+        ("GET", "/fxset") => {
+            set_from_query(serial_port, "fx", query, &["i"])?;
+            Ok(text_response(200, "OK"))
+        }
+        ("GET", "/pal") => {
+            set_from_query(serial_port, "pal", query, &["i"])?;
+            Ok(text_response(200, "OK"))
+        }
+        ("GET", "/visspd") => {
+            set_from_query(serial_port, "vs", query, &["v"])?;
+            Ok(text_response(200, "OK"))
+        }
+        ("GET", "/visint") => {
+            set_from_query(serial_port, "vi", query, &["v"])?;
+            Ok(text_response(200, "OK"))
+        }
+        ("GET", "/rest") => {
+            set_from_query(serial_port, "rest", query, &["v"])?;
+            Ok(text_response(200, "OK"))
+        }
+        ("GET", "/norep") => {
+            set_from_query(serial_port, "nr", query, &["v"])?;
+            Ok(text_response(200, "OK"))
+        }
+        ("GET", "/midimode") => {
+            let mode = first_non_empty(query, &["v"])
+                .ok_or_else(|| anyhow!("legacy MIDI mode requires a value"))?;
+            let mapped = if mode.trim() == "1" { "SERIAL" } else { "BLE" };
+            serial_json(serial_port, &format!("@C SET outputmode {mapped}"), "SET")?;
+            Ok(text_response(200, "OK"))
+        }
+        ("GET", "/ts") => {
+            set_from_query(serial_port, "ts", query, &["v"])?;
+            Ok(text_response(200, "OK"))
+        }
+        ("GET", "/drumsel") => {
+            set_from_query(serial_port, "drumsel", query, &["mask"])?;
+            Ok(text_response(200, "OK"))
+        }
+        _ => Err(anyhow!(
+            "Unsupported BECA control route: {} {}",
+            upper,
+            path
+        )),
+    }
+}
+
+fn serial_json(serial_port: &str, command: &str, expected_tag: &str) -> anyhow::Result<Value> {
+    run_serial_command_json(serial_port, command, expected_tag, 3_800, 1)
+}
+
+fn set_from_query(
+    serial_port: &str,
+    key: &str,
+    query: &BTreeMap<String, String>,
+    params: &[&str],
+) -> anyhow::Result<()> {
+    let value =
+        first_non_empty(query, params).ok_or_else(|| anyhow!("{} requires a value", key))?;
+    serial_json(serial_port, &format!("@C SET {key} {value}"), "SET")?;
+    Ok(())
+}
+
+fn first_non_empty(map: &BTreeMap<String, String>, keys: &[&str]) -> Option<String> {
+    keys.iter()
+        .find_map(|key| map.get(*key))
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+fn parse_plain_assignment(plain: &str) -> Option<(String, String)> {
+    let (key, value) = plain.trim().split_once('=')?;
+    let key = key.trim().to_string();
+    let value = value.trim().to_string();
+    if key.is_empty() || value.is_empty() {
+        None
+    } else {
+        Some((key, value))
+    }
+}
+
+fn parse_json_body(body: &str) -> Value {
+    serde_json::from_str(body).unwrap_or_else(|_| json!({ "ok": 0, "raw": body }))
+}
+
+fn preferred_transport(target: &ControlTarget, bridge_running: bool) -> Option<&'static str> {
+    if target.serial_ready && !bridge_running {
+        return Some("serial");
+    }
+    if target.network_ready {
+        return Some("network");
+    }
+    None
+}
+
+async fn discover_serial_targets(bridge_running: bool) -> Vec<ControlTarget> {
+    let ports = detect_beca_ports();
+    let likely_ports: Vec<_> = ports.into_iter().filter(|port| port.likely_beca).collect();
+    let mut targets = Vec::with_capacity(likely_ports.len());
+
+    for port in likely_ports {
+        let mut target = ControlTarget {
+            id: format!("serial:{}", port.port_name),
+            name: if port.description.is_empty() {
+                format!("BECA ({})", port.port_name)
+            } else {
+                format!("BECA ({})", port.description)
+            },
+            serial_port: Some(port.port_name.clone()),
+            network_url: None,
+            ip: None,
+            ssid: None,
+            description: port.description.clone(),
+            source: "serial".to_string(),
+            control_ready: false,
+            serial_ready: false,
+            network_ready: false,
+            issue: None,
+        };
+
+        if !bridge_running {
+            let port_name = port.port_name.clone();
+            if let Ok(info) = tokio::task::spawn_blocking(move || {
+                run_serial_command_json(&port_name, "@C WIFI_INFO", "WIFI_INFO", 2_500, 1)
+            })
+            .await
+            .unwrap_or_else(|_| Err(anyhow!("serial probe task failed")))
+            {
+                apply_wifi_info(&mut target, &info);
+            }
+
+            let port_name = port.port_name.clone();
+            match tokio::task::spawn_blocking(move || probe_serial_control(&port_name)).await {
+                Ok(Ok(())) => {
+                    target.serial_ready = true;
+                    target.control_ready = true;
+                }
+                Ok(Err(err)) => {
+                    target.issue = Some(describe_control_probe_error("USB serial", &err));
+                }
+                Err(_) => {
+                    target.issue = Some(
+                        "USB serial was found, but the live control probe could not finish."
+                            .to_string(),
+                    );
+                }
+            }
+        }
+
+        targets.push(target);
+    }
+
+    targets
+}
+
+async fn discover_network_targets() -> Vec<ControlTarget> {
+    let client = match Client::builder()
+        .timeout(Duration::from_millis(NETWORK_SCAN_TIMEOUT_MS))
+        .build()
+    {
+        Ok(client) => client,
+        Err(_) => return Vec::new(),
+    };
+
+    let scan_urls = match local_scan_urls() {
+        Ok(urls) => urls,
+        Err(_) => return Vec::new(),
+    };
+
+    let gate = Arc::new(Semaphore::new(40));
+    let mut tasks = Vec::with_capacity(scan_urls.len());
+
+    for url in scan_urls {
+        let client = client.clone();
+        let gate = gate.clone();
+        tasks.push(tokio::spawn(async move {
+            let permit = gate.acquire_owned().await.ok()?;
+            let _permit = permit;
+            probe_network_target(&client, &url).await.ok()
+        }));
+    }
+
+    let mut found = Vec::new();
+    for task in tasks {
+        if let Ok(Some(target)) = task.await {
+            found.push(target);
+        }
+    }
+    found
+}
+
+async fn probe_network_target(client: &Client, base_url: &str) -> anyhow::Result<ControlTarget> {
+    let url = format!("{}/api/info", base_url.trim_end_matches('/'));
+    let response = client
+        .get(&url)
+        .send()
+        .await
+        .with_context(|| format!("failed to probe {}", base_url))?;
+
+    if !response.status().is_success() {
+        return Err(anyhow!("{} did not return a successful response", url));
+    }
+
+    let body = response.text().await.unwrap_or_default();
+    let info: Value = serde_json::from_str(&body).context("invalid /api/info JSON")?;
+    let mut target = ControlTarget {
+        id: format!("network:{base_url}"),
+        name: "BECA".to_string(),
+        serial_port: None,
+        network_url: Some(base_url.to_string()),
+        ip: base_url_host(base_url),
+        ssid: None,
+        description: "Wi-Fi device".to_string(),
+        source: "network".to_string(),
+        control_ready: false,
+        serial_ready: false,
+        network_ready: false,
+        issue: None,
+    };
+    apply_wifi_info(&mut target, &info);
+    match probe_network_control(base_url).await {
+        Ok(()) => {
+            target.network_ready = true;
+            target.control_ready = true;
+        }
+        Err(err) => {
+            target.issue = Some(describe_control_probe_error("Wi-Fi", &err));
+        }
+    }
+    Ok(target)
+}
+
+fn merge_targets(
+    serial_targets: Vec<ControlTarget>,
+    network_targets: Vec<ControlTarget>,
+) -> Vec<ControlTarget> {
+    let mut merged = serial_targets;
+
+    for network in network_targets {
+        if let Some(existing) = merged
+            .iter_mut()
+            .find(|candidate| same_beca(candidate, &network))
+        {
+            if existing.network_url.is_none() {
+                existing.network_url = network.network_url.clone();
+            }
+            if existing.ip.is_none() {
+                existing.ip = network.ip.clone();
+            }
+            if existing.ssid.is_none() {
+                existing.ssid = network.ssid.clone();
+            }
+            if existing.name == "BECA" && network.name != "BECA" {
+                existing.name = network.name.clone();
+            }
+            existing.control_ready |= network.control_ready;
+            existing.serial_ready |= network.serial_ready;
+            existing.network_ready |= network.network_ready;
+            if existing.issue.is_none() && network.issue.is_some() {
+                existing.issue = network.issue.clone();
+            }
+            existing.source = "serial+network".to_string();
+            continue;
+        }
+
+        merged.push(network);
+    }
+
+    merged.sort_by(|left, right| left.name.cmp(&right.name));
+    merged
+}
+
+fn same_beca(left: &ControlTarget, right: &ControlTarget) -> bool {
+    if let (Some(left_ip), Some(right_ip)) = (&left.ip, &right.ip) {
+        if left_ip == right_ip {
+            return true;
+        }
+    }
+
+    let left_name = left.name.trim().to_ascii_lowercase();
+    let right_name = right.name.trim().to_ascii_lowercase();
+    !left_name.is_empty() && left_name == right_name
+}
+
+fn apply_wifi_info(target: &mut ControlTarget, payload: &Value) {
+    if let Some(name) = payload.get("name").and_then(|value| value.as_str()) {
+        if !name.trim().is_empty() {
+            target.name = name.trim().to_string();
+        }
+    }
+    if let Some(ssid) = payload.get("ssid").and_then(|value| value.as_str()) {
+        if !ssid.trim().is_empty() {
+            target.ssid = Some(ssid.trim().to_string());
+        }
+    }
+    if let Some(ip) = payload.get("ip").and_then(|value| value.as_str()) {
+        let ip = ip.trim();
+        if !ip.is_empty() && ip != "0.0.0.0" {
+            target.ip = Some(ip.to_string());
+            target.network_url = Some(format!("http://{ip}"));
+        }
+    }
+    if let Some(mode) = payload.get("mode").and_then(|value| value.as_str()) {
+        if !mode.trim().is_empty() {
+            target.description = format!("{} mode", mode.trim().to_uppercase());
+        }
+    }
+}
+
+fn probe_serial_control(serial_port: &str) -> anyhow::Result<()> {
+    let state = serial_json(serial_port, "@C STATE", "STATE")?;
+    validate_state_payload(&state)
+}
+
+async fn probe_network_control(base_url: &str) -> anyhow::Result<()> {
+    let client = Client::builder()
+        .timeout(Duration::from_millis(CONTROL_HTTP_TIMEOUT_MS))
+        .build()
+        .context("failed to create HTTP probe client")?;
+    let url = format!("{}/api/state", base_url.trim_end_matches('/'));
+    let response = client
+        .get(&url)
+        .send()
+        .await
+        .with_context(|| format!("failed to probe {url}"))?;
+
+    if !response.status().is_success() {
+        return Err(anyhow!("{} returned HTTP {}", url, response.status()));
+    }
+
+    let content_type = response
+        .headers()
+        .get(CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    let body = response.text().await.unwrap_or_default();
+    if !content_type.contains("json") {
+        return Err(anyhow!(
+            "legacy browser page responded instead of the live control JSON API"
+        ));
+    }
+
+    let payload: Value = serde_json::from_str(&body).context("invalid /api/state JSON")?;
+    validate_state_payload(&payload)
+}
+
+fn validate_state_payload(payload: &Value) -> anyhow::Result<()> {
+    let object = payload
+        .as_object()
+        .ok_or_else(|| anyhow!("control probe returned non-object JSON"))?;
+    if object.contains_key("mode") || object.contains_key("bpm") || object.contains_key("sens") {
+        Ok(())
+    } else {
+        Err(anyhow!(
+            "device did not expose the unified control state fields"
+        ))
+    }
+}
+
+fn describe_control_probe_error(transport_label: &str, err: &anyhow::Error) -> String {
+    let message = err.to_string();
+    let lower = message.to_ascii_lowercase();
+    if lower.contains("unknown command")
+        || lower.contains("legacy browser page")
+        || lower.contains("did not expose the unified control state fields")
+    {
+        return format!(
+            "{transport_label} found BECA, but the installed firmware is too old for the unified desktop control surface. Flash the latest firmware in Setup, then reconnect."
+        );
+    }
+    if lower.contains("timed out")
+        || lower.contains("failed to reach")
+        || lower.contains("failed to probe")
+    {
+        return format!(
+            "{transport_label} found BECA, but the live control API did not answer in time. Reboot BECA or flash the latest firmware, then retry."
+        );
+    }
+    format!("{transport_label} found BECA, but live control is unavailable right now: {message}")
+}
+
+fn base_url_host(base_url: &str) -> Option<String> {
+    base_url
+        .trim_start_matches("http://")
+        .trim_start_matches("https://")
+        .split('/')
+        .next()
+        .map(str::to_string)
+}
+
+fn local_scan_urls() -> anyhow::Result<Vec<String>> {
+    let mut urls = BTreeSet::new();
+
+    for iface in get_if_addrs().context("unable to inspect local network adapters")? {
+        let ip = match iface.addr {
+            IfAddr::V4(v4) => v4.ip,
+            _ => continue,
+        };
+
+        if ip.is_loopback() || ip.is_link_local() {
+            continue;
+        }
+
+        let octets = ip.octets();
+        for host in 1..=254 {
+            if host == octets[3] {
+                continue;
+            }
+            urls.insert(format!(
+                "http://{}.{}.{}.{}",
+                octets[0], octets[1], octets[2], host
+            ));
+        }
+    }
+
+    Ok(urls.into_iter().collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::sync::{Arc, Mutex};
+    use std::thread;
+    use std::time::{Duration, Instant};
+
+    fn spawn_mock_server() -> (String, Arc<Mutex<i32>>, thread::JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind mock server");
+        let addr = listener.local_addr().expect("mock server addr");
+        listener
+            .set_nonblocking(true)
+            .expect("mock server nonblocking");
+        let bpm = Arc::new(Mutex::new(120));
+        let bpm_for_thread = bpm.clone();
+
+        let handle = thread::spawn(move || {
+            let started = Instant::now();
+            while started.elapsed() < Duration::from_secs(3) {
+                let Ok((mut stream, _peer)) = listener.accept() else {
+                    thread::sleep(Duration::from_millis(20));
+                    continue;
+                };
+                let mut buf = [0u8; 4096];
+                let n = stream.read(&mut buf).expect("read request");
+                let req = String::from_utf8_lossy(&buf[..n]);
+                let first_line = req.lines().next().unwrap_or_default().to_string();
+                let body = req.split("\r\n\r\n").nth(1).unwrap_or_default();
+
+                let (status, content_type, payload) = if first_line.starts_with("GET /api/info") {
+                    (
+                        "200 OK",
+                        "application/json",
+                        format!(
+                            "{{\"name\":\"Mock BECA\",\"mode\":\"sta\",\"ip\":\"{}\",\"ssid\":\"StudioWiFi\"}}",
+                            addr.ip()
+                        ),
+                    )
+                } else if first_line.starts_with("GET /api/state") {
+                    let current_bpm = *bpm_for_thread.lock().expect("lock bpm");
+                    (
+                        "200 OK",
+                        "application/json",
+                        format!("{{\"bpm\":{},\"mode\":0}}", current_bpm),
+                    )
+                } else if first_line.starts_with("POST /api/set") {
+                    let form = body
+                        .split('&')
+                        .filter_map(|part| part.split_once('='))
+                        .collect::<BTreeMap<_, _>>();
+                    if form.get("key") == Some(&"bpm") {
+                        let next = form
+                            .get("value")
+                            .and_then(|value| value.parse::<i32>().ok())
+                            .unwrap_or(120);
+                        *bpm_for_thread.lock().expect("lock bpm") = next;
+                    }
+                    ("200 OK", "application/json", "{\"ok\":1}".to_string())
+                } else {
+                    (
+                        "404 Not Found",
+                        "application/json",
+                        "{\"ok\":0}".to_string(),
+                    )
+                };
+
+                let response = format!(
+                    "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    payload.len(),
+                    payload
+                );
+                stream
+                    .write_all(response.as_bytes())
+                    .expect("write response");
+            }
+        });
+
+        (format!("http://{}", addr), bpm, handle)
+    }
+
+    fn spawn_legacy_mock_server() -> (String, thread::JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind legacy mock server");
+        let addr = listener.local_addr().expect("legacy mock server addr");
+        listener
+            .set_nonblocking(true)
+            .expect("legacy mock server nonblocking");
+
+        let handle = thread::spawn(move || {
+            let started = Instant::now();
+            while started.elapsed() < Duration::from_secs(3) {
+                let Ok((mut stream, _peer)) = listener.accept() else {
+                    thread::sleep(Duration::from_millis(20));
+                    continue;
+                };
+                let mut buf = [0u8; 4096];
+                let n = stream.read(&mut buf).expect("read request");
+                let req = String::from_utf8_lossy(&buf[..n]);
+                let first_line = req.lines().next().unwrap_or_default().to_string();
+
+                let (status, content_type, payload) = if first_line.starts_with("GET /api/info") {
+                    (
+                        "200 OK",
+                        "application/json",
+                        format!(
+                            "{{\"name\":\"Legacy BECA\",\"mode\":\"sta\",\"ip\":\"{}\",\"ssid\":\"StudioWiFi\"}}",
+                            addr.ip()
+                        ),
+                    )
+                } else if first_line.starts_with("GET /api/state") {
+                    (
+                        "200 OK",
+                        "text/html",
+                        "<!doctype html><title>Legacy Control</title>".to_string(),
+                    )
+                } else {
+                    (
+                        "404 Not Found",
+                        "application/json",
+                        "{\"ok\":0}".to_string(),
+                    )
+                };
+
+                let response = format!(
+                    "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    payload.len(),
+                    payload
+                );
+                stream
+                    .write_all(response.as_bytes())
+                    .expect("write response");
+            }
+        });
+
+        (format!("http://{}", addr), handle)
+    }
+
+    #[tokio::test]
+    async fn network_request_reads_and_writes_mock_beca_state() {
+        let (base_url, bpm, handle) = spawn_mock_server();
+
+        let initial = network_request(
+            &base_url,
+            "GET",
+            "/api/state",
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+        )
+        .await
+        .expect("initial state");
+        assert!(initial.body.contains("\"bpm\":120"));
+
+        let mut form = BTreeMap::new();
+        form.insert("key".to_string(), "bpm".to_string());
+        form.insert("value".to_string(), "145".to_string());
+        let post = network_request(&base_url, "POST", "/api/set", &BTreeMap::new(), &form)
+            .await
+            .expect("set bpm");
+        assert_eq!(post.status, 200);
+        assert_eq!(*bpm.lock().expect("lock bpm"), 145);
+
+        let next = network_request(
+            &base_url,
+            "GET",
+            "/api/state",
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+        )
+        .await
+        .expect("next state");
+        assert!(next.body.contains("\"bpm\":145"));
+
+        handle.join().expect("mock server join");
+    }
+
+    #[tokio::test]
+    async fn probe_network_target_reads_device_identity() {
+        let (base_url, _bpm, handle) = spawn_mock_server();
+        let target = probe_network_target(&Client::new(), &base_url)
+            .await
+            .expect("probe target");
+
+        assert_eq!(target.name, "Mock BECA");
+        assert_eq!(target.network_url.as_deref(), Some("http://127.0.0.1"));
+        assert_eq!(target.ssid.as_deref(), Some("StudioWiFi"));
+        assert!(target.control_ready);
+        assert!(target.network_ready);
+        assert!(target.issue.is_none());
+
+        handle.join().expect("mock server join");
+    }
+
+    #[tokio::test]
+    async fn probe_network_target_marks_legacy_control_as_incompatible() {
+        let (base_url, handle) = spawn_legacy_mock_server();
+        let target = probe_network_target(&Client::new(), &base_url)
+            .await
+            .expect("probe target");
+
+        assert_eq!(target.name, "Legacy BECA");
+        assert!(!target.control_ready);
+        assert!(!target.network_ready);
+        assert!(target
+            .issue
+            .as_deref()
+            .unwrap_or_default()
+            .contains("too old"));
+
+        handle.join().expect("legacy mock server join");
+    }
+}
