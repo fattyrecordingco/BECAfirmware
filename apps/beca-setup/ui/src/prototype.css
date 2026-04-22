@@ -1,0 +1,467 @@
+:root {
+  color-scheme: light;
+  --proto-scale: 1;
+  --proto-background: #f6f5f1;
+  --proto-panel: #ffffff;
+  --proto-green: #008351;
+  --proto-border: #bebebe;
+  --proto-off: #d2d2cd;
+  --proto-off-text: #bdbdb7;
+  --proto-shadow: 0 22px 44px rgba(0, 131, 81, 0.08);
+  --proto-mono: "Geist Mono", "SFMono-Regular", "JetBrains Mono", monospace;
+  --proto-display: "Proxima Nova ExtraBold", "Proxima Nova EB", "Proxima Nova", "Arial Black", sans-serif;
+}
+
+@font-face {
+  font-family: "Geist Mono";
+  src:
+    local("Geist Mono"),
+    local("GeistMono"),
+    local("Geist Mono Regular");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Proxima Nova EB";
+  src:
+    local("Proxima Nova ExtraBold"),
+    local("ProximaNova-Extrabld"),
+    local("Proxima Nova Extrabold");
+  font-weight: 800;
+  font-style: normal;
+  font-display: swap;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  background: var(--proto-background);
+  color: var(--proto-green);
+  font-family: var(--proto-mono);
+}
+
+button {
+  font: inherit;
+}
+
+.proto-app {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+}
+
+.proto-viewport {
+  width: calc(575px * var(--proto-scale));
+  height: calc(842px * var(--proto-scale));
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+}
+
+.proto-canvas {
+  position: relative;
+  width: 575px;
+  height: 842px;
+  border: 2px solid var(--proto-green);
+  border-radius: 24px;
+  background: var(--proto-panel);
+  box-shadow: var(--proto-shadow);
+  overflow: hidden;
+  transform: scale(var(--proto-scale));
+  transform-origin: top center;
+}
+
+.proto-logo {
+  position: absolute;
+  left: 20px;
+  top: 20px;
+  width: 98px;
+  height: 74px;
+  color: var(--proto-green);
+}
+
+.proto-logo svg,
+.proto-mode-icon svg,
+.proto-midi-leaf svg,
+.proto-led svg,
+.proto-random-icon svg,
+.proto-flower-icon svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.proto-mode-button {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  border: 0;
+  padding: 0;
+}
+
+.proto-mode-button.is-active {
+  top: 24px;
+  left: 426px;
+  width: 64px;
+  height: 64px;
+  border: 2px solid var(--proto-green);
+  border-radius: 999px;
+  color: var(--proto-green);
+}
+
+.proto-mode-button.is-muted {
+  top: 34px;
+  left: 501px;
+  width: 42px;
+  height: 42px;
+  color: #c7c7c4;
+}
+
+.proto-mode-icon {
+  width: 29px;
+  height: 29px;
+}
+
+.proto-plant-caption,
+.proto-midi-label,
+.proto-setting-name,
+.proto-output-label,
+.proto-sync-label {
+  font-size: 11px;
+  line-height: 1.15;
+}
+
+.proto-plant-caption {
+  position: absolute;
+  left: 20px;
+  top: 95px;
+  color: var(--proto-off-text);
+}
+
+.proto-chart-panel {
+  position: absolute;
+  left: 20px;
+  top: 111px;
+  width: 350px;
+  height: 163px;
+  border: 2px solid var(--proto-border);
+  border-radius: 13px;
+  overflow: hidden;
+}
+
+.proto-chart-panel svg {
+  width: 100%;
+  height: 100%;
+}
+
+.proto-midi-head {
+  position: absolute;
+  left: 20px;
+  top: 313px;
+  width: 350px;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.proto-midi-label {
+  color: var(--proto-off-text);
+}
+
+.proto-midi-readout {
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  color: var(--proto-green);
+}
+
+.proto-midi-strip {
+  position: absolute;
+  left: 20px;
+  top: 354px;
+  width: 350px;
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 4px;
+}
+
+.proto-midi-cell {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+}
+
+.proto-midi-leaf {
+  width: 22px;
+  height: 22px;
+  color: var(--proto-off);
+}
+
+.proto-midi-cell.is-on .proto-midi-leaf {
+  color: var(--proto-green);
+}
+
+.proto-midi-note {
+  font-size: 9px;
+  line-height: 1;
+  color: var(--proto-off-text);
+}
+
+.proto-midi-cell.is-on .proto-midi-note {
+  color: var(--proto-green);
+  font-weight: 700;
+}
+
+.proto-settings-grid {
+  position: absolute;
+  left: 20px;
+  top: 417px;
+  width: 350px;
+  display: grid;
+  grid-template-columns: repeat(2, 165px);
+  column-gap: 20px;
+  row-gap: 7px;
+}
+
+.proto-setting-button,
+.proto-volume-card,
+.proto-output-card,
+.proto-sync-card,
+.proto-random-button,
+.proto-output-option {
+  border-radius: 11px;
+}
+
+.proto-setting-button {
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 12px;
+  border: 2px solid var(--proto-border);
+  background: #ffffff;
+  color: var(--proto-green);
+  cursor: pointer;
+}
+
+.proto-setting-button.is-selected {
+  border-color: var(--proto-green);
+  background: var(--proto-green);
+}
+
+.proto-setting-button.is-selected .proto-setting-name {
+  color: #ffffff;
+}
+
+.proto-setting-button.is-selected .proto-setting-value {
+  color: #8bc43e;
+}
+
+.proto-setting-name {
+  white-space: nowrap;
+}
+
+.proto-setting-value {
+  font-size: 11px;
+  line-height: 1.15;
+  white-space: nowrap;
+}
+
+.proto-volume-card {
+  position: absolute;
+  left: 20px;
+  top: 680px;
+  width: 258px;
+  height: 45px;
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  gap: 14px;
+  border: 0;
+  background: var(--proto-green);
+  cursor: pointer;
+}
+
+.proto-volume-label {
+  font-size: 11px;
+  color: #ffffff;
+}
+
+.proto-volume-meter {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  margin-left: auto;
+  margin-right: 12px;
+}
+
+.proto-meter-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  opacity: 0.24;
+  transform: scale(0.86);
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.proto-meter-dot.is-on {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.proto-volume-value {
+  font-size: 11px;
+  color: #8bc43e;
+}
+
+.proto-output-card {
+  position: absolute;
+  left: 20px;
+  top: 729px;
+  width: 258px;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  padding: 0 11px;
+  border: 2px solid var(--proto-border);
+  background: #ffffff;
+}
+
+.proto-output-label {
+  margin-right: 18px;
+}
+
+.proto-output-options {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.proto-output-option {
+  min-width: 50px;
+  height: 21px;
+  border: 0;
+  padding: 0 8px;
+  background: transparent;
+  color: var(--proto-off-text);
+  font-size: 11px;
+  line-height: 21px;
+  cursor: pointer;
+  text-transform: lowercase;
+}
+
+.proto-output-option.is-active {
+  background: var(--proto-green);
+  color: #ffffff;
+}
+
+.proto-random-button {
+  position: absolute;
+  left: 20px;
+  top: 779px;
+  width: 74px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--proto-border);
+  background: #ffffff;
+  color: var(--proto-green);
+  cursor: pointer;
+}
+
+.proto-random-icon {
+  width: 26px;
+  height: 26px;
+}
+
+.proto-sync-card {
+  position: absolute;
+  left: 112px;
+  top: 779px;
+  width: 166px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  border: 2px solid var(--proto-border);
+  background: #ffffff;
+  color: var(--proto-green);
+  cursor: pointer;
+}
+
+.proto-sync-value {
+  font-size: 11px;
+  line-height: 1.15;
+}
+
+.proto-led-column {
+  position: absolute;
+  left: 432px;
+  top: 110px;
+  display: grid;
+  gap: 12px;
+}
+
+.proto-led {
+  width: 46px;
+  height: 46px;
+  color: var(--proto-off);
+  opacity: 0.28;
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.proto-led.is-on {
+  opacity: 1;
+}
+
+.proto-led.is-current {
+  transform: translateX(2px);
+}
+
+.proto-encoder {
+  position: absolute;
+  left: 408px;
+  top: 657px;
+  width: 122px;
+  height: 122px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: var(--proto-green);
+  cursor: pointer;
+  transition: transform 120ms ease;
+}
+
+.proto-encoder:active {
+  transform: scale(0.98);
+}
+
+.proto-flower-icon {
+  width: 122px;
+  height: 122px;
+  transform: rotate(var(--encoder-angle, 0deg));
+  transition: transform 120ms ease;
+}
+
+@media (max-width: 700px), (max-height: 920px) {
+  .proto-app {
+    padding: 16px;
+  }
+}

@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BECA Control Prototype</title>
+    <link rel="stylesheet" href="./src/prototype.css" />
+  </head>
+  <body>
+    <main class="proto-app">
+      <div class="proto-viewport" id="proto-viewport">
+        <section class="proto-canvas">
+          <div class="proto-logo" id="brand-lockup" aria-hidden="true"></div>
+
+          <button class="proto-mode-button is-active" id="activity-button" type="button" aria-label="Control mode">
+            <span class="proto-mode-icon" id="wave-icon" aria-hidden="true"></span>
+          </button>
+          <button class="proto-mode-button is-muted" id="settings-button" type="button" aria-label="Setup mode">
+            <span class="proto-mode-icon" id="gear-icon" aria-hidden="true"></span>
+          </button>
+
+          <div class="proto-plant-caption">plant input:</div>
+          <section class="proto-chart-panel" aria-label="Plant monitor">
+            <svg id="plant-chart" viewBox="0 0 350 162" preserveAspectRatio="none"></svg>
+          </section>
+
+          <div class="proto-midi-head">
+            <span class="proto-midi-label">note/chord played:</span>
+            <strong class="proto-midi-readout" id="midi-readout">c3 e3 g3 | cmaj</strong>
+          </div>
+          <section class="proto-midi-strip" id="midi-strip" aria-label="MIDI monitor"></section>
+
+          <section class="proto-settings-grid" id="settings-grid" aria-label="Settings"></section>
+
+          <button class="proto-volume-card" id="volume-card" type="button" aria-label="Volume">
+            <span class="proto-volume-label">volume</span>
+            <span class="proto-volume-meter" id="volume-meter" aria-hidden="true"></span>
+            <span class="proto-volume-value" id="volume-value">0.25</span>
+          </button>
+
+          <section class="proto-output-card" aria-label="Output">
+            <span class="proto-output-label">output</span>
+            <div class="proto-output-options" id="output-toggle-group"></div>
+          </section>
+
+          <button class="proto-random-button" id="randomize-button" type="button" aria-label="Randomise">
+            <span class="proto-random-icon" id="dice-icon" aria-hidden="true"></span>
+          </button>
+
+          <button class="proto-sync-card" id="sync-toggle" type="button" aria-label="DAW sync">
+            <span class="proto-sync-label">daw sync</span>
+            <span class="proto-sync-value" id="sync-readout">ON</span>
+          </button>
+
+          <aside class="proto-led-column" id="led-stack" aria-label="On-board LED mirror"></aside>
+
+          <button class="proto-encoder" id="encoder" type="button" aria-label="On-screen encoder">
+            <span class="proto-flower-icon" id="flower-icon" aria-hidden="true"></span>
+          </button>
+        </section>
+      </div>
+    </main>
+
+    <script type="module" src="./src/prototype.js"></script>
+  </body>
+</html>

@@ -216,6 +216,27 @@ body::before {
   overflow: hidden;
 }
 
+.prototype-frame {
+  width: 100%;
+  min-height: 72vh;
+  border-radius: 18px;
+  overflow: hidden;
+  border: 1px solid rgba(0, 131, 81, 0.18);
+  background:
+    radial-gradient(circle at top, rgba(180, 235, 210, 0.45), transparent 50%),
+    linear-gradient(150deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.05)),
+    rgba(226, 236, 230, 0.86);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.24);
+}
+
+.prototype-iframe {
+  display: block;
+  width: 100%;
+  min-height: 72vh;
+  border: 0;
+  background: transparent;
+}
+
 .control-surface {
   position: relative;
   min-height: 68vh;

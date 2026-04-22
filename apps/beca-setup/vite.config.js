@@ -9,7 +9,8 @@ export default defineConfig({
     rollupOptions: {
       input: {
         app: resolve(__dirname, "ui", "index.html"),
-        control: resolve(__dirname, "ui", "control.html")
+        control: resolve(__dirname, "ui", "control.html"),
+        prototype: resolve(__dirname, "ui", "prototype.html")
       }
     }
   },

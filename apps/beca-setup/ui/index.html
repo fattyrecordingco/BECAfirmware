@@ -57,6 +57,7 @@
 
       <nav class="view-switch" aria-label="BECA app sections">
         <button class="view-tab active" data-screen="control">Control</button>
+        <button class="view-tab" data-screen="prototype">Prototype</button>
         <button class="view-tab" data-screen="setup">Setup</button>
         <button class="view-tab" data-screen="diagnostics">Diagnostics</button>
       </nav>
@@ -72,6 +73,30 @@
           </div>
           <p class="hint" id="control-status">Loading the BECA control surface inside the desktop app.</p>
           <div id="control-host" class="control-host"></div>
+        </section>
+      </section>
+
+      <section class="screen" data-screen-view="prototype">
+        <section class="card control-card">
+          <div class="step-head row-spread control-head">
+            <div class="row control-head-main">
+              <span class="badge">Prototype</span>
+              <h2>Next Control UI Preview</h2>
+            </div>
+          </div>
+          <p class="hint">
+            This is an isolated prototype for the new BECA v1.0.2 interaction model. It keeps the
+            current live control surface untouched while we validate spacing, lighting logic, and
+            encoder behavior.
+          </p>
+          <div class="prototype-frame">
+            <iframe
+              class="prototype-iframe"
+              src="./prototype.html"
+              title="BECA prototype surface"
+              loading="lazy"
+            ></iframe>
+          </div>
         </section>
       </section>
 
