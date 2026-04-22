@@ -15,7 +15,9 @@ const el = {
   wifiSsidManual: document.querySelector("#wifi-ssid-manual"),
   wifiPass: document.querySelector("#wifi-pass"),
   midiSelect: document.querySelector("#midi-select"),
+  midiMirrorSelect: document.querySelector("#midi-mirror-select"),
   microfreakMode: document.querySelector("#microfreak-mode"),
+  midiMirrorMicrofreakMode: document.querySelector("#midi-mirror-microfreak-mode"),
   bridgeStatus: document.querySelector("#bridge-status"),
   activity: document.querySelector("#activity"),
   logView: document.querySelector("#log-view"),
@@ -34,6 +36,7 @@ const el = {
   btnExport: document.querySelector("#btn-export"),
   btnDiscover: document.querySelector("#btn-discover"),
   btnOpenControl: document.querySelector("#btn-open-control"),
+  btnRefreshControl: document.querySelector("#btn-refresh-control"),
   deviceSelect: document.querySelector("#device-select"),
   selectedTargetStatus: document.querySelector("#selected-target-status"),
   targetName: document.querySelector("#target-name"),
@@ -58,6 +61,8 @@ const state = {
   controlIssue: ""
 };
 
+const VIEW_STORAGE_KEY = "beca-active-screen";
+
 function addLog(line) {
   const stamped = `[${new Date().toISOString()}] ${line}`;
   state.logLines.push(stamped);
@@ -71,6 +76,11 @@ function setActivity(active) {
   el.activity.classList.toggle("active", active);
 }
 
+function currentMirrorMidiPort() {
+  const value = (el.midiMirrorSelect?.value || "").trim();
+  return value || null;
+}
+
 function renderControlPlaceholder(message) {
   el.controlHost.innerHTML = `
     <div class="control-placeholder">
@@ -81,12 +91,19 @@ function renderControlPlaceholder(message) {
 }
 
 function switchScreen(screenName) {
+  window.localStorage.setItem(VIEW_STORAGE_KEY, screenName);
   el.viewTabs.forEach((button) => {
     button.classList.toggle("active", button.dataset.screen === screenName);
   });
   el.screens.forEach((screen) => {
     screen.classList.toggle("active", screen.dataset.screenView === screenName);
   });
+}
+
+function restoreScreen() {
+  const saved = window.localStorage.getItem(VIEW_STORAGE_KEY);
+  const active = el.screens.some((screen) => screen.dataset.screenView === saved) ? saved : "control";
+  switchScreen(active);
 }
 
 async function ensureControlSurfaceLoaded() {
@@ -231,7 +248,8 @@ function updateTargetSummary(status) {
 
   el.targetName.textContent = target.name || "BECA";
   el.targetTransport.textContent = status.transport ? status.transport.toUpperCase() : "--";
-  el.targetDetail.textContent = describeTarget(target) || status.detail || "Device connected.";
+  el.targetDetail.textContent =
+    describeTarget(target) || status.detail || "Device connected over the local network.";
   el.selectedTargetStatus.textContent = status.detail || "Device selected.";
   el.transportPill.textContent = status.transport
     ? `${status.transport.toUpperCase()} AUTO`
@@ -510,13 +528,36 @@ async function refreshFirmwareOptions() {
 async function refreshMidiOutputs() {
   try {
     const outputs = await invoke("list_midi_outputs");
+    const currentPrimary = el.midiSelect.value;
+    const currentMirror = currentMirrorMidiPort();
     el.midiSelect.innerHTML = "";
+    el.midiMirrorSelect.innerHTML = "";
+
+    const mirrorOff = document.createElement("option");
+    mirrorOff.value = "";
+    mirrorOff.textContent = "Off";
+    el.midiMirrorSelect.appendChild(mirrorOff);
+
     outputs.forEach((port) => {
-      const opt = document.createElement("option");
-      opt.value = port.name;
-      opt.textContent = port.name;
-      el.midiSelect.appendChild(opt);
+      const primaryOpt = document.createElement("option");
+      primaryOpt.value = port.name;
+      primaryOpt.textContent = port.name;
+      if (port.name === currentPrimary) primaryOpt.selected = true;
+      el.midiSelect.appendChild(primaryOpt);
+
+      const mirrorOpt = document.createElement("option");
+      mirrorOpt.value = port.name;
+      mirrorOpt.textContent = port.name;
+      if (port.name === currentMirror) mirrorOpt.selected = true;
+      el.midiMirrorSelect.appendChild(mirrorOpt);
     });
+
+    if (!el.midiSelect.value && outputs[0]) {
+      el.midiSelect.value = outputs[0].name;
+    }
+    if (currentMirror && !Array.from(el.midiMirrorSelect.options).some((opt) => opt.value === currentMirror)) {
+      el.midiMirrorSelect.value = "";
+    }
     addLog(`Loaded ${outputs.length} MIDI outputs.`);
   } catch (err) {
     addLog(`MIDI list failed: ${err}`);
@@ -677,14 +718,27 @@ async function startBridge() {
     el.bridgeStatus.textContent = "Wait for flash/Wi-Fi setup to finish before starting bridge.";
     return;
   }
+  const mirrorPort = currentMirrorMidiPort();
+  if (mirrorPort && mirrorPort === el.midiSelect.value) {
+    el.bridgeStatus.textContent = "Choose a different mirrored MIDI output, or turn mirroring off.";
+    return;
+  }
   try {
     await invoke("start_bridge", {
       serialPort: state.selectedPort,
       midiPort: el.midiSelect.value,
-      microfreakMode: el.microfreakMode.checked
+      microfreakMode: el.microfreakMode.checked,
+      secondaryMidiPort: mirrorPort,
+      secondaryMicrofreakMode: Boolean(mirrorPort && el.midiMirrorMicrofreakMode.checked)
     });
     el.bridgeStatus.textContent = "Connected";
-    addLog(`Bridge started${el.microfreakMode.checked ? " (MicroFreak mode)" : ""}.`);
+    const detail = [
+      el.microfreakMode.checked ? "primary MicroFreak mode" : null,
+      mirrorPort ? `mirroring to ${mirrorPort}${el.midiMirrorMicrofreakMode.checked ? " (MicroFreak mode)" : ""}` : null
+    ]
+      .filter(Boolean)
+      .join(" | ");
+    addLog(`Bridge started${detail ? `: ${detail}` : "."}`);
     await refreshControlStatus();
   } catch (err) {
     el.bridgeStatus.textContent = `Bridge error: ${err}`;
@@ -706,7 +760,10 @@ async function stopBridge() {
 
 async function testNote() {
   try {
-    await invoke("send_test_note", { midiPort: el.midiSelect.value });
+    await invoke("send_test_note", {
+      midiPort: el.midiSelect.value,
+      secondaryMidiPort: currentMirrorMidiPort()
+    });
     addLog("Test note sent.");
   } catch (err) {
     addLog(`Test note failed: ${err}`);
@@ -755,6 +812,11 @@ async function bindEvents() {
   });
 }
 
+function refreshControlSurfacePage() {
+  window.localStorage.setItem(VIEW_STORAGE_KEY, "control");
+  window.location.reload();
+}
+
 el.viewTabs.forEach((button) => {
   button.addEventListener("click", () => switchScreen(button.dataset.screen));
 });
@@ -764,6 +826,7 @@ el.btnOpenControl.addEventListener("click", () => {
   switchScreen("control");
   ensureControlSurfaceLoaded().catch((err) => addLog(`Control surface failed to open: ${err}`));
 });
+el.btnRefreshControl.addEventListener("click", refreshControlSurfacePage);
 el.deviceSelect.addEventListener("change", (event) => {
   chooseTarget(event.target.value, { forceReload: true }).catch((err) =>
     addLog(`Device selection failed: ${err}`)
@@ -784,6 +847,7 @@ el.btnCopy.addEventListener("click", copyLogs);
 el.btnExport.addEventListener("click", exportDiagnostics);
 
 async function init() {
+  restoreScreen();
   resetWifiSection();
   await bindEvents();
   await refreshDevice();

@@ -75,7 +75,9 @@ Linux:
 5. In Step 3, choose your Wi-Fi network, enter password, and click `Save and Reboot`.
 6. macOS fallback: if scan/info is unreliable, type SSID manually and use `Flash + Save Wi-Fi`.
 7. In Step 4, choose MIDI output and click `Start Bridge`.
-8. Open the in-app `Control` view and click `Test Note` if you want a quick routing check.
+8. Optional: choose `Mirror Notes To` if you want the same performance sent to your DAW and a second synth together.
+9. Leave mirrored MicroFreak mode enabled when the second destination is an Arturia MicroFreak.
+10. Open the in-app `Control` view and click `Test Note` if you want a quick routing check.
 
 ### Step D: Use the BECA control surface
 
@@ -339,6 +341,7 @@ Use BECA for the easiest end-user flow:
 - Flash latest stable firmware
 - Set Wi-Fi credentials directly over USB
 - Start Serial -> MIDI bridge
+- Optionally mirror the bridge to a second MIDI destination
 
 ### Windows install and first run
 
@@ -351,8 +354,9 @@ Use BECA for the easiest end-user flow:
 7. Wait for `Flash complete` status.
 8. In Step 3, choose Wi-Fi SSID/password and click `Save and Reboot`.
 9. In Step 4, select your MIDI output and click `Start Bridge`.
-10. If routing directly to an Arturia MicroFreak, select the MicroFreak MIDI port and enable `MicroFreak mode (notes only, ch. 1)`.
-11. Click `Test Note` and confirm activity in your DAW or on the MicroFreak.
+10. Optional: set `Mirror Notes To` if you want BECA to drive Ableton and another synth together.
+11. If routing directly to an Arturia MicroFreak, select it as the primary or mirrored output and enable MicroFreak mode on that route.
+12. Click `Test Note` and confirm activity in your DAW or on the MicroFreak.
 
 Windows notes:
 - Prefer installer `.exe` over a loose copied `BECA.exe`.
@@ -429,6 +433,16 @@ Follow this section one line at a time, in order.
 6. Set output mode to `SERIAL`.
 7. Set the MicroFreak MIDI input channel to `1`.
 8. Click `Test Note` in BECA, then test plant input.
+
+### Split DAW + hardware path
+
+1. Open `BECA`.
+2. In Step 4, set your DAW or loopMIDI destination as the primary output.
+3. Set `Mirror Notes To` to your second hardware synth.
+4. Leave MicroFreak mode enabled on the mirrored path when the second device is a MicroFreak.
+5. Click `Start Bridge`.
+6. Open the BECA control page in-app and set output mode to `SERIAL`.
+7. Click `Test Note` and confirm both destinations react.
 
 ### If you do not hear sound yet
 

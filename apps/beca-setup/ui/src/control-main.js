@@ -2,6 +2,13 @@ import { invoke } from "@tauri-apps/api/core";
 
 const nativeFetch = window.fetch.bind(window);
 let transportInstalled = false;
+const POLL_INTERVAL_MS = {
+  network: 220,
+  serial: 140,
+  fallback: 180,
+  error: 700
+};
+const SCOPE_DELTA_EPSILON = 0.0025;
 
 function splitPathAndQuery(rawUrl) {
   const [path, search = ""] = rawUrl.split("?");
@@ -86,7 +93,8 @@ class AppEventSource {
     this.previous = {
       state: "",
       note: "",
-      drum: ""
+      drum: "",
+      scope: Number.NaN
     };
 
     queueMicrotask(() => this.emitMessage("hello", "{}"));
@@ -121,9 +129,11 @@ class AppEventSource {
 
   async poll() {
     while (!this.closed) {
+      let nextDelay = POLL_INTERVAL_MS.fallback;
       try {
         const snapshot = await invoke("control_snapshot");
         this.lastError = false;
+        nextDelay = POLL_INTERVAL_MS[snapshot.transport] || POLL_INTERVAL_MS.fallback;
 
         const statePayload = snapshotStatePayload(snapshot);
         if (statePayload !== this.previous.state) {
@@ -131,7 +141,14 @@ class AppEventSource {
           this.emitMessage("state", statePayload);
         }
 
-        this.emitMessage("scope", snapshotScopePayload(snapshot));
+        const scopeValue = Number(snapshot?.plant?.value || 0);
+        if (
+          !Number.isFinite(this.previous.scope) ||
+          Math.abs(scopeValue - this.previous.scope) >= SCOPE_DELTA_EPSILON
+        ) {
+          this.previous.scope = scopeValue;
+          this.emitMessage("scope", snapshotScopePayload(snapshot));
+        }
 
         const notePayload = snapshotNotePayload(snapshot);
         if (notePayload !== this.previous.note) {
@@ -149,9 +166,10 @@ class AppEventSource {
           this.lastError = true;
           this.emitError(err);
         }
+        nextDelay = POLL_INTERVAL_MS.error;
       }
 
-      await new Promise((resolve) => window.setTimeout(resolve, 130));
+      await new Promise((resolve) => window.setTimeout(resolve, nextDelay));
     }
   }
 }

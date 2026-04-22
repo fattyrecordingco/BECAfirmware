@@ -8,6 +8,9 @@ use tokio::fs;
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum FlashTool {
     Espflash,
@@ -105,6 +108,7 @@ pub async fn flash_firmware(cfg: &FlashCommandConfig) -> Result<()> {
     for arg in build_flash_args(cfg) {
         cmd.arg(arg);
     }
+    apply_background_process_flags(&mut cmd);
 
     let output = cmd
         .output()
@@ -130,8 +134,8 @@ pub async fn backup_nvs(
     offset: &str,
     size: &str,
 ) -> Result<()> {
-    let output = Command::new(tool)
-        .arg("--chip")
+    let mut cmd = Command::new(tool);
+    cmd.arg("--chip")
         .arg("esp32")
         .arg("--port")
         .arg(port)
@@ -140,7 +144,9 @@ pub async fn backup_nvs(
         .arg("read_flash")
         .arg(offset)
         .arg(size)
-        .arg(output_path)
+        .arg(output_path);
+    apply_background_process_flags(&mut cmd);
+    let output = cmd
         .output()
         .await
         .with_context(|| format!("failed to run NVS backup tool: {}", tool.display()))?;
@@ -162,8 +168,8 @@ pub async fn restore_nvs(
     backup_path: &Path,
     offset: &str,
 ) -> Result<()> {
-    let output = Command::new(tool)
-        .arg("--chip")
+    let mut cmd = Command::new(tool);
+    cmd.arg("--chip")
         .arg("esp32")
         .arg("--port")
         .arg(port)
@@ -171,7 +177,9 @@ pub async fn restore_nvs(
         .arg(baud.to_string())
         .arg("write_flash")
         .arg(offset)
-        .arg(backup_path)
+        .arg(backup_path);
+    apply_background_process_flags(&mut cmd);
+    let output = cmd
         .output()
         .await
         .with_context(|| format!("failed to run NVS restore tool: {}", tool.display()))?;
@@ -227,6 +235,13 @@ fn build_flash_args(cfg: &FlashCommandConfig) -> Vec<String> {
             cfg.offset.clone(),
             cfg.firmware_path.display().to_string(),
         ],
+    }
+}
+
+fn apply_background_process_flags(cmd: &mut Command) {
+    #[cfg(target_os = "windows")]
+    {
+        cmd.creation_flags(CREATE_NO_WINDOW);
     }
 }
 

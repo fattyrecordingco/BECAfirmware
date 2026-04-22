@@ -63,9 +63,12 @@
 
       <section class="screen active" data-screen-view="control">
         <section class="card control-card">
-          <div class="step-head">
-            <span class="badge">Live</span>
-            <h2>BECA Control Surface</h2>
+          <div class="step-head row-spread control-head">
+            <div class="row control-head-main">
+              <span class="badge">Live</span>
+              <h2>BECA Control Surface</h2>
+            </div>
+            <button id="btn-refresh-control">Refresh Control</button>
           </div>
           <p class="hint" id="control-status">Loading the BECA control surface inside the desktop app.</p>
           <div id="control-host" class="control-host"></div>
@@ -134,13 +137,22 @@
             <span class="badge">Step 4</span>
             <h2>Start Bridge</h2>
           </div>
-          <label for="midi-select">MIDI Output</label>
+          <label for="midi-select">Primary MIDI Output</label>
           <select id="midi-select"></select>
           <label class="toggle" for="microfreak-mode">
             <input id="microfreak-mode" type="checkbox" />
-            <span>MicroFreak mode (notes only, ch. 1)</span>
+            <span>Use MicroFreak mode on primary output</span>
           </label>
-          <p class="hint">Direct MicroFreak target, fixed to MIDI channel 1, drum notes blocked.</p>
+          <p class="hint">Primary output stays ideal for Ableton, loopMIDI, or a direct hardware target.</p>
+          <label for="midi-mirror-select">Mirror Notes To (optional)</label>
+          <select id="midi-mirror-select">
+            <option value="">Off</option>
+          </select>
+          <label class="toggle" for="midi-mirror-microfreak-mode">
+            <input id="midi-mirror-microfreak-mode" type="checkbox" checked />
+            <span>Use MicroFreak mode on mirrored output</span>
+          </label>
+          <p class="hint">This lets BECA feed your DAW and a second synth at the same time. MicroFreak mode keeps the mirrored path on channel 1 and blocks drum notes.</p>
           <div class="row">
             <button id="btn-start-bridge" class="primary">Start Bridge</button>
             <button id="btn-stop-bridge">Stop Bridge</button>

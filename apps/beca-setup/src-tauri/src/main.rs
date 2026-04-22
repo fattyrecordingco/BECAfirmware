@@ -38,6 +38,8 @@ const HARDWARE_ID: &str = "ESP32-PICO-V3";
 const SERIAL_CTRL_BAUD: u32 = 115200;
 const ESPFLASH_SIDECAR_VERSION: &str = "4.2.0";
 const ESPTOOL_SIDECAR_VERSION: &str = "5.2.0";
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 #[derive(Default)]
 struct RuntimeState {
@@ -510,8 +512,20 @@ async fn start_bridge(
     serial_port: String,
     midi_port: String,
     microfreak_mode: bool,
+    secondary_midi_port: Option<String>,
+    secondary_microfreak_mode: bool,
 ) -> Result<(), String> {
     let bridge_path = resolve_binary_for_app(&app, "beca-bridge").map_err(err_to_string)?;
+    let secondary_midi_port = secondary_midi_port
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+
+    if secondary_midi_port
+        .as_deref()
+        .is_some_and(|port| port.eq_ignore_ascii_case(&midi_port))
+    {
+        return Err("Primary and mirrored MIDI outputs must be different devices.".to_string());
+    }
 
     let decision = resolve_bridge_runtime(&BridgeRuntimeInput {
         bundled_native_bridge_exists: bridge_path.exists(),
@@ -540,11 +554,18 @@ async fn start_bridge(
     if microfreak_mode {
         cmd.arg("--microfreak-mode");
     }
+    if let Some(port) = secondary_midi_port {
+        cmd.arg("--secondary-midi-port").arg(port);
+    }
+    if secondary_microfreak_mode {
+        cmd.arg("--secondary-microfreak-mode");
+    }
 
     cmd.arg("--baud")
         .arg("115200")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    apply_background_process_flags(&mut cmd);
 
     let mut child = cmd
         .spawn()
@@ -575,15 +596,30 @@ async fn stop_bridge(app: AppHandle, state: State<'_, RuntimeState>) -> Result<(
 }
 
 #[tauri::command]
-async fn send_test_note(app: AppHandle, midi_port: String) -> Result<(), String> {
+async fn send_test_note(
+    app: AppHandle,
+    midi_port: String,
+    secondary_midi_port: Option<String>,
+) -> Result<(), String> {
     let bridge_path = resolve_binary_for_app(&app, "beca-bridge").map_err(err_to_string)?;
-    let output = Command::new(bridge_path)
-        .arg("test-note")
-        .arg("--midi-port")
-        .arg(midi_port)
-        .output()
-        .await
-        .map_err(err_to_string)?;
+    let secondary_midi_port = secondary_midi_port
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+
+    if secondary_midi_port
+        .as_deref()
+        .is_some_and(|port| port.eq_ignore_ascii_case(&midi_port))
+    {
+        return Err("Primary and mirrored MIDI outputs must be different devices.".to_string());
+    }
+
+    let mut cmd = Command::new(bridge_path);
+    cmd.arg("test-note").arg("--midi-port").arg(midi_port);
+    if let Some(port) = secondary_midi_port {
+        cmd.arg("--secondary-midi-port").arg(port);
+    }
+    apply_background_process_flags(&mut cmd);
+    let output = cmd.output().await.map_err(err_to_string)?;
 
     if output.status.success() {
         Ok(())
@@ -753,6 +789,13 @@ fn emit_bridge_event(app: &AppHandle, event: &str, state: &str, detail: &str) {
         detail: detail.to_string(),
     };
     let _ = app.emit("bridge-status", payload);
+}
+
+fn apply_background_process_flags(cmd: &mut Command) {
+    #[cfg(target_os = "windows")]
+    {
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
 }
 
 fn spawn_bridge_stream_reader<R>(app: AppHandle, reader: R, source: &str)

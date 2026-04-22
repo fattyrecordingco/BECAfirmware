@@ -1,4 +1,4 @@
-use crate::{json_flag, run_serial_command_json, RuntimeState};
+use crate::{run_serial_command_json, RuntimeState};
 use anyhow::{anyhow, Context};
 use beca_flasher::detect_beca_ports;
 use if_addrs::{get_if_addrs, IfAddr};
@@ -142,37 +142,73 @@ pub async fn control_request(
 
 #[tauri::command]
 pub async fn control_snapshot(state: State<'_, RuntimeState>) -> Result<ControlSnapshot, String> {
-    let state_res = execute_control_request(
-        &state,
-        "GET",
-        "/api/state",
-        BTreeMap::new(),
-        BTreeMap::new(),
-    )
-    .await
-    .map_err(|err| err.to_string())?;
-    let plant_res = execute_control_request(
-        &state,
-        "GET",
-        "/api/plant",
-        BTreeMap::new(),
-        BTreeMap::new(),
-    )
-    .await
-    .map_err(|err| err.to_string())?;
-    let notes_res = execute_control_request(
-        &state,
-        "GET",
-        "/api/notes",
-        BTreeMap::new(),
-        BTreeMap::new(),
-    )
-    .await
-    .map_err(|err| err.to_string())?;
-    let drum_res =
-        execute_control_request(&state, "GET", "/api/drum", BTreeMap::new(), BTreeMap::new())
-            .await
-            .map_err(|err| err.to_string())?;
+    let target = active_target(&state)
+        .await
+        .ok_or_else(|| "No BECA target selected. Refresh devices first.".to_string())?;
+    let preferred = preferred_transport(&target);
+
+    let (state_res, plant_res, notes_res, drum_res): (
+        ControlResponse,
+        ControlResponse,
+        ControlResponse,
+        ControlResponse,
+    ) = if preferred == Some("network") {
+        if let Some(url) = target.network_url.as_deref() {
+            let client = Client::builder()
+                .timeout(Duration::from_millis(CONTROL_HTTP_TIMEOUT_MS))
+                .build()
+                .context("failed to create HTTP client")
+                .map_err(|err| err.to_string())?;
+            let empty_query = BTreeMap::new();
+            let empty_form = BTreeMap::new();
+
+            tokio::try_join!(
+                network_request_with_client(
+                    &client,
+                    url,
+                    "GET",
+                    "/api/state",
+                    &empty_query,
+                    &empty_form
+                ),
+                network_request_with_client(
+                    &client,
+                    url,
+                    "GET",
+                    "/api/plant",
+                    &empty_query,
+                    &empty_form
+                ),
+                network_request_with_client(
+                    &client,
+                    url,
+                    "GET",
+                    "/api/notes",
+                    &empty_query,
+                    &empty_form
+                ),
+                network_request_with_client(
+                    &client,
+                    url,
+                    "GET",
+                    "/api/drum",
+                    &empty_query,
+                    &empty_form
+                )
+            )
+            .map_err(|err| err.to_string())?
+        } else {
+            return Err(target
+                .issue
+                .clone()
+                .unwrap_or_else(|| network_only_control_issue(&target)));
+        }
+    } else {
+        return Err(target
+            .issue
+            .clone()
+            .unwrap_or_else(|| network_only_control_issue(&target)));
+    };
 
     Ok(ControlSnapshot {
         state: parse_json_body(&state_res.body),
@@ -185,35 +221,28 @@ pub async fn control_snapshot(state: State<'_, RuntimeState>) -> Result<ControlS
 }
 
 async fn build_selection_status(
-    state: &State<'_, RuntimeState>,
+    _state: &State<'_, RuntimeState>,
     target: Option<ControlTarget>,
 ) -> Result<ControlSelectionStatus, String> {
     if let Some(target) = target {
-        let transport = preferred_transport(&target, state.bridge_child.lock().await.is_some());
+        let transport = preferred_transport(&target);
         let detail = match transport {
             Some("network") => {
                 let mut detail = format!(
-                    "Connected through Wi-Fi at {}.",
+                    "Live control is running over Wi-Fi at {}.",
                     target.network_url.clone().unwrap_or_default()
                 );
                 if let Some(serial_port) = target.serial_port.as_deref() {
-                    detail.push_str(&format!(" USB fallback is available on {serial_port}."));
+                    detail.push_str(&format!(
+                        " USB on {serial_port} stays free for smoother serial MIDI."
+                    ));
                 }
                 detail
             }
-            Some("serial") => {
-                let mut detail = format!(
-                    "Connected over USB serial {}.",
-                    target.serial_port.clone().unwrap_or_default()
-                );
-                if let Some(url) = target.network_url.as_deref() {
-                    detail.push_str(&format!(" Wi-Fi fallback is available at {url}."));
-                }
-                detail
-            }
-            _ => target.issue.clone().unwrap_or_else(|| {
-                "No active control transport is available for this BECA right now.".to_string()
-            }),
+            _ => target
+                .issue
+                .clone()
+                .unwrap_or_else(|| network_only_control_issue(&target)),
         };
 
         return Ok(ControlSelectionStatus {
@@ -255,40 +284,19 @@ async fn execute_control_request(
     let target = active_target(state)
         .await
         .ok_or_else(|| anyhow!("No BECA target selected. Refresh devices first."))?;
-    let bridge_running = state.bridge_child.lock().await.is_some();
+    let preferred = preferred_transport(&target);
 
-    if let Some(url) = target.network_url.as_deref() {
-        match network_request(url, method, path, &query, &form).await {
-            Ok(response) => return Ok(response),
-            Err(network_err) => {
-                if target.serial_port.is_none() || bridge_running {
-                    return Err(network_err);
-                }
-            }
+    if preferred == Some("network") {
+        if let Some(url) = target.network_url.as_deref() {
+            return network_request(url, method, path, &query, &form).await;
         }
     }
 
-    if let Some(serial_port) = target.serial_port.as_deref() {
-        if !target.serial_ready {
-            if let Some(issue) = target.issue.clone() {
-                return Err(anyhow!(issue));
-            }
-        }
-        if bridge_running {
-            return Err(anyhow!(
-                "Bridge is using BECA's USB serial port. Control will work again over serial after you stop Bridge."
-            ));
-        }
-        return serial_request(serial_port, method, path, &query, &form);
-    }
-
-    if let Some(issue) = target.issue {
+    if let Some(issue) = target.issue.clone() {
         return Err(anyhow!(issue));
     }
 
-    Err(anyhow!(
-        "BECA is selected but no reachable control transport is available."
-    ))
+    Err(anyhow!(network_only_control_issue(&target)))
 }
 
 async fn network_request(
@@ -302,6 +310,17 @@ async fn network_request(
         .timeout(Duration::from_millis(CONTROL_HTTP_TIMEOUT_MS))
         .build()
         .context("failed to create HTTP client")?;
+    network_request_with_client(&client, base_url, method, path, query, form).await
+}
+
+async fn network_request_with_client(
+    client: &Client,
+    base_url: &str,
+    method: &str,
+    path: &str,
+    query: &BTreeMap<String, String>,
+    form: &BTreeMap<String, String>,
+) -> anyhow::Result<ControlResponse> {
     let url = format!("{}{}", base_url.trim_end_matches('/'), path);
     let upper = method.to_ascii_uppercase();
 
@@ -342,287 +361,33 @@ async fn network_request(
     })
 }
 
-fn serial_request(
-    serial_port: &str,
-    method: &str,
-    path: &str,
-    query: &BTreeMap<String, String>,
-    form: &BTreeMap<String, String>,
-) -> anyhow::Result<ControlResponse> {
-    let upper = method.to_ascii_uppercase();
-
-    let json_response = |value: Value| -> anyhow::Result<ControlResponse> {
-        Ok(ControlResponse {
-            status: 200,
-            body: serde_json::to_string(&value)?,
-            content_type: "application/json".to_string(),
-            transport: "serial".to_string(),
-        })
-    };
-
-    let text_response = |status: u16, text: &str| ControlResponse {
-        status,
-        body: text.to_string(),
-        content_type: "text/plain".to_string(),
-        transport: "serial".to_string(),
-    };
-
-    match (upper.as_str(), path) {
-        ("GET", "/api/state") => json_response(serial_json(serial_port, "@C STATE", "STATE")?),
-        ("GET", "/api/plant") => json_response(serial_json(serial_port, "@C PLANT", "PLANT")?),
-        ("GET", "/api/notes") => json_response(serial_json(serial_port, "@C NOTES", "NOTES")?),
-        ("GET", "/api/params") => json_response(serial_json(serial_port, "@C PARAMS", "PARAMS")?),
-        ("GET", "/api/synth") => json_response(serial_json(serial_port, "@C SYNTH", "SYNTH")?),
-        ("GET", "/api/info") => {
-            json_response(serial_json(serial_port, "@C WIFI_INFO", "WIFI_INFO")?)
-        }
-        ("GET", "/effects") => json_response(serial_json(serial_port, "@C EFFECTS", "EFFECTS")?),
-        ("GET", "/palettes") => json_response(serial_json(serial_port, "@C PALETTES", "PALETTES")?),
-        ("GET", "/api/drum") => json_response(serial_json(serial_port, "@C DRUM", "DRUM")?),
-        ("GET", "/api/mute") => {
-            let state = serial_json(serial_port, "@C STATE", "STATE")?;
-            let payload = json!({
-                "io_muted": json_flag(&state, "io_muted"),
-                "outputmode": state.get("outputmode").cloned().unwrap_or(Value::from(0)),
-                "aux_running": state.get("aux_running").cloned().unwrap_or(Value::from(0)),
-            });
-            json_response(payload)
-        }
-        ("GET", "/api/outputmode") => {
-            let state = serial_json(serial_port, "@C STATE", "STATE")?;
-            let mode_value = state
-                .get("outputmode")
-                .and_then(|value| value.as_u64())
-                .unwrap_or(0);
-            let mode_name = match mode_value {
-                1 => "SERIAL",
-                2 => "AUX OUT",
-                _ => "BLE",
-            };
-            let payload = json!({
-                "mode": mode_name,
-                "value": mode_value,
-                "aux_ready": state.get("aux_ready").cloned().unwrap_or(Value::from(1)),
-                "aux_wait_ms": state.get("aux_wait_ms").cloned().unwrap_or(Value::from(0)),
-            });
-            json_response(payload)
-        }
-        ("POST", "/api/outputmode") => {
-            let mode_value = first_non_empty(form, &["mode", "v", "plain"])
-                .ok_or_else(|| anyhow!("output mode value is required"))?;
-            serial_json(
-                serial_port,
-                &format!("@C SET outputmode {mode_value}"),
-                "SET",
-            )?;
-            let state = serial_json(serial_port, "@C STATE", "STATE")?;
-            let mode_value = state
-                .get("outputmode")
-                .and_then(|value| value.as_u64())
-                .unwrap_or(0);
-            let payload = json!({
-                "mode": match mode_value {
-                    1 => "SERIAL",
-                    2 => "AUX OUT",
-                    _ => "BLE",
-                },
-                "value": mode_value,
-                "aux_ready": state.get("aux_ready").cloned().unwrap_or(Value::from(1)),
-                "aux_wait_ms": state.get("aux_wait_ms").cloned().unwrap_or(Value::from(0)),
-            });
-            json_response(payload)
-        }
-        ("POST", "/api/mute") => {
-            let mute_value = first_non_empty(form, &["v", "mute", "io_muted", "plain"])
-                .ok_or_else(|| anyhow!("mute value is required"))?;
-            serial_json(serial_port, &format!("@C SET mute {mute_value}"), "SET")?;
-            let state = serial_json(serial_port, "@C STATE", "STATE")?;
-            let payload = json!({
-                "io_muted": json_flag(&state, "io_muted"),
-                "outputmode": state.get("outputmode").cloned().unwrap_or(Value::from(0)),
-                "aux_running": state.get("aux_running").cloned().unwrap_or(Value::from(0)),
-            });
-            json_response(payload)
-        }
-        ("POST", "/api/sync") => {
-            let sync_value = first_non_empty(form, &["v", "sync", "plain"])
-                .ok_or_else(|| anyhow!("sync flag is required"))?;
-            serial_json(serial_port, &format!("@C SET sync {sync_value}"), "SET")?;
-            json_response(json!({"ok": 1}))
-        }
-        ("POST", "/api/set") => {
-            let plain_assignment = form
-                .get("plain")
-                .and_then(|plain| parse_plain_assignment(plain));
-            let key = first_non_empty(form, &["key"])
-                .or_else(|| plain_assignment.as_ref().map(|(key, _)| key.clone()))
-                .ok_or_else(|| anyhow!("control key is required"))?;
-            let value = first_non_empty(form, &["value"])
-                .or_else(|| plain_assignment.as_ref().map(|(_, value)| value.clone()))
-                .ok_or_else(|| anyhow!("control value is required"))?;
-            serial_json(serial_port, &format!("@C SET {key} {value}"), "SET")?;
-            json_response(serial_json(serial_port, "@C STATE", "STATE")?)
-        }
-        ("POST", "/api/synth") => {
-            if let Some(reset_value) = form.get("reset") {
-                if reset_value != "0" {
-                    serial_json(serial_port, "@C SET preset_reset 1", "SET")?;
-                }
-            }
-
-            if let Some(preset) = form.get("preset") {
-                serial_json(serial_port, &format!("@C SET preset {preset}"), "SET")?;
-            }
-
-            for (key, value) in form {
-                if key == "reset" || key == "preset" {
-                    continue;
-                }
-                serial_json(serial_port, &format!("@C SET {key} {value}"), "SET")?;
-            }
-
-            json_response(serial_json(serial_port, "@C SYNTH", "SYNTH")?)
-        }
-        ("GET", "/api/synth/test") => {
-            json_response(serial_json(serial_port, "@C SYNTH_TEST", "SYNTH_TEST")?)
-        }
-        ("GET", "/rand") => {
-            serial_json(serial_port, "@C RANDOMIZE", "RANDOMIZE")?;
-            Ok(text_response(200, "OK"))
-        }
-        ("GET", "/bpm") => {
-            set_from_query(serial_port, "bpm", query, &["v"])?;
-            Ok(text_response(200, "OK"))
-        }
-        ("GET", "/swing") => {
-            set_from_query(serial_port, "swing", query, &["v"])?;
-            Ok(text_response(200, "OK"))
-        }
-        ("GET", "/b") => {
-            set_from_query(serial_port, "bright", query, &["v"])?;
-            Ok(text_response(200, "OK"))
-        }
-        ("GET", "/s") => {
-            set_from_query(serial_port, "sens", query, &["v"])?;
-            Ok(text_response(200, "OK"))
-        }
-        ("GET", "/lo") => {
-            set_from_query(serial_port, "lo", query, &["v"])?;
-            Ok(text_response(200, "OK"))
-        }
-        ("GET", "/hi") => {
-            set_from_query(serial_port, "hi", query, &["v"])?;
-            Ok(text_response(200, "OK"))
-        }
-        ("GET", "/mode") => {
-            set_from_query(serial_port, "mode", query, &["i"])?;
-            Ok(text_response(200, "OK"))
-        }
-        ("GET", "/clock") => {
-            set_from_query(serial_port, "clock", query, &["v"])?;
-            Ok(text_response(200, "OK"))
-        }
-        ("GET", "/scale") => {
-            set_from_query(serial_port, "scale", query, &["i"])?;
-            Ok(text_response(200, "OK"))
-        }
-        ("GET", "/root") => {
-            set_from_query(serial_port, "root", query, &["semi"])?;
-            Ok(text_response(200, "OK"))
-        }
-        ("GET", "/fxset") => {
-            set_from_query(serial_port, "fx", query, &["i"])?;
-            Ok(text_response(200, "OK"))
-        }
-        ("GET", "/pal") => {
-            set_from_query(serial_port, "pal", query, &["i"])?;
-            Ok(text_response(200, "OK"))
-        }
-        ("GET", "/visspd") => {
-            set_from_query(serial_port, "vs", query, &["v"])?;
-            Ok(text_response(200, "OK"))
-        }
-        ("GET", "/visint") => {
-            set_from_query(serial_port, "vi", query, &["v"])?;
-            Ok(text_response(200, "OK"))
-        }
-        ("GET", "/rest") => {
-            set_from_query(serial_port, "rest", query, &["v"])?;
-            Ok(text_response(200, "OK"))
-        }
-        ("GET", "/norep") => {
-            set_from_query(serial_port, "nr", query, &["v"])?;
-            Ok(text_response(200, "OK"))
-        }
-        ("GET", "/midimode") => {
-            let mode = first_non_empty(query, &["v"])
-                .ok_or_else(|| anyhow!("legacy MIDI mode requires a value"))?;
-            let mapped = if mode.trim() == "1" { "SERIAL" } else { "BLE" };
-            serial_json(serial_port, &format!("@C SET outputmode {mapped}"), "SET")?;
-            Ok(text_response(200, "OK"))
-        }
-        ("GET", "/ts") => {
-            set_from_query(serial_port, "ts", query, &["v"])?;
-            Ok(text_response(200, "OK"))
-        }
-        ("GET", "/drumsel") => {
-            set_from_query(serial_port, "drumsel", query, &["mask"])?;
-            Ok(text_response(200, "OK"))
-        }
-        _ => Err(anyhow!(
-            "Unsupported BECA control route: {} {}",
-            upper,
-            path
-        )),
-    }
-}
-
 fn serial_json(serial_port: &str, command: &str, expected_tag: &str) -> anyhow::Result<Value> {
     run_serial_command_json(serial_port, command, expected_tag, 3_800, 1)
-}
-
-fn set_from_query(
-    serial_port: &str,
-    key: &str,
-    query: &BTreeMap<String, String>,
-    params: &[&str],
-) -> anyhow::Result<()> {
-    let value =
-        first_non_empty(query, params).ok_or_else(|| anyhow!("{} requires a value", key))?;
-    serial_json(serial_port, &format!("@C SET {key} {value}"), "SET")?;
-    Ok(())
-}
-
-fn first_non_empty(map: &BTreeMap<String, String>, keys: &[&str]) -> Option<String> {
-    keys.iter()
-        .find_map(|key| map.get(*key))
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
-}
-
-fn parse_plain_assignment(plain: &str) -> Option<(String, String)> {
-    let (key, value) = plain.trim().split_once('=')?;
-    let key = key.trim().to_string();
-    let value = value.trim().to_string();
-    if key.is_empty() || value.is_empty() {
-        None
-    } else {
-        Some((key, value))
-    }
 }
 
 fn parse_json_body(body: &str) -> Value {
     serde_json::from_str(body).unwrap_or_else(|_| json!({ "ok": 0, "raw": body }))
 }
 
-fn preferred_transport(target: &ControlTarget, bridge_running: bool) -> Option<&'static str> {
-    if target.serial_ready && !bridge_running {
-        return Some("serial");
-    }
+fn preferred_transport(target: &ControlTarget) -> Option<&'static str> {
     if target.network_ready {
         return Some("network");
     }
     None
+}
+
+fn network_only_control_issue(target: &ControlTarget) -> String {
+    let mut detail =
+        "Live control stays on BECA's local Wi-Fi connection so USB serial can stay dedicated to MIDI."
+            .to_string();
+    if let Some(url) = target.network_url.as_deref() {
+        detail.push_str(&format!(" The last known control address is {url}."));
+    } else {
+        detail.push_str(
+            " Finish Wi-Fi setup in Setup, make sure this computer is on the same network, then refresh devices.",
+        );
+    }
+    detail
 }
 
 async fn discover_serial_targets(bridge_running: bool) -> Vec<ControlTarget> {

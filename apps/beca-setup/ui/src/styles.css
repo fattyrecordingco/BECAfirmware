@@ -255,6 +255,15 @@ body::before {
   gap: 10px;
 }
 
+.control-head {
+  margin-bottom: 6px;
+}
+
+.control-head-main {
+  margin-top: 0;
+  align-items: center;
+}
+
 .step-head h2 {
   margin: 0;
   font-size: 1.1rem;
@@ -421,6 +430,10 @@ pre {
   .hero-grid {
     grid-template-columns: 1fr;
     flex-direction: column;
+  }
+
+  .control-head {
+    align-items: flex-start;
   }
 
   .row-spread {

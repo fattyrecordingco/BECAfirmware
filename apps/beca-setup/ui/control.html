@@ -1722,6 +1722,52 @@
         );
       }
 
+      function ensurePianoKeys() {
+        const piano = $("piano");
+        if (!piano || piano.children.length) return;
+        for (let i = 0; i < 12; i++) {
+          const isBlack = NOTE_NAMES[i].includes("#");
+          const div = document.createElement("div");
+          div.className = "key " + (isBlack ? "black" : "white");
+          div.title = NOTE_NAMES[i];
+          div.onclick = () => {
+            sendNow("/root?semi=" + i);
+            updatePianoSel(i);
+          };
+          piano.appendChild(div);
+        }
+        updatePianoSel(0);
+      }
+
+      async function loadEffectsAndPalettes() {
+        const [effectsRes, palettesRes] = await Promise.allSettled([
+          fetch("/effects", { cache: "force-cache" }).then((response) => response.json()),
+          fetch("/palettes", { cache: "force-cache" }).then((response) => response.json()),
+        ]);
+
+        if (effectsRes.status === "fulfilled") {
+          effect.innerHTML = "";
+          (effectsRes.value.list || []).forEach((name, idx) => {
+            const o = document.createElement("option");
+            o.value = idx;
+            o.textContent = name;
+            effect.appendChild(o);
+          });
+          syncCustomSelect(effect);
+        }
+
+        if (palettesRes.status === "fulfilled") {
+          palette.innerHTML = "";
+          (palettesRes.value.list || []).forEach((name, idx) => {
+            const o = document.createElement("option");
+            o.value = idx;
+            o.textContent = name;
+            palette.appendChild(o);
+          });
+          syncCustomSelect(palette);
+        }
+      }
+
       let selectPortal = null;
       let selectBackdrop = null;
       let activeSelect = null;
@@ -2161,45 +2207,24 @@
 
       // ---- Boot UI ----
       (async () => {
+        ensurePianoKeys();
+        buildDrumUI();
+        resizeAll();
+        grid();
+        drawNoteGridMulti([], 96, false);
+        initCustomSelects();
+        if (typeof ResizeObserver !== "undefined") {
+          const ro = new ResizeObserver(() => resizeAll());
+          ro.observe(document.body);
+        }
+        window.addEventListener("resize", () => {
+          clearTimeout(resizeTimer);
+          resizeTimer = setTimeout(resizeAll, 120);
+        });
+        setTimeout(resizeAll, 200);
+
         try {
-          const E = await (
-            await fetch("/effects", { cache: "force-cache" })
-          ).json();
-          const P = await (
-            await fetch("/palettes", { cache: "force-cache" })
-          ).json();
-
-          (E.list || []).forEach((name, idx) => {
-            const o = document.createElement("option");
-            o.value = idx;
-            o.textContent = name;
-            effect.appendChild(o);
-          });
-          (P.list || []).forEach((name, idx) => {
-            const o = document.createElement("option");
-            o.value = idx;
-            o.textContent = name;
-            palette.appendChild(o);
-          });
-
-          const piano = $("piano");
-          for (let i = 0; i < 12; i++) {
-            const isBlack = NOTE_NAMES[i].includes("#");
-            const div = document.createElement("div");
-            div.className = "key " + (isBlack ? "black" : "white");
-            div.title = NOTE_NAMES[i];
-            div.onclick = () => {
-              sendNow("/root?semi=" + i);
-              updatePianoSel(i);
-            };
-            piano.appendChild(div);
-          }
-
-          buildDrumUI();
-          resizeAll();
-
-          grid();
-          drawNoteGridMulti([], 96, false);
+          await loadEffectsAndPalettes();
           try {
             const m = await (await fetch("/api/mute", { cache: "no-store" })).json();
             if (typeof m.io_muted !== "undefined") {
@@ -2207,14 +2232,8 @@
             }
           } catch (e) {}
         } catch (e) {
-          status.textContent = "ui error";
+          if (!uiMuted) status.textContent = "limited";
         }
-        initCustomSelects();
-        window.addEventListener("resize", () => {
-          clearTimeout(resizeTimer);
-          resizeTimer = setTimeout(resizeAll, 120);
-        });
-        setTimeout(resizeAll, 200);
       })();
 
       // SSE stream
