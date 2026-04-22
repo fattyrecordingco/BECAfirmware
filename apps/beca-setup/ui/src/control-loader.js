@@ -80,5 +80,5 @@ export async function mountControlSurface(host, { onOpenSetup, onStatus } = {}) 
   const runner = new Function("document", "window", "console", template.scriptText);
   runner(documentFacade, window, console);
 
-  onStatus?.("BECA control surface loaded.");
+  onStatus?.("BECA unified surface loaded.");
 }

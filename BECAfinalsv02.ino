@@ -100,6 +100,8 @@ static inline bool drumsAllowedForCurrentOutput();
 static inline void enforceAuxDrumGuard();
 static inline bool isValidDen(uint8_t d);
 static inline void recalcTransport(bool resetPhase);
+static inline void pushStateIfChanged(bool force=false);
+static inline void saveOutputModePref();
 
 extern Preferences prefs;
 extern float restProb;
@@ -436,10 +438,59 @@ struct TimeSignature {
 };
 TimeSignature gTS = {4, 4, false};
 
+static const uint8_t NOTE_LENGTH_COUNT = 8;
+static const uint8_t NOTE_LENGTH_DENOMS[NOTE_LENGTH_COUNT] = {32, 16, 16, 8, 8, 4, 2, 1};
+static const uint8_t NOTE_LENGTH_TRIPLETS[NOTE_LENGTH_COUNT] = {0, 1, 0, 1, 0, 0, 0, 0};
+static const char* NOTE_LENGTH_LABELS[NOTE_LENGTH_COUNT] = {
+  "1/32", "1/16t", "1/16", "1/8t", "1/8", "1/4", "1/2", "1/1"
+};
+uint8_t gNoteLengthIndex = 2;  // 1/16
+
+static inline uint8_t currentStepDen() {
+  return NOTE_LENGTH_DENOMS[(uint8_t)constrain((int)gNoteLengthIndex, 0, (int)NOTE_LENGTH_COUNT - 1)];
+}
+
+static inline bool currentStepTriplet() {
+  return NOTE_LENGTH_TRIPLETS[(uint8_t)constrain((int)gNoteLengthIndex, 0, (int)NOTE_LENGTH_COUNT - 1)] != 0;
+}
+
+static inline const char* currentNoteLengthLabelC() {
+  return NOTE_LENGTH_LABELS[(uint8_t)constrain((int)gNoteLengthIndex, 0, (int)NOTE_LENGTH_COUNT - 1)];
+}
+
+static inline float currentStepQuarterFactor() {
+  float factor = 4.0f / (float)currentStepDen();
+  if (currentStepTriplet()) factor *= (2.0f / 3.0f);
+  return factor;
+}
+
+enum EncoderSettingId : uint8_t {
+  ENC_SET_SENS = 0,
+  ENC_SET_MODE,
+  ENC_SET_SCALE,
+  ENC_SET_ROOT,
+  ENC_SET_TEMPO,
+  ENC_SET_SWING,
+  ENC_SET_REST,
+  ENC_SET_OCTAVE,
+  ENC_SET_TIME_SIG,
+  ENC_SET_NOTE_LENGTH,
+  ENC_SET_FILTER,
+  ENC_SET_RESONANCE,
+  ENC_SET_COUNT
+};
+
+EncoderSettingId gEncoderSetting = ENC_SET_SENS;
+bool gEncoderVolumeMode = false;
+uint32_t gEncoderNavUntilMs = 0;
+static inline bool encoderNavVisible(uint32_t nowMs);
+
 struct Transport {
   uint16_t bpm;
   uint8_t  beats;
-  uint8_t  noteVal;
+  uint8_t  barDen;
+  uint8_t  stepDen;
+  uint8_t  stepTriplet;
   uint32_t stepMs;
   uint8_t  stepsPerBar;
   uint8_t  stepInBar;
@@ -468,7 +519,7 @@ static inline const char* resetReasonName(esp_reset_reason_t reason);
 
 // -------------------- Runtime Recovery --------------------
 static const uint32_t RUNTIME_STATE_MAGIC = 0x42454341UL;  // "BECA"
-static const uint8_t RUNTIME_STATE_VER = 1;
+static const uint8_t RUNTIME_STATE_VER = 2;
 const uint32_t RUNTIME_SAVE_DEBOUNCE_MS = 1400;
 const uint32_t RUNTIME_SAVE_MIN_INTERVAL_MS = 7000;
 
@@ -494,6 +545,7 @@ struct RuntimeStateBlob {
   uint8_t nr;
   uint8_t beats;
   uint8_t den;
+  uint8_t note_length;
   uint8_t drumsel;
   float sens;
   float rest;
@@ -831,6 +883,7 @@ static inline void captureRuntimeState(RuntimeStateBlob& out) {
   out.nr = avoidRepeats ? 1 : 0;
   out.beats = (uint8_t)constrain((int)gTS.beats, 1, 16);
   out.den = isValidDen(gTS.noteVal) ? gTS.noteVal : 4;
+  out.note_length = (uint8_t)constrain((int)gNoteLengthIndex, 0, (int)NOTE_LENGTH_COUNT - 1);
   out.drumsel = (uint8_t)drumSelMask;
   out.sens = clampf(sens, 0.0f, 0.5f);
   out.rest = clampf(restProb, 0.0f, 0.8f);
@@ -852,6 +905,7 @@ static inline bool runtimeStateValid(const RuntimeStateBlob& in) {
   if (in.fx >= (uint8_t)FX_COUNT) return false;
   if (in.pal >= (uint8_t)(NUM_BUILTIN + NUM_CUSTOM)) return false;
   if (!isValidDen(in.den)) return false;
+  if (in.note_length >= NOTE_LENGTH_COUNT) return false;
   return true;
 }
 
@@ -884,6 +938,7 @@ static inline void applyRuntimeState(const RuntimeStateBlob& in, bool applyOutpu
   gTS.beats = (uint8_t)constrain((int)in.beats, 1, 16);
   gTS.noteVal = isValidDen(in.den) ? in.den : 4;
   gTS.triplet = false;
+  gNoteLengthIndex = (uint8_t)constrain((int)in.note_length, 0, (int)NOTE_LENGTH_COUNT - 1);
   drumSelMask = in.drumsel;
   applyDawSyncEnabled(in.daw_sync != 0);
   if (applyOutputMode) gOutputMode = (uint8_t)constrain((int)in.outputmode, 0, 2);
@@ -951,21 +1006,28 @@ static inline void addGlitter(uint8_t chance, uint8_t v = 200) {
 }
 
 void fxGradientFlow() {
-  static uint16_t t = 0; t += (1 + (visSpeed >> 5));
-  uint8_t v = (uint8_t)constrain((int)(lastVel * noteEnergy * (visIntensity / 255.0f)), 12, 255);
-  for (int i = 0; i < LED_COUNT; i++) {
-    uint8_t idx = (i * 255 / LED_COUNT + (t >> 1) + (lastNote % 12) * 8) & 0xFF;
-    leds[i] = ColorFromPalette(currentPalette(), idx, v, LINEARBLEND);
+  static uint16_t phase = 0;
+  phase = (uint16_t)(phase + 1 + (visSpeed >> 5));
+
+  const uint8_t level = (uint8_t)constrain(
+      (int)(lastVel * noteEnergy * (visIntensity / 255.0f)), 12, 255);
+
+  for (int i = 0; i < LED_COUNT; ++i) {
+    const uint8_t idx =
+        (uint8_t)((i * 255 / LED_COUNT + (phase >> 1) + (lastNote % 12) * 8) & 0xFF);
+    leds[i] = ColorFromPalette(currentPalette(), idx, level, LINEARBLEND);
   }
 }
 
 void fxPaletteWave() {
-  static uint16_t t = 0; t += (2 + (visSpeed >> 5));
-  uint8_t v = (uint8_t)(noteEnergy * visIntensity);
-  for (int i = 0; i < LED_COUNT; i++) {
-    uint8_t s = sin8(t + i * 32);
-    uint8_t idx = (s + (lastNote % 12) * 4);
-    leds[i] = ColorFromPalette(currentPalette(), idx, v, LINEARBLEND);
+  static uint16_t phase = 0;
+  phase = (uint16_t)(phase + 2 + (visSpeed >> 5));
+
+  const uint8_t level = (uint8_t)(noteEnergy * visIntensity);
+  for (int i = 0; i < LED_COUNT; ++i) {
+    const uint8_t sample = sin8(phase + i * 32);
+    const uint8_t idx = (uint8_t)(sample + (lastNote % 12) * 4);
+    leds[i] = ColorFromPalette(currentPalette(), idx, level, LINEARBLEND);
   }
   addGlitter(14, (uint8_t)(60 + (visIntensity >> 1)));
 }
@@ -1045,19 +1107,94 @@ void fxSplitFade() {
                                v, LINEARBLEND);
 }
 
+static inline CRGB encoderSettingColor(EncoderSettingId setting) {
+  switch (setting) {
+    case ENC_SET_SENS:        return CRGB(139, 196, 62);
+    case ENC_SET_MODE:        return CRGB(254, 214, 5);
+    case ENC_SET_SCALE:       return CRGB(254, 85, 1);
+    case ENC_SET_ROOT:        return CRGB(27, 200, 248);
+    case ENC_SET_TEMPO:       return CRGB(241, 33, 41);
+    case ENC_SET_SWING:       return CRGB(114, 57, 217);
+    case ENC_SET_REST:        return CRGB(237, 41, 172);
+    case ENC_SET_OCTAVE:      return CRGB(255, 255, 255);
+    case ENC_SET_TIME_SIG:    return CRGB(18, 201, 156);
+    case ENC_SET_NOTE_LENGTH: return CRGB(18, 76, 236);
+    case ENC_SET_FILTER:      return CRGB(37, 191, 69);
+    case ENC_SET_RESONANCE:   return CRGB(255, 181, 0);
+    default:                  return CRGB::Green;
+  }
+}
+
+static inline uint8_t encoderSettingLedCount() {
+  beca::SynthParams p;
+  switch (gEncoderSetting) {
+    case ENC_SET_SENS:
+      return (uint8_t)constrain((int)roundf((sens / 0.5f) * LED_COUNT), 1, LED_COUNT);
+    case ENC_SET_MODE:
+      return (uint8_t)constrain((int)roundf(((float)gMode / 3.0f) * (LED_COUNT - 1)) + 1, 1, LED_COUNT);
+    case ENC_SET_SCALE:
+      return (uint8_t)constrain((int)roundf(((float)gScale / 14.0f) * (LED_COUNT - 1)) + 1, 1, LED_COUNT);
+    case ENC_SET_ROOT:
+      return (uint8_t)constrain((int)roundf((((float)(rootMidi % 12)) / 11.0f) * (LED_COUNT - 1)) + 1, 1, LED_COUNT);
+    case ENC_SET_TEMPO:
+      return (uint8_t)constrain((int)roundf((((float)bpm - 20.0f) / 220.0f) * LED_COUNT), 1, LED_COUNT);
+    case ENC_SET_SWING:
+      return (uint8_t)constrain((int)roundf(((float)swingPct / 60.0f) * LED_COUNT), 1, LED_COUNT);
+    case ENC_SET_REST:
+      return (uint8_t)constrain((int)roundf((restProb / 0.8f) * LED_COUNT), 1, LED_COUNT);
+    case ENC_SET_OCTAVE:
+      return (uint8_t)constrain((int)(highOct - lowOct + 1), 1, LED_COUNT);
+    case ENC_SET_TIME_SIG:
+      return (uint8_t)constrain((int)roundf(((float)gTS.beats / 12.0f) * LED_COUNT), 1, LED_COUNT);
+    case ENC_SET_NOTE_LENGTH:
+      return (uint8_t)constrain((int)roundf(((float)gNoteLengthIndex / (float)(NOTE_LENGTH_COUNT - 1)) * (LED_COUNT - 1)) + 1, 1, LED_COUNT);
+    case ENC_SET_FILTER:
+      gSynth.getParams(p);
+      return (uint8_t)constrain((int)roundf(((log10f(max(20.0f, p.cutoffHz)) - log10f(20.0f)) / (log10f(18000.0f) - log10f(20.0f))) * LED_COUNT), 1, LED_COUNT);
+    case ENC_SET_RESONANCE:
+      gSynth.getParams(p);
+      return (uint8_t)constrain((int)roundf((p.resonance / 10.0f) * LED_COUNT), 1, LED_COUNT);
+    default:
+      return 4;
+  }
+}
+
+static inline void renderEncoderNavLeds() {
+  fill_solid(leds, LED_COUNT, CRGB::Black);
+
+  CRGB color = CRGB(241, 33, 41);
+  uint8_t onCount = 1;
+  if (gEncoderVolumeMode) {
+    beca::SynthParams p;
+    gSynth.getParams(p);
+    onCount = (uint8_t)constrain((int)roundf(p.master * LED_COUNT), 1, LED_COUNT);
+  } else {
+    color = encoderSettingColor(gEncoderSetting);
+    onCount = encoderSettingLedCount();
+  }
+
+  for (uint8_t i = 0; i < LED_COUNT; ++i) {
+    leds[i] = (i >= (LED_COUNT - onCount)) ? color : CRGB::Black;
+  }
+}
+
 static inline void renderLEDs() {
-  switch (fxMode) {
-    case FX_GRADIENT_FLOW: fxGradientFlow(); break;
-    case FX_PALETTE_WAVE:  fxPaletteWave();  break;
-    case FX_SOFT_SWEEP:    fxSoftSweep();    break;
-    case FX_COMET_TRAILS:  fxCometTrails();  break;
-    case FX_JUGGLE:        fxJuggle();       break;
-    case FX_GLITTER_VEIL:  fxGlitterVeil();  break;
-    case FX_QUIET_FIRE:    fxQuietFire();    break;
-    case FX_NEON_BARS:     fxNeonBars();     break;
-    case FX_SPARKLE_MIST:  fxSparkleMist();  break;
-    case FX_SPLIT_FADE:    fxSplitFade();    break;
-    default:               fxGradientFlow(); break;
+  if (encoderNavVisible(millis())) {
+    renderEncoderNavLeds();
+  } else {
+    switch (fxMode) {
+      case FX_GRADIENT_FLOW: fxGradientFlow(); break;
+      case FX_PALETTE_WAVE:  fxPaletteWave();  break;
+      case FX_SOFT_SWEEP:    fxSoftSweep();    break;
+      case FX_COMET_TRAILS:  fxCometTrails();  break;
+      case FX_JUGGLE:        fxJuggle();       break;
+      case FX_GLITTER_VEIL:  fxGlitterVeil();  break;
+      case FX_QUIET_FIRE:    fxQuietFire();    break;
+      case FX_NEON_BARS:     fxNeonBars();     break;
+      case FX_SPARKLE_MIST:  fxSparkleMist();  break;
+      case FX_SPLIT_FADE:    fxSplitFade();    break;
+      default:               fxGradientFlow(); break;
+    }
   }
   FastLED.setBrightness(gBrightness);
   FastLED.show();
@@ -1097,13 +1234,19 @@ static inline bool isValidDen(uint8_t d) {
 }
 
 static inline void recalcTransport(bool resetPhase = true) {
-  T.bpm     = (uint16_t)constrain((int)bpm, 20, 240);
-  T.beats   = (uint8_t)constrain((int)gTS.beats, 1, 16);
-  T.noteVal = isValidDen(gTS.noteVal) ? gTS.noteVal : 4;
+  T.bpm         = (uint16_t)constrain((int)bpm, 20, 240);
+  T.beats       = (uint8_t)constrain((int)gTS.beats, 1, 16);
+  T.barDen      = isValidDen(gTS.noteVal) ? gTS.noteVal : 4;
+  T.stepDen     = currentStepDen();
+  T.stepTriplet = currentStepTriplet() ? 1 : 0;
 
-  float quarterMs = 60000.0f / (float)T.bpm;
-  T.stepMs = (uint32_t)max(10.0f, quarterMs * (4.0f / (float)T.noteVal));
-  T.stepsPerBar = T.beats;
+  const float quarterMs = 60000.0f / (float)T.bpm;
+  const float stepQuarterFactor = currentStepQuarterFactor();
+  const float barQuarterFactor = (float)T.beats * (4.0f / (float)T.barDen);
+  const float stepsPerBarF = max(1.0f, barQuarterFactor / max(0.01f, stepQuarterFactor));
+
+  T.stepMs = (uint32_t)max(10.0f, quarterMs * stepQuarterFactor);
+  T.stepsPerBar = (uint8_t)constrain((int)roundf(stepsPerBarF), 1, 32);
 
   if (resetPhase) {
     T.stepInBar  = 0;
@@ -1113,8 +1256,8 @@ static inline void recalcTransport(bool resetPhase = true) {
 }
 
 static inline uint8_t dawPulsesPerStep() {
-  uint8_t den = isValidDen(gTS.noteVal) ? gTS.noteVal : 4;
-  uint8_t pulses = (uint8_t)(96 / den);  // 24 PPQN * quarter ratio
+  float pulsesF = 24.0f * currentStepQuarterFactor();
+  uint8_t pulses = (uint8_t)constrain((int)roundf(pulsesF), 1, 48);
   return pulses ? pulses : 1;
 }
 
@@ -1179,6 +1322,151 @@ static inline void onMidiContinue() {
 // -------------------- Encoder --------------------
 int  encLastA  = HIGH;
 bool encLastSW = HIGH;
+bool encPressed = false;
+bool encHoldHandled = false;
+uint32_t encPressStartMs = 0;
+uint32_t encLastReleaseMs = 0;
+uint8_t encTapCount = 0;
+
+static inline void showEncoderNav(uint32_t holdMs = 4000) {
+  gEncoderNavUntilMs = millis() + holdMs;
+}
+
+static inline bool encoderNavVisible(uint32_t nowMs) {
+  return gEncoderVolumeMode || (int32_t)(gEncoderNavUntilMs - nowMs) > 0;
+}
+
+static inline bool encoderSettingEnabled(EncoderSettingId setting) {
+  switch (setting) {
+    case ENC_SET_NOTE_LENGTH:
+    case ENC_SET_FILTER:
+    case ENC_SET_RESONANCE:
+      return outputModeIsAux();
+    default:
+      return true;
+  }
+}
+
+static inline void normalizeEncoderSetting() {
+  if (encoderSettingEnabled(gEncoderSetting)) return;
+  gEncoderSetting = ENC_SET_SENS;
+}
+
+static inline void cycleEncoderSetting() {
+  for (uint8_t i = 0; i < (uint8_t)ENC_SET_COUNT; ++i) {
+    uint8_t next = ((uint8_t)gEncoderSetting + 1u + i) % (uint8_t)ENC_SET_COUNT;
+    if (encoderSettingEnabled((EncoderSettingId)next)) {
+      gEncoderSetting = (EncoderSettingId)next;
+      return;
+    }
+  }
+  gEncoderSetting = ENC_SET_SENS;
+}
+
+static inline void stepEncoderTimeSignature(int dir) {
+  static const uint8_t beatsList[] = {1, 2, 2, 3, 4, 5, 7, 6, 9, 12, 4, 4, 8};
+  static const uint8_t denList[]   = {1, 2, 4, 4, 4, 4, 4, 8, 8, 8, 8, 16, 32};
+  static const uint8_t count = sizeof(beatsList) / sizeof(beatsList[0]);
+
+  uint8_t idx = 4;
+  for (uint8_t i = 0; i < count; ++i) {
+    if (beatsList[i] == gTS.beats && denList[i] == gTS.noteVal) {
+      idx = i;
+      break;
+    }
+  }
+  idx = (uint8_t)constrain((int)idx + dir, 0, (int)count - 1);
+  gTS.beats = beatsList[idx];
+  gTS.noteVal = denList[idx];
+  gTS.triplet = false;
+  recalcTransport(true);
+}
+
+static inline void randomizeBasicSettingsInline() {
+  gMode  = (Mode)random(0, drumsAllowedForCurrentOutput() ? 4 : 3);
+  gScale = (ScaleType)random(0, 15);
+  bpm = ((int)random(90, 150) / 5) * 5;
+  lowOct  = random(1, 5);
+  highOct = max<uint8_t>(lowOct, (uint8_t)random(lowOct, 9));
+  sens = clampf(((float)random(0, 11)) / 20.0f, 0.0f, 0.5f);
+  swingPct = (uint8_t)random(0, 40);
+  restProb = (float)random(5, 20) / 100.0f;
+  recalcTransport(true);
+}
+
+static inline void stepEncoderSelection(int dir) {
+  beca::SynthParams p;
+  const uint8_t prevMode = gOutputMode;
+
+  switch (gEncoderSetting) {
+    case ENC_SET_SENS:
+      sens = clampf(sens + (dir * 0.01f), 0.0f, 0.5f);
+      break;
+    case ENC_SET_MODE: {
+      int maxMode = drumsAllowedForCurrentOutput() ? 3 : 2;
+      gMode = (Mode)constrain((int)gMode + dir, 0, maxMode);
+      break;
+    }
+    case ENC_SET_SCALE:
+      gScale = (ScaleType)constrain((int)gScale + dir, 0, 14);
+      break;
+    case ENC_SET_ROOT: {
+      int semi = constrain((rootMidi % 12) + dir, 0, 11);
+      int oct = (rootMidi / 12) * 12;
+      rootMidi = (uint8_t)(oct + semi);
+      break;
+    }
+    case ENC_SET_TEMPO: {
+      int next = constrain((int)bpm + dir * 5, 20, 240);
+      bpm = (uint16_t)((next / 5) * 5);
+      recalcTransport(false);
+      break;
+    }
+    case ENC_SET_SWING:
+      swingPct = (uint8_t)constrain((int)swingPct + dir, 0, 60);
+      break;
+    case ENC_SET_REST:
+      restProb = clampf(restProb + dir * 0.01f, 0.0f, 0.8f);
+      break;
+    case ENC_SET_OCTAVE:
+      if (dir > 0) {
+        if (highOct < 9) highOct++;
+        else if (lowOct < highOct) lowOct++;
+      } else {
+        if (lowOct > 1) lowOct--;
+        else if (highOct > lowOct) highOct--;
+      }
+      break;
+    case ENC_SET_TIME_SIG:
+      stepEncoderTimeSignature(dir);
+      break;
+    case ENC_SET_NOTE_LENGTH:
+      gNoteLengthIndex = (uint8_t)constrain((int)gNoteLengthIndex + dir, 0, (int)NOTE_LENGTH_COUNT - 1);
+      recalcTransport(true);
+      break;
+    case ENC_SET_FILTER:
+      gSynth.getParams(p);
+      p.cutoffHz = clampf(p.cutoffHz * (dir > 0 ? 1.12f : (1.0f / 1.12f)), 20.0f, 18000.0f);
+      gSynth.setParams(p);
+      break;
+    case ENC_SET_RESONANCE:
+      gSynth.getParams(p);
+      p.resonance = clampf(p.resonance + dir * 0.05f, 0.1f, 10.0f);
+      gSynth.setParams(p);
+      break;
+    default:
+      break;
+  }
+
+  if (prevMode != gOutputMode) normalizeEncoderSetting();
+}
+
+static inline void stepEncoderVolume(int dir) {
+  beca::SynthParams p;
+  gSynth.getParams(p);
+  p.master = clampf(p.master + dir * 0.01f, 0.0f, 1.0f);
+  gSynth.setParams(p);
+}
 
 static inline void setupEncoder() {
   pinMode(ENC_PIN_A,  INPUT_PULLUP);
@@ -1189,17 +1477,62 @@ static inline void setupEncoder() {
 }
 
 static inline void applyEncoder() {
+  const uint32_t nowMs = millis();
   int a = digitalRead(ENC_PIN_A);
   if (a != encLastA && a == LOW) {
     int b = digitalRead(ENC_PIN_B);
-    sens += (b == HIGH) ? 0.05f : -0.05f;
-    sens  = clampf(sens, 0.0f, 0.5f);
+    int dir = (b == HIGH) ? 1 : -1;
+    if (gEncoderVolumeMode) stepEncoderVolume(dir);
+    else stepEncoderSelection(dir);
+    showEncoderNav();
+    pushStateIfChanged(true);
   }
   encLastA = a;
 
   bool sw = digitalRead(ENC_PIN_SW);
-  if (encLastSW == HIGH && sw == LOW) {
-    currentPaletteIndex = (currentPaletteIndex + 1) % (NUM_BUILTIN + NUM_CUSTOM);
+  if (!encPressed && encLastSW == HIGH && sw == LOW) {
+    encPressed = true;
+    encHoldHandled = false;
+    encPressStartMs = nowMs;
+  }
+
+  if (encPressed && !encHoldHandled && sw == LOW && (int32_t)(nowMs - encPressStartMs) >= 550) {
+    encHoldHandled = true;
+    uint8_t next = (uint8_t)((gOutputMode + 1u) % 3u);
+    if (!(next == OUTPUT_AUX && !auxSwitchReady())) {
+      setOutputMode(next);
+      saveOutputModePref();
+      normalizeEncoderSetting();
+      showEncoderNav(5200);
+      pushStateIfChanged(true);
+    }
+  }
+
+  if (encPressed && encLastSW == LOW && sw == HIGH) {
+    encPressed = false;
+    if (!encHoldHandled) {
+      if ((int32_t)(nowMs - encLastReleaseMs) > 450) {
+        encTapCount = 0;
+      }
+      encTapCount++;
+      encLastReleaseMs = nowMs;
+      showEncoderNav();
+    }
+  }
+
+  if (!encPressed && encTapCount > 0 && (int32_t)(nowMs - encLastReleaseMs) > 260) {
+    if (encTapCount == 1) {
+      gEncoderVolumeMode = false;
+      cycleEncoderSetting();
+    } else if (encTapCount == 2) {
+      gEncoderVolumeMode = !gEncoderVolumeMode;
+    } else {
+      gEncoderVolumeMode = false;
+      randomizeBasicSettingsInline();
+    }
+    encTapCount = 0;
+    showEncoderNav(gEncoderVolumeMode ? 6000 : 4000);
+    pushStateIfChanged(true);
   }
   encLastSW = sw;
 }
@@ -1413,6 +1746,10 @@ static inline void plantPerformerTick() {
 
 static inline uint16_t gateFromStep(float mult = 0.90f) {
   return (uint16_t)constrain((int)((float)T.stepMs * mult), 60, 650);
+}
+
+static inline uint16_t melodicGateMs(float mult = 0.90f) {
+  return gateFromStep(mult);
 }
 
 // -------------------- Internal steps --------------------
@@ -1662,6 +1999,10 @@ struct LastState {
   uint8_t  den;
   uint8_t  drumsel;
   uint8_t  auxready;
+  uint8_t  note_length;
+  float    cutoff;
+  float    resonance;
+  float    master;
 };
 LastState LS = {};
 
@@ -1724,6 +2065,8 @@ static inline void handleEvents() {
 static inline bool stateChanged() {
   uint8_t ble = gMidiConnected ? 1 : 0;
   uint8_t root = (uint8_t)(rootMidi % 12);
+  beca::SynthParams p;
+  gSynth.getParams(p);
 
   if (LS.ble   != ble) return true;
   if (LS.midimode != (uint8_t)(outputModeIsSerial() ? 1 : 0)) return true;
@@ -1753,11 +2096,17 @@ static inline bool stateChanged() {
   if (LS.vel   != lastVel) return true;
   if (LS.drumsel != (uint8_t)drumSelMask) return true;
   if (LS.auxready != (auxSwitchReady() ? 1 : 0)) return true;
+  if (LS.note_length != gNoteLengthIndex) return true;
+  if (fabsf(LS.cutoff - p.cutoffHz) > 0.01f) return true;
+  if (fabsf(LS.resonance - p.resonance) > 0.0001f) return true;
+  if (fabsf(LS.master - p.master) > 0.0001f) return true;
 
   return false;
 }
 
 static inline void captureState() {
+  beca::SynthParams p;
+  gSynth.getParams(p);
   LS.ble   = gMidiConnected ? 1 : 0;
   LS.midimode = (uint8_t)(outputModeIsSerial() ? 1 : 0);
   LS.outputmode = (uint8_t)gOutputMode;
@@ -1786,13 +2135,17 @@ static inline void captureState() {
   LS.den   = gTS.noteVal;
   LS.drumsel = (uint8_t)drumSelMask;
   LS.auxready = auxSwitchReady() ? 1 : 0;
+  LS.note_length = gNoteLengthIndex;
+  LS.cutoff = p.cutoffHz;
+  LS.resonance = p.resonance;
+  LS.master = p.master;
 }
 
 static inline size_t renderStateJson(char* out, size_t outLen, bool bumpVersion) {
   captureState();
   if (bumpVersion) stateVersion++;
   const uint32_t ver = stateVersion;
-  char buf[920];
+  char buf[1100];
   snprintf(buf, sizeof(buf),
     "{\"ver\":%u,"
     "\"ble\":%u,"
@@ -1822,6 +2175,11 @@ static inline size_t renderStateJson(char* out, size_t outLen, bool bumpVersion)
     "\"nr\":%u,"
     "\"aux_ready\":%u,"
     "\"aux_wait_ms\":%lu,"
+    "\"note_length_idx\":%u,"
+    "\"note_length\":\"%s\","
+    "\"cutoff\":%.2f,"
+    "\"resonance\":%.3f,"
+    "\"master\":%.2f,"
     "\"ts\":\"%u/%u\","
     "\"last\":\"%u\","
     "\"vel\":%u,"
@@ -1854,6 +2212,11 @@ static inline size_t renderStateJson(char* out, size_t outLen, bool bumpVersion)
     LS.nr,
     LS.auxready,
     (unsigned long)auxSwitchWaitMs(),
+    LS.note_length,
+    currentNoteLengthLabelC(),
+    (double)LS.cutoff,
+    (double)LS.resonance,
+    (double)LS.master,
     LS.beats,
     LS.den,
     LS.last,
@@ -1866,12 +2229,12 @@ static inline size_t renderStateJson(char* out, size_t outLen, bool bumpVersion)
   return strlen(out);
 }
 
-static inline void pushStateIfChanged(bool force=false) {
+static inline void pushStateIfChanged(bool force) {
   if (!sseConnected) return;
   if (!sseClient.connected()) { sseConnected = false; return; }
   if (!force && !stateChanged()) return;
 
-  char buf[920];
+  char buf[1100];
   renderStateJson(buf, sizeof(buf), true);
 
   sseSend("state", buf);
@@ -2125,13 +2488,14 @@ static inline String buildApiSynthJson() {
     "\"mono\":%u,\"voices\":%u,\"attack\":%.3f,\"decay\":%.3f,\"sustain\":%.3f,\"release\":%.3f,"
     "\"filter\":%u,\"cutoff\":%.2f,\"resonance\":%.3f,\"reverb\":%.3f,\"delay_ms\":%.2f,"
     "\"delay_feedback\":%.3f,\"delay_mix\":%.3f,\"drive\":%.3f,\"master\":%.3f,\"detune\":%.3f,"
-    "\"gain_trim\":%.3f,\"drumkit\":%u}",
+    "\"gain_trim\":%.3f,\"drumkit\":%u,\"note_length_idx\":%u,\"note_length\":\"%s\"}",
     (unsigned)p.preset, beca::SynthEngine::presetName(p.preset),
     (unsigned)p.waveA, (unsigned)p.waveB, (double)p.oscMix,
     (unsigned)p.mono, (unsigned)p.maxVoices, (double)p.attack, (double)p.decay, (double)p.sustain, (double)p.release,
     (unsigned)p.filterType, (double)p.cutoffHz, (double)p.resonance, (double)p.reverb, (double)p.delayMs,
     (double)p.delayFeedback, (double)p.delayMix, (double)p.distDrive, (double)p.master, (double)p.detuneCents,
-    (double)p.gainTrim, (unsigned)p.drumKit
+    (double)p.gainTrim, (unsigned)p.drumKit,
+    (unsigned)gNoteLengthIndex, currentNoteLengthLabelC()
   );
   return String(buf);
 }
@@ -2274,6 +2638,11 @@ static inline String buildApiParamsJson() {
     if (i) json += ",";
     json += "\""; json += TS_VALUES_API[i]; json += "\"";
   }
+  json += "],\"note_lengths\":[";
+  for (uint8_t i = 0; i < NOTE_LENGTH_COUNT; ++i) {
+    if (i) json += ",";
+    json += "\""; json += NOTE_LENGTH_LABELS[i]; json += "\"";
+  }
   json += "],\"output_modes\":[\"BLE\",\"SERIAL\",\"AUX OUT\"],\"clock_modes\":[\"Internal\",\"Plant\"]";
   json += ",\"synth_presets\":[";
   for (uint8_t i = 0; i < beca::SynthEngine::kPresetCount; ++i) {
@@ -2302,6 +2671,36 @@ static inline bool parseTimeSignatureToken(const String& in, uint8_t& beatsOut, 
   beatsOut = beats;
   denOut = den;
   return true;
+}
+
+static inline bool parseNoteLengthToken(const String& in, uint8_t& idxOut) {
+  String v = in;
+  v.trim();
+  if (v.length() == 0) return false;
+
+  bool numeric = true;
+  for (size_t i = 0; i < v.length(); ++i) {
+    if (!isDigit(v.charAt(i))) {
+      numeric = false;
+      break;
+    }
+  }
+  if (numeric) {
+    int idx = constrain(v.toInt(), 0, (int)NOTE_LENGTH_COUNT - 1);
+    idxOut = (uint8_t)idx;
+    return true;
+  }
+
+  v.toLowerCase();
+  for (uint8_t i = 0; i < NOTE_LENGTH_COUNT; ++i) {
+    String label = NOTE_LENGTH_LABELS[i];
+    label.toLowerCase();
+    if (v == label) {
+      idxOut = i;
+      return true;
+    }
+  }
+  return false;
 }
 
 static inline bool applyParamByKey(const String& keyIn, const String& valueIn, String& err) {
@@ -2361,6 +2760,16 @@ static inline bool applyParamByKey(const String& keyIn, const String& valueIn, S
     gTS.beats = beats;
     gTS.noteVal = den;
     gTS.triplet = false;
+    recalcTransport(true);
+    return true;
+  }
+  if (key == "note_length" || key == "notelength") {
+    uint8_t nextIdx = gNoteLengthIndex;
+    if (!parseNoteLengthToken(value, nextIdx)) {
+      err = "invalid note length";
+      return false;
+    }
+    gNoteLengthIndex = nextIdx;
     recalcTransport(true);
     return true;
   }
@@ -2444,7 +2853,7 @@ static inline bool applyParamByKey(const String& keyIn, const String& valueIn, S
 
 static inline void handleApiStateGet() {
   sendNoCacheHeaders();
-  char buf[920];
+      char buf[1100];
   renderStateJson(buf, sizeof(buf), false);
   server.send(200, "application/json", buf);
 }
@@ -2784,85 +3193,405 @@ static inline String buildApiInfoJson() {
 
 const char SETUP_HTML[] PROGMEM = R"HTML(
 <!doctype html>
+<html lang="en">
+<head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>BECA - Setup</title>
 <style>
-:root{  color-scheme: light;  --accent:#008351;  --bg:#c7ddcf;  --bg-soft:#d7e7dd;  --surface:rgba(206,222,214,.22);  --surface-strong:rgba(206,222,214,.32);  --edge:rgba(70,96,83,.24);  --edge-strong:rgba(70,96,83,.38);  --text:#1b2c23;  --text-muted:rgba(27,44,35,.6);  --shadow:0 12px 26px rgba(18,30,24,.12),0 10px 22px rgba(0,131,81,.16);  --glass-noise:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160' viewBox='0 0 160 160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/><feComponentTransfer><feFuncA type='table' tableValues='0 0.08'/></feComponentTransfer></filter><rect width='160' height='160' filter='url(%23n)'/></svg>");}*{box-sizing:border-box;}body{  margin:0;  min-height:100vh;  padding:24px;  font:14px "SF Pro Text","Avenir Next","Segoe UI",sans-serif;  color:var(--text);  background:    radial-gradient(900px 520px at 78% -10%, rgba(0,131,81,.22), transparent 62%),    radial-gradient(760px 540px at 12% 18%, rgba(136,200,170,.25), transparent 62%),    radial-gradient(520px 420px at 88% 84%, rgba(0,131,81,.18), transparent 60%),    linear-gradient(160deg,var(--bg) 0%,var(--bg-soft) 58%,var(--bg) 100%);}body:before{  content:"";  position:fixed;  inset:-20% -20% -10% -20%;  background:    radial-gradient(40% 35% at 70% 18%, rgba(0,131,81,.14), transparent 60%),    radial-gradient(36% 30% at 18% 80%, rgba(0,131,81,.12), transparent 65%);  z-index:-2;}body:after{  content:"";  position:fixed;  inset:0;  background-image:    linear-gradient(rgba(0,131,81,.05) 1px, transparent 1px),    linear-gradient(90deg, rgba(0,131,81,.05) 1px, transparent 1px);  background-size:28px 28px;  opacity:.3;  pointer-events:none;  z-index:-1;}.card{  max-width:580px;  margin:0 auto;  background:var(--glass-noise),linear-gradient(155deg, rgba(255,255,255,.12), rgba(255,255,255,.03)),var(--surface-strong);  background-size:200px 200px,auto,auto;  background-repeat:repeat;  border:1px solid var(--edge-strong);  border-radius:18px;  padding:18px;  box-shadow:var(--shadow);  backdrop-filter:blur(22px) saturate(160%);}h1{  margin:0 0 6px;  font-size:16px;  letter-spacing:.18em;  text-transform:uppercase;}label{  display:block;  margin:14px 0 6px;  font-size:11px;  letter-spacing:.16em;  text-transform:uppercase;  opacity:.75;}input,select,button{  width:100%;  padding:10px 12px;  border:1px solid var(--edge-strong);  border-radius:12px;  background:linear-gradient(150deg, rgba(255,255,255,.12), rgba(255,255,255,.03)),rgba(200,216,208,.26);  color:var(--text);  font:inherit;  box-shadow:inset 0 0 0 1px rgba(255,255,255,.24);}button{cursor:pointer;}button.primary{  background:linear-gradient(150deg, rgba(0,131,81,.18), rgba(0,131,81,.08)),rgba(200,216,208,.26);  border-color:rgba(0,131,81,.5);  font-weight:600;}.small{font-size:12px;opacity:.75;}.stack{display:flex;flex-direction:column;gap:10px;margin-top:12px;}.status{margin-top:12px;padding:10px 12px;border-radius:12px;border:1px solid rgba(70,96,83,.32);background:rgba(206,222,214,.3);display:none;}.status.show{display:block;}.status.ok{border-color:rgba(0,131,81,.52);background:rgba(0,131,81,.10);}.status.err{border-color:rgba(176,67,67,.48);background:rgba(176,67,67,.10);}.status .hint{display:block;margin-top:5px;opacity:.78;}.row{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:end;}.btn-mini{width:auto;padding:10px 12px;font-size:12px;}</style>
-<div class="card">
-  <h1>BECA Wi-Fi Setup</h1>
-  <div class="small">Pick your home Wi-Fi (2.4GHz). This page opens automatically while BECA is in setup mode.</div>
-  <label>Device name (for .local)</label>
-  <input id="name" placeholder="beca-xxxx">
-  <label>Wi-Fi SSID</label>
-  <div class="row">
-    <select id="ssid"><option>Scanning...</option></select>
-    <button class="btn-mini" onclick="scan()">Rescan</button>
-  </div>
-  <label>Password</label>
-  <input id="pass" type="password" placeholder="********">
-  <div class="stack">
-    <button class="primary" onclick="save()">Save and Connect</button>
-    <button onclick="forget()">Forget Wi-Fi</button>
-  </div>
-  <div id="netStatus" class="status"></div>
-  <p class="small">If setup fails, BECA stays in setup mode so you can retry.</p>
-</div>
+  :root {
+    color-scheme: light;
+    --accent: #008351;
+    --accent-strong: #006a43;
+    --bg: #eef3ee;
+    --bg-soft: #dce8df;
+    --surface: rgba(255, 255, 255, 0.76);
+    --surface-soft: rgba(233, 242, 236, 0.82);
+    --edge: rgba(70, 96, 83, 0.24);
+    --edge-strong: rgba(70, 96, 83, 0.36);
+    --text: #143025;
+    --text-muted: rgba(20, 48, 37, 0.66);
+    --shadow: 0 18px 36px rgba(18, 30, 24, 0.1), 0 12px 24px rgba(0, 131, 81, 0.12);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; }
+  body {
+    min-height: 100vh;
+    padding: clamp(18px, 3vw, 32px);
+    font: 14px "Avenir Next", "SF Pro Text", "Segoe UI", sans-serif;
+    color: var(--text);
+    background:
+      radial-gradient(900px 520px at 82% -10%, rgba(0, 131, 81, 0.2), transparent 60%),
+      radial-gradient(760px 560px at 14% 14%, rgba(120, 190, 150, 0.22), transparent 58%),
+      linear-gradient(155deg, var(--bg) 0%, var(--bg-soft) 46%, var(--bg) 100%);
+  }
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(0, 131, 81, 0.045) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0, 131, 81, 0.045) 1px, transparent 1px);
+    background-size: 28px 28px;
+    opacity: 0.32;
+    pointer-events: none;
+    z-index: -1;
+  }
+  .shell {
+    width: min(860px, 100%);
+    margin: 0 auto;
+    display: grid;
+    gap: 16px;
+  }
+  .card {
+    background:
+      linear-gradient(145deg, rgba(255, 255, 255, 0.92), rgba(236, 244, 239, 0.78)),
+      var(--surface);
+    border: 1px solid var(--edge-strong);
+    border-radius: 24px;
+    padding: clamp(16px, 2vw, 22px);
+    box-shadow: var(--shadow);
+    backdrop-filter: blur(22px) saturate(160%);
+  }
+  .hero {
+    display: grid;
+    gap: 14px;
+  }
+  .eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--accent);
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+  }
+  h1 {
+    margin: 0;
+    font-size: clamp(24px, 3vw, 32px);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  p {
+    margin: 0;
+    color: var(--text-muted);
+    line-height: 1.55;
+  }
+  .hero-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.15fr) minmax(220px, 0.85fr);
+    gap: 14px;
+  }
+  .info-box {
+    display: grid;
+    gap: 10px;
+    padding: 14px;
+    border-radius: 18px;
+    border: 1px solid var(--edge);
+    background:
+      linear-gradient(145deg, rgba(255, 255, 255, 0.9), rgba(231, 243, 236, 0.76)),
+      var(--surface-soft);
+  }
+  .info-row {
+    display: grid;
+    gap: 4px;
+  }
+  .label {
+    font-size: 11px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+  .value {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text);
+    word-break: break-word;
+  }
+  .setup-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(220px, 0.8fr);
+    gap: 16px;
+  }
+  label {
+    display: block;
+    margin: 12px 0 6px;
+    font-size: 11px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+  input, select, button {
+    width: 100%;
+    min-height: 46px;
+    padding: 10px 12px;
+    border: 1px solid var(--edge-strong);
+    border-radius: 14px;
+    background:
+      linear-gradient(145deg, rgba(255, 255, 255, 0.94), rgba(230, 241, 234, 0.82)),
+      var(--surface-soft);
+    color: var(--text);
+    font: inherit;
+    box-shadow: 0 6px 14px rgba(18, 30, 24, 0.06);
+  }
+  button {
+    cursor: pointer;
+  }
+  button.primary {
+    color: #fff;
+    border-color: var(--accent);
+    background: linear-gradient(145deg, #0b9461, var(--accent));
+    font-weight: 700;
+  }
+  .row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    align-items: end;
+  }
+  .btn-mini {
+    width: auto;
+    min-width: 120px;
+  }
+  .actions {
+    display: grid;
+    gap: 10px;
+    margin-top: 14px;
+  }
+  .status {
+    margin-top: 14px;
+    padding: 12px 14px;
+    border-radius: 16px;
+    border: 1px solid rgba(70, 96, 83, 0.28);
+    background: rgba(214, 227, 219, 0.66);
+    display: none;
+  }
+  .status.show { display: block; }
+  .status.ok {
+    border-color: rgba(0, 131, 81, 0.44);
+    background: rgba(0, 131, 81, 0.09);
+  }
+  .status.err {
+    border-color: rgba(176, 67, 67, 0.4);
+    background: rgba(176, 67, 67, 0.1);
+  }
+  .status .hint {
+    display: block;
+    margin-top: 6px;
+    opacity: 0.8;
+  }
+  .note-list {
+    display: grid;
+    gap: 10px;
+  }
+  .note {
+    padding: 12px 14px;
+    border-radius: 16px;
+    border: 1px solid var(--edge);
+    background:
+      linear-gradient(145deg, rgba(255, 255, 255, 0.88), rgba(231, 243, 236, 0.74)),
+      var(--surface-soft);
+  }
+  .note strong {
+    display: block;
+    margin-bottom: 5px;
+    font-size: 13px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--accent-strong);
+  }
+  @media (max-width: 760px) {
+    .hero-grid,
+    .setup-grid {
+      grid-template-columns: 1fr;
+    }
+    .row {
+      grid-template-columns: 1fr;
+    }
+    .btn-mini {
+      width: 100%;
+    }
+  }
+</style>
+</head>
+<body>
+<main class="shell">
+  <section class="card hero">
+    <div class="eyebrow">BECA Recovery Setup</div>
+    <h1>Join Wi-Fi and return to the desktop flow</h1>
+    <p>
+      This lightweight page is BECA's fallback setup environment. Use it when the desktop app
+      cannot provision Wi-Fi directly, or when the device is still in setup mode after a reset.
+    </p>
+    <div class="hero-grid">
+      <div class="info-box">
+        <div class="info-row">
+          <span class="label">Current mode</span>
+          <span class="value" id="modeVal">Loading...</span>
+        </div>
+        <div class="info-row">
+          <span class="label">Current IP</span>
+          <span class="value" id="ipVal">Loading...</span>
+        </div>
+        <div class="info-row">
+          <span class="label">Saved SSID</span>
+          <span class="value" id="ssidVal">Loading...</span>
+        </div>
+      </div>
+      <div class="note-list">
+        <div class="note">
+          <strong>2.4 GHz only</strong>
+          Use a 2.4 GHz network for ESP32 compatibility.
+        </div>
+        <div class="note">
+          <strong>Manual fallback</strong>
+          If scanning is unreliable, type the SSID manually below.
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="setup-grid">
+      <div>
+        <label for="name">Device name (for .local)</label>
+        <input id="name" placeholder="beca-xxxx">
+
+        <label for="ssid">Wi-Fi SSID (scanned)</label>
+        <div class="row">
+          <select id="ssid">
+            <option value="">Scanning...</option>
+          </select>
+          <button class="btn-mini" id="scanBtn" type="button">Rescan</button>
+        </div>
+
+        <label for="ssidManual">Wi-Fi SSID (manual)</label>
+        <input id="ssidManual" placeholder="Type SSID if scan is unavailable">
+
+        <label for="pass">Password</label>
+        <input id="pass" type="password" placeholder="********">
+
+        <div class="actions">
+          <button class="primary" id="saveBtn" type="button">Save and Connect</button>
+          <button id="forgetBtn" type="button">Forget Wi-Fi</button>
+        </div>
+        <div id="netStatus" class="status"></div>
+      </div>
+
+      <div class="note-list">
+        <div class="note">
+          <strong>What happens next</strong>
+          BECA tests the credentials here, then reboots back into your normal network environment.
+        </div>
+        <div class="note">
+          <strong>If setup fails</strong>
+          BECA stays in setup mode so you can retry without losing the recovery page.
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
 <script>
 const statusEl = document.getElementById('netStatus');
+const nameEl = document.getElementById('name');
+const ssidEl = document.getElementById('ssid');
+const ssidManualEl = document.getElementById('ssidManual');
+const passEl = document.getElementById('pass');
+
 function showStatus(type, msg, hint = '') {
   statusEl.className = 'status show ' + (type || 'info');
   statusEl.innerHTML = '<strong>' + msg + '</strong>' + (hint ? '<span class="hint">' + hint + '</span>' : '');
 }
-window.scan = async () => {
-  try{
-    const s = await (await fetch('/wifi/scan')).json();
-    const sel = document.getElementById('ssid'); sel.innerHTML='';
-    (s.list||[]).forEach(n=>{ const o=document.createElement('option'); o.textContent=n; sel.appendChild(o); });
-  }catch(e){ showStatus('err', 'Could not scan Wi-Fi right now.', 'Try again in a few seconds.'); }
+
+function currentSsid() {
+  return (ssidManualEl.value || '').trim() || (ssidEl.value || '').trim();
 }
-window.load = async () => {
-  await scan();
-  try{
-    const info = await (await fetch('/api/info')).json();
-    const sel = document.getElementById('ssid');
-    if(info.name) document.getElementById('name').value = info.name;
-    if(info.ssid){ [...sel.options].forEach(o=>{ if(o.textContent===info.ssid) o.selected=true; }); }
-    if(info.wifi_error) showStatus('err', info.wifi_error, info.wifi_hint || '');
-  }catch(e){}
+
+async function scan() {
+  try {
+    const s = await (await fetch('/wifi/scan', { cache: 'no-store' })).json();
+    const previous = currentSsid();
+    ssidEl.innerHTML = '<option value="">Select scanned SSID</option>';
+    (s.list || []).forEach((name) => {
+      const option = document.createElement('option');
+      option.value = name;
+      option.textContent = name;
+      if (name === previous) option.selected = true;
+      ssidEl.appendChild(option);
+    });
+    if (!(s.list || []).length) {
+      showStatus('err', 'No nearby Wi-Fi networks were returned.', 'Type the SSID manually if you already know it.');
+    }
+  } catch (e) {
+    showStatus('err', 'Could not scan Wi-Fi right now.', 'Try again in a few seconds or type the SSID manually.');
+  }
 }
-window.save = async () => {
-  const ssid = document.getElementById('ssid').value || '';
+
+async function loadInfo() {
+  try {
+    const info = await (await fetch('/api/info', { cache: 'no-store' })).json();
+    document.getElementById('modeVal').textContent = info.mode || '--';
+    document.getElementById('ipVal').textContent = info.ip || '--';
+    document.getElementById('ssidVal').textContent = info.ssid || 'Not saved';
+    if (info.name) nameEl.value = info.name;
+    if (info.ssid) {
+      [...ssidEl.options].forEach((option) => {
+        if (option.value === info.ssid) option.selected = true;
+      });
+      if (!ssidManualEl.value) ssidManualEl.placeholder = info.ssid;
+    }
+    if (info.wifi_error) showStatus('err', info.wifi_error, info.wifi_hint || '');
+  } catch (e) {}
+}
+
+async function save() {
+  const ssid = currentSsid();
   if (!ssid) {
-    showStatus('err', 'Please choose a Wi-Fi network first.');
+    showStatus('err', 'Please choose or type a Wi-Fi network first.');
     return;
   }
   showStatus('info', 'Connecting...', 'This can take up to 15 seconds.');
   const body = new URLSearchParams();
-  body.set('name', document.getElementById('name').value);
+  body.set('name', nameEl.value);
   body.set('ssid', ssid);
-  body.set('pass', document.getElementById('pass').value);
-  try{
-    const r = await fetch('/wifi/save',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body});
+  body.set('pass', passEl.value);
+  try {
+    const r = await fetch('/wifi/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body
+    });
     const j = await r.json();
     if (j.ok) {
       showStatus('ok', j.msg || 'Connected successfully.', j.hint || 'BECA is rebooting now.');
-      setTimeout(()=>fetch('/reboot').catch(()=>{}), 900);
-      setTimeout(()=>location.href='/', 3200);
+      setTimeout(() => fetch('/reboot').catch(() => {}), 900);
+      setTimeout(() => { location.href = '/'; }, 3200);
       return;
     }
     showStatus('err', j.msg || 'Could not connect to Wi-Fi.', j.hint || '');
-  }catch(e){
+  } catch (e) {
     showStatus('err', 'Could not complete Wi-Fi setup.', 'Please retry. If needed, use a 2.4GHz hotspot.');
   }
 }
-window.forget = async () => {
+
+async function forget() {
   await fetch('/wifi/forget');
   showStatus('ok', 'Saved Wi-Fi removed.', 'BECA is rebooting into setup mode.');
-  setTimeout(()=>location.reload(),1500);
+  setTimeout(() => location.reload(), 1500);
 }
-window.load();
+
+document.getElementById('scanBtn').addEventListener('click', scan);
+document.getElementById('saveBtn').addEventListener('click', save);
+document.getElementById('forgetBtn').addEventListener('click', forget);
+
+(async () => {
+  await scan();
+  await loadInfo();
+})();
 </script>
+</body>
+</html>
 )HTML";
 
 static inline void handleWifiScan() {
@@ -3028,7 +3757,7 @@ static inline void handleSerialControlLine(const char *line) {
   }
 
   if (strcmp(cmd, "STATE") == 0) {
-    char buf[920];
+    char buf[1100];
     renderStateJson(buf, sizeof(buf), false);
     serialCtrlReply("STATE", String(buf));
     return;

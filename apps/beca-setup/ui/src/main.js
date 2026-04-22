@@ -98,6 +98,9 @@ function switchScreen(screenName) {
   el.screens.forEach((screen) => {
     screen.classList.toggle("active", screen.dataset.screenView === screenName);
   });
+  if (screenName === "control") {
+    ensureControlSurfaceLoaded().catch((err) => addLog(`Control screen open failed: ${err}`));
+  }
 }
 
 function restoreScreen() {
@@ -108,9 +111,9 @@ function restoreScreen() {
 
 async function ensureControlSurfaceLoaded() {
   if (!state.selectedTargetId) {
-    renderControlPlaceholder("Select a BECA device first. The live control surface will attach once a target is available.");
+    renderControlPlaceholder("Select a BECA device first. The unified live surface will attach once a target is available.");
     state.controlMounted = false;
-    el.controlStatus.textContent = "Select a BECA device first. The live control surface will attach once a target is available.";
+    el.controlStatus.textContent = "Select a BECA device first. The unified live surface will attach once a target is available.";
     return;
   }
   if (!state.controlReady) {
@@ -125,7 +128,7 @@ async function ensureControlSurfaceLoaded() {
     return;
   }
   if (state.controlMounted) return;
-  el.controlStatus.textContent = "Loading the BECA control surface inside the desktop app.";
+  el.controlStatus.textContent = "Loading the unified BECA live surface inside the desktop app.";
   try {
     await mountControlSurface(el.controlHost, {
       onOpenSetup: () => switchScreen("setup"),
@@ -832,7 +835,10 @@ el.deviceSelect.addEventListener("change", (event) => {
     addLog(`Device selection failed: ${err}`)
   );
 });
-el.btnScan.addEventListener("click", refreshDevice);
+el.btnScan.addEventListener("click", async () => {
+  await refreshDevice();
+  await refreshTargets({ forceReload: true });
+});
 el.btnFlash.addEventListener("click", () => doFlash());
 el.btnFlashWifi.addEventListener("click", doFlashAndWifi);
 el.btnBackup.addEventListener("click", doBackup);
@@ -842,7 +848,7 @@ el.btnWifiSave.addEventListener("click", saveWifi);
 el.btnWifiForget.addEventListener("click", forgetWifi);
 el.btnStartBridge.addEventListener("click", startBridge);
 el.btnStopBridge.addEventListener("click", stopBridge);
-el.btnTestNote.addEventListener("click", testNote);
+el.btnTestNote.addEventListener("click", startBridge);
 el.btnCopy.addEventListener("click", copyLogs);
 el.btnExport.addEventListener("click", exportDiagnostics);
 

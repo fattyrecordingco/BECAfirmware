@@ -5,11 +5,8 @@ IN_HTML = Path("index.html")
 OUT_H = Path("index_html.h")
 
 
-def pick_delimiter(text: str, base: str = "BECA_UI_HTML") -> str:
-    delim = base
-    while f"){delim}\"" in text:
-        delim += "_X"
-    return delim
+def escape_c_string(text: str) -> str:
+    return text.replace("\\", "\\\\").replace('"', '\\"')
 
 
 def main() -> None:
@@ -17,19 +14,19 @@ def main() -> None:
         raise SystemExit(f"Missing {IN_HTML}")
 
     html = IN_HTML.read_text(encoding="utf-8")
-    delim = pick_delimiter(html)
+    body = "".join(f'"{escape_c_string(line)}\\n"\n' for line in html.splitlines())
 
     out = (
         "// Auto-generated — do not edit by hand\n"
         "#pragma once\n"
         "#include <Arduino.h>\n\n"
-        f"const char INDEX_HTML[] PROGMEM = R\"{delim}(\n"
-        + html
-        + f"\n){delim}\";\n"
+        "const char INDEX_HTML[] PROGMEM =\n"
+        f"{body}"
+        ";\n"
     )
 
     OUT_H.write_text(out, encoding="utf-8")
-    print(f"OK: {OUT_H} written (delimiter {delim})")
+    print(f"OK: {OUT_H} written (escaped string literal)")
 
 
 if __name__ == "__main__":

@@ -78,6 +78,7 @@ Linux:
 8. Optional: choose `Mirror Notes To` if you want the same performance sent to your DAW and a second synth together.
 9. Leave mirrored MicroFreak mode enabled when the second destination is an Arturia MicroFreak.
 10. Open the in-app `Control` view and click `Test Note` if you want a quick routing check.
+11. In the live unified control screen, the `Settings` button returns directly to the app `Setup` workspace.
 
 ### Step D: Use the BECA control surface
 
@@ -88,6 +89,7 @@ Linux:
 - Connect to Wi-Fi `BECA-XXXX`
 - Open `http://192.168.4.1/setup`
 - Enter home Wi-Fi details and save
+- If Wi-Fi scan is unreliable, type the SSID manually in the fallback page and retry
 
 ### If anything fails
 
@@ -267,6 +269,8 @@ Use this if you are comfortable with VS Code/CLI.
 pio run -t clean
 pio run
 ```
+
+PlatformIO builds from lightweight wrappers in `src/` that include the root Arduino sketch and engine files directly. This keeps `BECAfinalsv02.ino` as the Arduino IDE source of truth while avoiding PlatformIO sketch-conversion glitches.
 
 4. Upload:
 

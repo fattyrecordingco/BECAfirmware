@@ -2,294 +2,2099 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>BECA</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>BECA Control</title>
     <style>
       :root {
         color-scheme: light;
+        --bg: #edf3ed;
+        --bg-deep: #d7e6dc;
+        --panel: rgba(255, 255, 255, 0.84);
+        --panel-soft: rgba(248, 251, 248, 0.72);
+        --edge: rgba(0, 131, 81, 0.18);
+        --edge-strong: rgba(0, 131, 81, 0.28);
         --accent: #008351;
-        --accent-strong: #006c43;
-        --bg: #c7ddcf;
-        --bg-soft: #d7e7dd;
-        --surface: rgba(206, 222, 214, 0.24);
-        --surface-strong: rgba(206, 222, 214, 0.34);
-        --edge: rgba(70, 96, 83, 0.28);
-        --edge-strong: rgba(70, 96, 83, 0.42);
-        --text: #1b2c23;
-        --text-muted: rgba(27, 44, 35, 0.66);
-        --shadow-base: 0 12px 26px rgba(18, 30, 24, 0.12);
-        --shadow-green: 0 10px 22px rgba(0, 131, 81, 0.14);
-        --radius: 24px;
-        --logo-filter: brightness(0) saturate(100%) invert(28%) sepia(62%) saturate(1220%)
-          hue-rotate(113deg) brightness(90%) contrast(96%);
+        --accent-strong: #05663f;
+        --accent-soft: rgba(0, 131, 81, 0.12);
+        --text: #133126;
+        --text-soft: rgba(19, 49, 38, 0.68);
+        --muted: #cad8ce;
+        --muted-deep: #b6c8bc;
+        --white: #ffffff;
+        --warn: #d48a00;
+        --danger: #db5d38;
+        --shadow: 0 20px 48px rgba(16, 41, 30, 0.12);
+        --shadow-soft: 0 10px 24px rgba(0, 131, 81, 0.12);
+        --radius-xl: 32px;
+        --radius-lg: 22px;
+        --radius-md: 16px;
+        --radius-sm: 12px;
+        --mono:
+          "Geist Mono",
+          "SFMono-Regular",
+          "JetBrains Mono",
+          "Consolas",
+          monospace;
+        --display:
+          "Avenir Next",
+          "SF Pro Display",
+          "Helvetica Neue",
+          sans-serif;
       }
 
       * {
         box-sizing: border-box;
       }
 
+      html,
       body {
         margin: 0;
-        min-height: 100vh;
-        color: var(--text);
-        background:
-          radial-gradient(900px 520px at 78% -10%, rgba(0, 131, 81, 0.22), transparent 62%),
-          radial-gradient(760px 540px at 12% 18%, rgba(136, 200, 170, 0.25), transparent 62%),
-          radial-gradient(520px 420px at 88% 84%, rgba(0, 131, 81, 0.18), transparent 60%),
-          linear-gradient(160deg, var(--bg) 0%, var(--bg-soft) 58%, var(--bg) 100%);
-        font-family:
-          "SF Pro Display",
-          "SF Pro Text",
-          "Avenir Next",
-          "Helvetica Neue",
-          "Segoe UI",
-          sans-serif;
-        letter-spacing: 0.01em;
+        min-height: 100%;
       }
 
-      body::after {
+      body {
+        background:
+          radial-gradient(880px 520px at 84% -8%, rgba(0, 131, 81, 0.18), transparent 60%),
+          radial-gradient(820px 620px at 10% 18%, rgba(141, 198, 154, 0.2), transparent 64%),
+          linear-gradient(165deg, var(--bg) 0%, var(--bg-deep) 52%, var(--bg) 100%);
+        color: var(--text);
+        font-family: var(--display);
+      }
+
+      body::before {
         content: "";
         position: fixed;
         inset: 0;
         background-image:
-          linear-gradient(rgba(0, 131, 81, 0.05) 1px, transparent 1px),
-          linear-gradient(90deg, rgba(0, 131, 81, 0.05) 1px, transparent 1px);
-        background-size: 28px 28px;
-        opacity: 0.3;
+          linear-gradient(rgba(0, 131, 81, 0.045) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(0, 131, 81, 0.045) 1px, transparent 1px);
+        background-size: 30px 30px;
+        opacity: 0.32;
         pointer-events: none;
         z-index: -1;
       }
 
-      .shell {
-        width: min(980px, 100%);
+      button,
+      select,
+      input {
+        font: inherit;
+      }
+
+      button {
+        cursor: pointer;
+      }
+
+      .beca-app {
+        width: min(1480px, 100%);
         margin: 0 auto;
-        padding: 22px;
+        padding: clamp(16px, 2vw, 28px);
+      }
+
+      .surface {
+        position: relative;
+        display: grid;
+        gap: clamp(16px, 1.8vw, 24px);
+        padding: clamp(18px, 2vw, 28px);
+        border: 1px solid var(--edge-strong);
+        border-radius: var(--radius-xl);
+        background:
+          linear-gradient(145deg, rgba(255, 255, 255, 0.92), rgba(240, 247, 242, 0.76)),
+          var(--panel);
+        box-shadow: var(--shadow);
+        overflow: hidden;
+      }
+
+      .surface::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background:
+          radial-gradient(420px 280px at 82% 85%, rgba(0, 131, 81, 0.1), transparent 64%),
+          linear-gradient(135deg, rgba(255, 255, 255, 0.38), transparent 48%);
+        pointer-events: none;
+      }
+
+      .surface > * {
+        position: relative;
+        z-index: 1;
+      }
+
+      .surface-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 20px;
+      }
+
+      .brand-area {
+        display: flex;
+        gap: 16px;
+        align-items: flex-start;
+      }
+
+      .logo-lockup {
+        width: clamp(96px, 9vw, 122px);
+        color: var(--accent);
+        flex: 0 0 auto;
+      }
+
+      .logo-lockup svg,
+      .icon svg,
+      .note-leaf svg,
+      .led-leaf svg,
+      .flower svg {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+
+      .eyebrow,
+      .meta-label,
+      .card-label {
+        font-family: var(--mono);
+        font-size: 0.72rem;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--text-soft);
+      }
+
+      .brand-copy {
+        display: grid;
+        gap: 8px;
+        max-width: 640px;
+      }
+
+      .brand-copy h1 {
+        margin: 0;
+        font-size: clamp(1.7rem, 2.8vw, 2.4rem);
+        line-height: 1;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+
+      .brand-copy p {
+        margin: 0;
+        font-size: 0.98rem;
+        line-height: 1.55;
+        color: var(--text-soft);
+      }
+
+      .header-actions {
+        display: grid;
+        gap: 12px;
+        justify-items: end;
+      }
+
+      .status-row,
+      .mode-buttons {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+      }
+
+      .pill,
+      .mode-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 40px;
+        padding: 0 14px;
+        border-radius: 999px;
+        border: 1px solid var(--edge);
+        background: rgba(255, 255, 255, 0.78);
+        box-shadow: var(--shadow-soft);
+        font-family: var(--mono);
+        font-size: 0.78rem;
+      }
+
+      .pill strong {
+        font-family: var(--display);
+        font-size: 0.88rem;
+      }
+
+      .pill.status-live {
+        color: #ffffff;
+        border-color: var(--accent);
+        background: linear-gradient(145deg, #07905d, var(--accent));
+      }
+
+      .pill.status-warn {
+        border-color: rgba(212, 138, 0, 0.3);
+        background: rgba(255, 245, 224, 0.92);
+        color: #7a5a08;
+      }
+
+      .pill.status-error {
+        border-color: rgba(219, 93, 56, 0.28);
+        background: rgba(255, 238, 233, 0.94);
+        color: #8b3e24;
+      }
+
+      .mode-button {
+        width: 58px;
+        height: 58px;
+        display: inline-grid;
+        place-items: center;
+        border-radius: 50%;
+        border: 1px solid var(--edge-strong);
+        background: rgba(255, 255, 255, 0.8);
+        box-shadow: var(--shadow-soft);
+        color: var(--accent);
+      }
+
+      .mode-button.pulse {
+        border-width: 2px;
+      }
+
+      .mode-button.pulse::after {
+        content: "";
+        position: absolute;
+        inset: -6px;
+        border-radius: inherit;
+        border: 1px solid rgba(0, 131, 81, 0.16);
+        animation: pulse-ring 2.2s ease-out infinite;
+      }
+
+      .mode-button.muted {
+        width: 46px;
+        height: 46px;
+        color: rgba(19, 49, 38, 0.5);
+      }
+
+      @keyframes pulse-ring {
+        0% {
+          opacity: 0.6;
+          transform: scale(0.95);
+        }
+
+        100% {
+          opacity: 0;
+          transform: scale(1.18);
+        }
+      }
+
+      .icon {
+        width: 24px;
+        height: 24px;
+      }
+
+      .dashboard {
+        display: grid;
+        grid-template-columns: minmax(0, 1.4fr) minmax(300px, 0.9fr);
+        gap: clamp(16px, 1.8vw, 24px);
+        align-items: start;
+      }
+
+      .main-column,
+      .side-column {
         display: grid;
         gap: 16px;
       }
 
-      .hero,
-      .card {
-        background:
-          linear-gradient(155deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.03)),
-          var(--surface);
-        border: 1px solid var(--edge-strong);
-        border-radius: var(--radius);
+      .glass-panel {
+        display: grid;
+        gap: 14px;
         padding: 18px;
-        box-shadow: var(--shadow-base), var(--shadow-green);
-        backdrop-filter: blur(22px) saturate(165%);
+        border: 1px solid var(--edge);
+        border-radius: var(--radius-lg);
+        background:
+          linear-gradient(145deg, rgba(255, 255, 255, 0.94), rgba(242, 248, 244, 0.78)),
+          var(--panel-soft);
+        box-shadow: var(--shadow-soft);
       }
 
-      .hero {
+      .panel-head,
+      .panel-head-inline {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .panel-title {
+        margin: 0;
+        font-size: 1.1rem;
+        letter-spacing: 0.01em;
+      }
+
+      .plant-wrap {
         display: grid;
-        grid-template-columns: minmax(0, 1.4fr) minmax(260px, 0.8fr);
+        gap: 12px;
+      }
+
+      .chart-frame {
+        min-height: 260px;
+        border: 2px solid rgba(93, 107, 98, 0.26);
+        border-radius: 20px;
+        background:
+          linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(246, 250, 247, 0.88));
+        overflow: hidden;
+      }
+
+      .chart-frame svg {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+
+      .chart-stats {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .stat-card {
+        padding: 14px;
+        border-radius: var(--radius-md);
+        border: 1px solid var(--edge);
+        background: rgba(255, 255, 255, 0.74);
+      }
+
+      .stat-value {
+        margin-top: 6px;
+        font-family: var(--mono);
+        font-size: 1.05rem;
+        color: var(--accent);
+      }
+
+      .note-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 14px;
+        align-items: baseline;
+      }
+
+      .note-readout {
+        font-family: var(--mono);
+        font-size: clamp(0.98rem, 1.4vw, 1.12rem);
+        color: var(--accent);
+      }
+
+      .note-strip {
+        display: grid;
+        grid-template-columns: repeat(12, minmax(0, 1fr));
+        gap: 8px;
+      }
+
+      .note-cell {
+        display: grid;
+        justify-items: center;
+        gap: 6px;
+      }
+
+      .note-leaf {
+        width: clamp(24px, 2.3vw, 32px);
+        color: var(--muted);
+        transition:
+          color 140ms ease,
+          transform 140ms ease;
+      }
+
+      .note-cell.is-on .note-leaf {
+        color: var(--accent);
+        transform: translateY(-2px);
+      }
+
+      .note-name {
+        font-family: var(--mono);
+        font-size: 0.72rem;
+        color: var(--text-soft);
+      }
+
+      .note-cell.is-on .note-name {
+        color: var(--accent);
+        font-weight: 700;
+      }
+
+      .controls-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 14px;
+      }
+
+      .control-card {
+        display: grid;
+        gap: 10px;
+        min-height: 132px;
+        padding: 16px;
+        border-radius: var(--radius-md);
+        border: 1px solid var(--edge);
+        background: rgba(255, 255, 255, 0.82);
+      }
+
+      .control-card.is-featured {
+        border-color: rgba(0, 131, 81, 0.22);
+        background: linear-gradient(160deg, rgba(0, 131, 81, 0.06), rgba(255, 255, 255, 0.88));
+      }
+
+      .control-label-row,
+      .field-inline,
+      .octave-row,
+      .status-list,
+      .segmented,
+      .toggle-row,
+      .drum-grid {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      .control-label-row {
+        justify-content: space-between;
+        align-items: baseline;
+      }
+
+      .control-name {
+        font-family: var(--mono);
+        font-size: 0.84rem;
+        color: var(--text);
+      }
+
+      .control-value {
+        font-family: var(--mono);
+        font-size: 0.88rem;
+        color: var(--accent);
+      }
+
+      .control-card input[type="range"] {
+        width: 100%;
+        accent-color: var(--accent);
+      }
+
+      .control-card select,
+      .control-card input[type="number"] {
+        width: 100%;
+        min-height: 42px;
+        padding: 10px 12px;
+        border-radius: 12px;
+        border: 1px solid rgba(0, 131, 81, 0.18);
+        background: rgba(248, 251, 249, 0.9);
+        color: var(--text);
+      }
+
+      .field-inline {
+        align-items: center;
+      }
+
+      .field-inline select,
+      .field-inline input[type="number"] {
+        flex: 1 1 0;
+        min-width: 0;
+      }
+
+      .inline-chip {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 42px;
+        min-height: 42px;
+        padding: 0 12px;
+        border-radius: 12px;
+        border: 1px solid var(--edge);
+        background: rgba(244, 248, 245, 0.86);
+        font-family: var(--mono);
+        font-size: 0.78rem;
+      }
+
+      .segmented {
+        align-items: center;
+      }
+
+      .segmented button {
+        flex: 1 1 0;
+        min-height: 42px;
+        padding: 0 12px;
+        border-radius: 12px;
+        border: 1px solid rgba(0, 131, 81, 0.16);
+        background: rgba(244, 248, 245, 0.9);
+        color: var(--text-soft);
+        font-family: var(--mono);
+      }
+
+      .segmented button.is-active {
+        border-color: var(--accent);
+        background: linear-gradient(145deg, #0b9461, var(--accent));
+        color: #ffffff;
+      }
+
+      .segmented button.is-disabled {
+        opacity: 0.44;
+      }
+
+      .toggle-button,
+      .action-button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 44px;
+        padding: 0 14px;
+        border-radius: 14px;
+        border: 1px solid var(--edge);
+        background: rgba(244, 248, 245, 0.92);
+        color: var(--text);
+      }
+
+      .toggle-button.is-active,
+      .action-button.primary {
+        border-color: var(--accent);
+        background: linear-gradient(145deg, #0b9461, var(--accent));
+        color: #ffffff;
+      }
+
+      .toggle-button.warn {
+        border-color: rgba(212, 138, 0, 0.32);
+        color: #7a5a08;
+      }
+
+      .panel-copy {
+        margin: 0;
+        color: var(--text-soft);
+        line-height: 1.55;
+      }
+
+      .led-preview {
+        display: grid;
+        grid-template-columns: auto 1fr;
         gap: 16px;
         align-items: stretch;
       }
 
-      .brand {
-        display: flex;
-        gap: 14px;
-        align-items: center;
+      .led-stack {
+        display: grid;
+        justify-items: center;
+        gap: 10px;
+        padding: 6px 0;
       }
 
-      .brand img {
-        width: 48px;
-        height: 48px;
-        filter: var(--logo-filter) drop-shadow(0 0 10px rgba(0, 131, 81, 0.22));
+      .led-leaf {
+        width: clamp(44px, 4vw, 58px);
+        color: rgba(139, 196, 62, 0.22);
+        transition:
+          color 160ms ease,
+          transform 160ms ease,
+          filter 160ms ease;
       }
 
-      .brand h1 {
-        margin: 0;
-        font-size: 1.8rem;
-        letter-spacing: 0.12em;
-        text-transform: uppercase;
+      .led-leaf.is-on {
+        color: #85c83d;
+        transform: scale(1.02);
+        filter: drop-shadow(0 4px 12px rgba(133, 200, 61, 0.2));
       }
 
-      .brand p,
-      .muted,
-      .meta,
-      .small {
-        color: var(--text-muted);
+      .led-leaf.is-hit {
+        color: #0ca062;
       }
 
-      .brand p {
-        margin: 6px 0 0;
-      }
-
-      .stack {
+      .led-summary {
         display: grid;
         gap: 12px;
+        align-content: start;
       }
 
-      .status-grid {
+      .status-list {
+        row-gap: 8px;
+      }
+
+      .status-chip {
+        padding: 8px 12px;
+        border-radius: 999px;
+        background: rgba(240, 246, 242, 0.92);
+        border: 1px solid var(--edge);
+        font-family: var(--mono);
+        font-size: 0.76rem;
+      }
+
+      .output-card,
+      .advanced-panel {
+        display: grid;
+        gap: 14px;
+      }
+
+      .advanced-panel summary {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        list-style: none;
+        cursor: pointer;
+      }
+
+      .advanced-panel summary::-webkit-details-marker {
+        display: none;
+      }
+
+      .advanced-grid {
         display: grid;
         grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 12px;
+        gap: 14px;
       }
 
-      .label {
-        font-size: 0.78rem;
-        text-transform: uppercase;
-        letter-spacing: 0.14em;
-        color: var(--text-muted);
-      }
-
-      .value {
-        margin-top: 6px;
-        font-size: 1.05rem;
-        font-weight: 700;
-      }
-
-      .actions {
-        display: flex;
+      .drum-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
         gap: 10px;
-        flex-wrap: wrap;
-        margin-top: 14px;
       }
 
-      .btn {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        gap: 8px;
-        padding: 11px 14px;
+      .drum-button {
+        display: grid;
+        gap: 6px;
+        min-height: 72px;
+        padding: 10px;
         border-radius: 14px;
         border: 1px solid var(--edge);
-        color: var(--text);
-        background:
-          linear-gradient(150deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.05)),
-          rgba(226, 236, 230, 0.86);
-        box-shadow: 0 3px 8px rgba(18, 30, 24, 0.08);
-        text-decoration: none;
+        background: rgba(245, 249, 246, 0.92);
+        text-align: left;
       }
 
-      .btn.primary {
-        color: #fff;
+      .drum-button.is-active {
         border-color: var(--accent);
-        background: linear-gradient(145deg, #0b9461, var(--accent));
-        box-shadow: 0 8px 14px rgba(0, 131, 81, 0.24);
+        background: rgba(0, 131, 81, 0.08);
       }
 
-      .list {
+      .drum-button.is-hit {
+        box-shadow: inset 0 0 0 2px rgba(0, 131, 81, 0.18);
+      }
+
+      .drum-name {
+        font-family: var(--mono);
+        font-size: 0.78rem;
+      }
+
+      .drum-state {
+        font-size: 0.74rem;
+        color: var(--text-soft);
+      }
+
+      .flower-wrap {
+        display: grid;
+        place-items: center;
+        padding: 8px 0 2px;
+      }
+
+      .flower {
+        width: min(190px, 56vw);
+        color: var(--accent);
+        opacity: 0.96;
+      }
+
+      .footer-note {
+        display: flex;
+        justify-content: space-between;
+        gap: 14px;
+        align-items: center;
+        flex-wrap: wrap;
+        padding-top: 4px;
+      }
+
+      .footer-note p {
         margin: 0;
-        padding-left: 18px;
-        color: var(--text-muted);
-        line-height: 1.6;
+        color: var(--text-soft);
       }
 
-      .meta {
-        font-family: "SF Mono", "JetBrains Mono", Consolas, monospace;
-        font-size: 0.84rem;
+      .banner {
+        min-height: 20px;
+        font-family: var(--mono);
+        font-size: 0.8rem;
+        color: var(--text-soft);
       }
 
-      @media (max-width: 760px) {
-        .shell {
-          padding: 12px;
+      .banner.ok {
+        color: var(--accent-strong);
+      }
+
+      .banner.warn {
+        color: #8a6200;
+      }
+
+      .banner.error {
+        color: #944a2e;
+      }
+
+      @media (max-width: 1120px) {
+        .dashboard {
+          grid-template-columns: 1fr;
         }
 
-        .hero,
-        .status-grid {
+        .side-column {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          align-items: start;
+        }
+      }
+
+      @media (max-width: 840px) {
+        .surface-header,
+        .panel-head,
+        .panel-head-inline,
+        .note-head,
+        .footer-note {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+
+        .header-actions {
+          justify-items: start;
+        }
+
+        .status-row,
+        .mode-buttons {
+          justify-content: flex-start;
+        }
+
+        .controls-grid,
+        .advanced-grid,
+        .side-column {
           grid-template-columns: 1fr;
+        }
+
+        .chart-stats {
+          grid-template-columns: 1fr;
+        }
+
+        .led-preview {
+          grid-template-columns: 1fr;
+        }
+
+        .led-stack {
+          grid-template-columns: repeat(8, minmax(0, 1fr));
+          grid-auto-flow: column;
+        }
+
+        .drum-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+
+      @media (max-width: 620px) {
+        .beca-app {
+          padding: 10px;
+        }
+
+        .surface {
+          padding: 14px;
+          border-radius: 22px;
+        }
+
+        .brand-area {
+          flex-direction: column;
+        }
+
+        .note-strip {
+          grid-template-columns: repeat(6, minmax(0, 1fr));
+        }
+
+        .drum-grid {
+          grid-template-columns: 1fr 1fr;
         }
       }
     </style>
   </head>
   <body>
-    <main class="shell">
-      <section class="hero">
-        <div class="stack">
-          <div class="brand">
-            <img src="/logo" alt="BECA" />
-            <div>
-              <h1>BECA</h1>
-              <p>Desktop-first control, setup, and firmware management now lives in the BECA app.</p>
+    <main class="beca-app">
+      <section class="surface">
+        <header class="surface-header">
+          <div class="brand-area">
+            <div class="logo-lockup" aria-hidden="true">
+              <svg viewBox="0 0 498 372" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M397.017 323.145V137.412c0-2.944.935-4.876 2.805-5.795 2.244-1.104 6.358-1.656 12.342-1.656h70.689c5.984 0 9.911.552 11.781 1.656 2.244.919 3.366 2.851 3.366 5.795v185.733h-45.442v-55.747h-11.221v55.747h-44.32Zm44.32-173.866v98.524h11.221v-98.524h-11.221Z" fill="currentColor"/>
+                <path d="M329.951 338.074h11.22V205.554h44.321v153.018c0 5.084-1.123 8.58-3.367 10.487-1.87 1.589-5.797 2.383-11.781 2.383h-70.688c-5.984 0-10.098-.794-12.342-2.383-1.87-1.907-2.805-5.403-2.805-10.487V50.63c0-5.085.935-8.422 2.805-10.011 2.244-1.907 6.358-2.86 12.342-2.86h70.688c5.984 0 9.911.953 11.781 2.86 2.244 1.589 3.367 4.926 3.367 10.011v145.39h-44.321V71.128h-11.22v266.946Z" fill="currentColor"/>
+                <path d="M272.984 144.437v33.368h-55.541v122.51h11.22V187.816h44.321v145.867H172.001V0h100.983v134.903h-44.321V33.368h-11.22v111.069h55.541Z" fill="currentColor"/>
+                <path d="M103.659 23.27v77.456h11.579V23.27h-11.579Zm0 100.726v85.434h11.579v-85.434h-11.579Zm45.16-13.297h-1.737v3.989h1.737c5.017 0 8.491.665 10.421 1.994 1.93 1.108 2.895 3.435 2.895 6.981v100.061c0 3.546-1.158 5.984-3.474 7.314-1.93 1.108-5.79 1.662-11.579 1.662H56.762V0h90.32c5.789 0 9.649.665 11.579 1.995 2.316 1.108 3.474 3.435 3.474 6.981v92.747c0 3.324-.965 5.651-2.895 6.981-1.93 1.33-5.404 1.995-10.421 1.995Z" fill="currentColor"/>
+                <path fill-rule="evenodd" clip-rule="evenodd" d="M24.588 195.819c-12.009 0-21.744-9.735-21.744-21.744V92.865C2.844 80.856 12.579 71.121 24.588 71.121c12.009 0 21.744 9.735 21.744 21.744v81.21c0 12.009-9.735 21.744-21.744 21.744Zm-14.224-21.744c0 7.856 6.368 14.225 14.224 14.225 7.856 0 14.224-6.369 14.224-14.225V92.865c0-7.856-6.368-14.224-14.224-14.224-7.856 0-14.224 6.368-14.224 14.224v81.21Z" fill="currentColor"/>
+                <path d="M24.588 16.854c13.579 0 24.588 11.008 24.588 24.588 0 13.579-11.009 24.587-24.588 24.587C11.008 66.029 0 55.021 0 41.442 0 27.862 11.008 16.854 24.588 16.854Z" fill="currentColor"/>
+              </svg>
+            </div>
+            <div class="brand-copy">
+              <span class="eyebrow">Plant Music Interface</span>
+              <h1>BECA Unified Control</h1>
+              <p>
+                One responsive surface for plant input, music generation, board LEDs, output
+                routing, and synth shaping. Settings opens setup while the live controls stay here.
+              </p>
             </div>
           </div>
-          <div class="muted">
-            This built-in page is now a lightweight recovery surface so the ESP32 can spend more time
-            on sensing, timing, BLE-MIDI, and audio.
+
+          <div class="header-actions">
+            <div class="status-row">
+              <div class="pill status-live" id="connection-pill">Connecting to BECA...</div>
+              <div class="pill" id="mode-pill">Mode: --</div>
+              <div class="pill" id="output-pill">Output: --</div>
+            </div>
+            <div class="mode-buttons">
+              <button class="mode-button pulse" id="activity-button" type="button" aria-label="Live activity">
+                <span class="icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M2 12h5l2.2-6 4.2 13 2.3-7H22" />
+                  </svg>
+                </span>
+              </button>
+              <a class="mode-button muted" id="settings-link" href="/setup" aria-label="Open setup">
+                <span class="icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="3.1" />
+                    <path d="M19 12.8v-1.6l-1.8-.6a5.7 5.7 0 0 0-.5-1.2l.9-1.7-1.1-1.1-1.7.9a5.7 5.7 0 0 0-1.2-.5L13 5h-1.6l-.6 1.8a5.7 5.7 0 0 0-1.2.5l-1.7-.9-1.1 1.1.9 1.7a5.7 5.7 0 0 0-.5 1.2L5 11.2v1.6l1.8.6a5.7 5.7 0 0 0 .5 1.2l-.9 1.7 1.1 1.1 1.7-.9a5.7 5.7 0 0 0 1.2.5l.6 1.8H13l.6-1.8a5.7 5.7 0 0 0 1.2-.5l1.7.9 1.1-1.1-.9-1.7a5.7 5.7 0 0 0 .5-1.2z" />
+                  </svg>
+                </span>
+              </a>
+            </div>
           </div>
-          <div class="actions">
-            <a class="btn primary" href="/setup">Open Emergency Setup</a>
-            <a class="btn" href="/api/info">View Device Info JSON</a>
-            <a class="btn" href="/api/state">View State JSON</a>
+        </header>
+
+        <div class="dashboard">
+          <div class="main-column">
+            <section class="glass-panel">
+              <div class="panel-head">
+                <div>
+                  <div class="card-label">Plant input</div>
+                  <h2 class="panel-title">Responsive live monitor</h2>
+                </div>
+                <div class="mode-chip" id="scope-pill">Signal 0.000</div>
+              </div>
+
+              <div class="plant-wrap">
+                <div class="chart-frame">
+                  <svg id="scope-chart" viewBox="0 0 900 280" preserveAspectRatio="none" aria-label="Plant input chart"></svg>
+                </div>
+                <div class="chart-stats">
+                  <div class="stat-card">
+                    <div class="meta-label">Current note</div>
+                    <div class="stat-value" id="last-note">--</div>
+                  </div>
+                  <div class="stat-card">
+                    <div class="meta-label">Velocity</div>
+                    <div class="stat-value" id="last-velocity">--</div>
+                  </div>
+                  <div class="stat-card">
+                    <div class="meta-label">Clock</div>
+                    <div class="stat-value" id="clock-status">--</div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section class="glass-panel">
+              <div class="note-head">
+                <div>
+                  <div class="card-label">Note or chord played</div>
+                  <h2 class="panel-title">Pitch activity</h2>
+                </div>
+                <div class="note-readout" id="note-readout">Waiting for notes...</div>
+              </div>
+              <div class="note-strip" id="note-strip" aria-label="Active note strip"></div>
+            </section>
+
+            <section class="controls-grid">
+              <article class="control-card is-featured">
+                <div class="control-label-row">
+                  <span class="control-name">sensitivity</span>
+                  <span class="control-value" id="value-sens">0.00</span>
+                </div>
+                <input id="control-sens" type="range" min="0" max="0.5" step="0.01" />
+                <p class="panel-copy">Balance how strongly plant movement drives note energy.</p>
+              </article>
+
+              <article class="control-card">
+                <div class="control-label-row">
+                  <span class="control-name">preset</span>
+                  <span class="control-value" id="value-mode">--</span>
+                </div>
+                <select id="control-mode"></select>
+                <p class="panel-copy">Switch between notes, arp, chords, and drums without leaving the live page.</p>
+              </article>
+
+              <article class="control-card">
+                <div class="control-label-row">
+                  <span class="control-name">scale</span>
+                  <span class="control-value" id="value-scale">--</span>
+                </div>
+                <select id="control-scale"></select>
+                <p class="panel-copy">Keep harmony musical while the plant keeps moving.</p>
+              </article>
+
+              <article class="control-card">
+                <div class="control-label-row">
+                  <span class="control-name">root note</span>
+                  <span class="control-value" id="value-root">--</span>
+                </div>
+                <select id="control-root"></select>
+                <p class="panel-copy">Pin the harmonic center for the current scale.</p>
+              </article>
+
+              <article class="control-card">
+                <div class="control-label-row">
+                  <span class="control-name">tempo</span>
+                  <span class="control-value" id="value-bpm">--</span>
+                </div>
+                <input id="control-bpm" type="range" min="20" max="240" step="5" />
+                <p class="panel-copy">Move from slow ambient drift to punchier rhythmic motion.</p>
+              </article>
+
+              <article class="control-card">
+                <div class="control-label-row">
+                  <span class="control-name">time sig</span>
+                  <span class="control-value" id="value-ts">--</span>
+                </div>
+                <select id="control-ts"></select>
+                <p class="panel-copy">Choose the grid the transport locks into.</p>
+              </article>
+
+              <article class="control-card">
+                <div class="control-label-row">
+                  <span class="control-name">swing</span>
+                  <span class="control-value" id="value-swing">0%</span>
+                </div>
+                <input id="control-swing" type="range" min="0" max="60" step="1" />
+                <p class="panel-copy">Introduce groove without losing timing stability.</p>
+              </article>
+
+              <article class="control-card">
+                <div class="control-label-row">
+                  <span class="control-name">rest chance</span>
+                  <span class="control-value" id="value-rest">0%</span>
+                </div>
+                <input id="control-rest" type="range" min="0" max="0.8" step="0.01" />
+                <p class="panel-copy">Create space in the phrases and let the board breathe.</p>
+              </article>
+
+              <article class="control-card">
+                <div class="control-label-row">
+                  <span class="control-name">oct range</span>
+                  <span class="control-value" id="value-octave">C1 - C8</span>
+                </div>
+                <div class="field-inline octave-row">
+                  <select id="control-lo"></select>
+                  <span class="inline-chip">to</span>
+                  <select id="control-hi"></select>
+                </div>
+                <p class="panel-copy">Keep pitch output inside the range that feels right for the performance.</p>
+              </article>
+
+              <article class="control-card">
+                <div class="control-label-row">
+                  <span class="control-name">clock source</span>
+                  <span class="control-value" id="value-clock">--</span>
+                </div>
+                <div class="segmented" id="clock-group"></div>
+                <p class="panel-copy">Use the internal transport or follow plant-triggered timing.</p>
+              </article>
+
+              <article class="control-card">
+                <div class="control-label-row">
+                  <span class="control-name">no repeat</span>
+                  <span class="control-value" id="value-norep">OFF</span>
+                </div>
+                <div class="toggle-row">
+                  <button class="toggle-button" id="control-norep" type="button">Keep notes moving</button>
+                </div>
+                <p class="panel-copy">Reduce repeated notes when you want more melodic variation.</p>
+              </article>
+
+              <article class="control-card">
+                <div class="control-label-row">
+                  <span class="control-name">system actions</span>
+                  <span class="control-value" id="value-random">Ready</span>
+                </div>
+                <div class="toggle-row">
+                  <button class="action-button primary" id="random-button" type="button">Randomize</button>
+                  <button class="action-button" id="refresh-button" type="button">Refresh</button>
+                </div>
+                <p class="panel-copy">Shuffle the live rig or reload the page state without leaving the session.</p>
+              </article>
+            </section>
+
+            <details class="glass-panel advanced-panel" open>
+              <summary>
+                <div>
+                  <div class="card-label">Aux synth and rhythm</div>
+                  <h2 class="panel-title">Advanced voice shaping</h2>
+                </div>
+                <div class="mode-chip" id="aux-pill">Aux status: --</div>
+              </summary>
+
+              <div class="advanced-grid">
+                <article class="control-card">
+                  <div class="control-label-row">
+                    <span class="control-name">synth preset</span>
+                    <span class="control-value" id="value-preset">--</span>
+                  </div>
+                  <select id="control-preset"></select>
+                  <div class="toggle-row">
+                    <button class="action-button" id="test-chord-button" type="button">Test aux chord</button>
+                    <button class="action-button" id="preset-reset-button" type="button">Reset preset</button>
+                  </div>
+                </article>
+
+                <article class="control-card">
+                  <div class="control-label-row">
+                    <span class="control-name">master</span>
+                    <span class="control-value" id="value-master">0.00</span>
+                  </div>
+                  <input id="control-master" type="range" min="0" max="1" step="0.01" />
+                  <div class="control-label-row">
+                    <span class="control-name">drive</span>
+                    <span class="control-value" id="value-drive">0.00</span>
+                  </div>
+                  <input id="control-drive" type="range" min="0" max="1" step="0.01" />
+                </article>
+
+                <article class="control-card">
+                  <div class="control-label-row">
+                    <span class="control-name">filter cutoff</span>
+                    <span class="control-value" id="value-cutoff">0 hz</span>
+                  </div>
+                  <input id="control-cutoff" type="range" min="20" max="18000" step="10" />
+                  <div class="control-label-row">
+                    <span class="control-name">resonance</span>
+                    <span class="control-value" id="value-resonance">0.00</span>
+                  </div>
+                  <input id="control-resonance" type="range" min="0.1" max="10" step="0.1" />
+                </article>
+
+                <article class="control-card">
+                  <div class="control-label-row">
+                    <span class="control-name">attack</span>
+                    <span class="control-value" id="value-attack">0.00</span>
+                  </div>
+                  <input id="control-attack" type="range" min="0" max="5" step="0.01" />
+                  <div class="control-label-row">
+                    <span class="control-name">release</span>
+                    <span class="control-value" id="value-release">0.00</span>
+                  </div>
+                  <input id="control-release" type="range" min="0.01" max="10" step="0.01" />
+                </article>
+
+                <article class="control-card">
+                  <div class="control-label-row">
+                    <span class="control-name">decay</span>
+                    <span class="control-value" id="value-decay">0.00</span>
+                  </div>
+                  <input id="control-decay" type="range" min="0" max="5" step="0.01" />
+                  <div class="control-label-row">
+                    <span class="control-name">sustain</span>
+                    <span class="control-value" id="value-sustain">0.00</span>
+                  </div>
+                  <input id="control-sustain" type="range" min="0" max="1" step="0.01" />
+                </article>
+
+                <article class="control-card">
+                  <div class="control-label-row">
+                    <span class="control-name">delay mix</span>
+                    <span class="control-value" id="value-delay-mix">0.00</span>
+                  </div>
+                  <input id="control-delay-mix" type="range" min="0" max="1" step="0.01" />
+                  <div class="control-label-row">
+                    <span class="control-name">delay feedback</span>
+                    <span class="control-value" id="value-delay-feedback">0.00</span>
+                  </div>
+                  <input id="control-delay-feedback" type="range" min="0" max="0.95" step="0.01" />
+                </article>
+
+                <article class="control-card">
+                  <div class="control-label-row">
+                    <span class="control-name">drum parts</span>
+                    <span class="control-value" id="value-drum-mask">8 on</span>
+                  </div>
+                  <div class="drum-grid" id="drum-grid"></div>
+                </article>
+              </div>
+            </details>
           </div>
+
+          <aside class="side-column">
+            <section class="glass-panel">
+              <div class="panel-head-inline">
+                <div>
+                  <div class="card-label">Board LEDs</div>
+                  <h2 class="panel-title">Linked LED surface</h2>
+                </div>
+                <div class="mode-chip" id="led-pill">LEDs idle</div>
+              </div>
+
+              <div class="led-preview">
+                <div class="led-stack" id="led-stack" aria-label="LED mirror"></div>
+                <div class="led-summary">
+                  <div class="status-list">
+                    <div class="status-chip" id="fx-chip">Effect: --</div>
+                    <div class="status-chip" id="palette-chip">Palette: --</div>
+                    <div class="status-chip" id="brightness-chip">Brightness: --</div>
+                    <div class="status-chip" id="motion-chip">Motion: --</div>
+                  </div>
+                  <p class="panel-copy">
+                    These controls drive the BECA board LEDs directly so the hardware look stays tied
+                    to the music engine.
+                  </p>
+                </div>
+              </div>
+
+              <article class="control-card">
+                <div class="control-label-row">
+                  <span class="control-name">effect</span>
+                  <span class="control-value" id="value-fx">--</span>
+                </div>
+                <select id="control-fx"></select>
+              </article>
+
+              <article class="control-card">
+                <div class="control-label-row">
+                  <span class="control-name">palette</span>
+                  <span class="control-value" id="value-pal">--</span>
+                </div>
+                <select id="control-pal"></select>
+              </article>
+
+              <article class="control-card">
+                <div class="control-label-row">
+                  <span class="control-name">brightness</span>
+                  <span class="control-value" id="value-bright">--</span>
+                </div>
+                <input id="control-bright" type="range" min="10" max="255" step="1" />
+                <div class="control-label-row">
+                  <span class="control-name">motion</span>
+                  <span class="control-value" id="value-vs">--</span>
+                </div>
+                <input id="control-vs" type="range" min="0" max="255" step="1" />
+              </article>
+
+              <article class="control-card">
+                <div class="control-label-row">
+                  <span class="control-name">energy</span>
+                  <span class="control-value" id="value-vi">--</span>
+                </div>
+                <input id="control-vi" type="range" min="0" max="255" step="1" />
+              </article>
+            </section>
+
+            <section class="glass-panel output-card">
+              <div class="panel-head-inline">
+                <div>
+                  <div class="card-label">Routing and safety</div>
+                  <h2 class="panel-title">Output + sync</h2>
+                </div>
+              </div>
+
+              <article class="control-card">
+                <div class="control-label-row">
+                  <span class="control-name">output</span>
+                  <span class="control-value" id="value-output">--</span>
+                </div>
+                <div class="segmented" id="output-group"></div>
+              </article>
+
+              <article class="control-card">
+                <div class="control-label-row">
+                  <span class="control-name">DAW sync</span>
+                  <span class="control-value" id="value-sync">OFF</span>
+                </div>
+                <div class="toggle-row">
+                  <button class="toggle-button" id="sync-button" type="button">Toggle sync</button>
+                </div>
+              </article>
+
+              <article class="control-card">
+                <div class="control-label-row">
+                  <span class="control-name">I/O mute</span>
+                  <span class="control-value" id="value-mute">OFF</span>
+                </div>
+                <div class="toggle-row">
+                  <button class="toggle-button warn" id="mute-button" type="button">Mute outputs</button>
+                </div>
+              </article>
+
+              <article class="control-card">
+                <div class="control-label-row">
+                  <span class="control-name">runtime state</span>
+                  <span class="control-value" id="value-runtime">steady</span>
+                </div>
+                <div class="status-list">
+                  <div class="status-chip" id="transport-chip">Transport: --</div>
+                  <div class="status-chip" id="sync-lock-chip">Sync lock: --</div>
+                  <div class="status-chip" id="aux-ready-chip">Aux: --</div>
+                </div>
+              </article>
+            </section>
+
+            <section class="glass-panel">
+              <div class="panel-head-inline">
+                <div>
+                  <div class="card-label">Board identity</div>
+                  <h2 class="panel-title">Session summary</h2>
+                </div>
+              </div>
+              <p class="panel-copy" id="summary-copy">
+                Waiting for the current BECA state so the desktop app and browser board view stay in sync.
+              </p>
+              <div class="flower-wrap" aria-hidden="true">
+                <div class="flower">
+                  <svg viewBox="0 0 525 513" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M320.693 210.915C503.433 -70.305 21.113 -70.305 203.853 210.915C21.113 -70.305 -127.947 388.415 167.743 322.035C-127.947 388.415 262.263 671.935 262.263 390.715C262.263 671.935 652.483 388.415 356.783 322.035C652.473 388.415 503.423 -70.305 320.673 210.915H320.693ZM262.273 356.985C182.593 466.305 118.003 401.705 227.323 322.035C118.003 242.355 182.593 177.775 262.273 287.095C341.953 177.775 406.543 242.355 297.223 322.035C406.543 401.705 341.953 466.305 262.273 356.985Z" fill="currentColor"/>
+                  </svg>
+                </div>
+              </div>
+            </section>
+          </aside>
         </div>
 
-        <div class="card">
-          <div class="label">Recovery Notes</div>
-          <ul class="list">
-            <li>Use the BECA desktop app for normal control, setup, bridge, and updates.</li>
-            <li>If Wi-Fi needs repair, open <code>/setup</code> from this device.</li>
-            <li>If USB is connected, the BECA app can still manage flashing and Wi-Fi provisioning directly.</li>
-          </ul>
-        </div>
-      </section>
-
-      <section class="card">
-        <div class="label">Current Device</div>
-        <div class="status-grid">
-          <div>
-            <div class="label">Device Name</div>
-            <div class="value" id="name">Loading...</div>
-          </div>
-          <div>
-            <div class="label">Wi-Fi Mode</div>
-            <div class="value" id="mode">Loading...</div>
-          </div>
-          <div>
-            <div class="label">IP Address</div>
-            <div class="value" id="ip">Loading...</div>
-          </div>
-          <div>
-            <div class="label">Saved SSID</div>
-            <div class="value" id="ssid">Loading...</div>
-          </div>
-        </div>
-        <div class="actions">
-          <button class="btn" id="refresh" type="button">Refresh Status</button>
-          <span class="meta" id="hint">Waiting for device data...</span>
+        <div class="footer-note">
+          <p>Settings opens setup. The rest of the board stays controllable from this page.</p>
+          <div class="banner" id="banner">Loading live state…</div>
         </div>
       </section>
     </main>
 
     <script>
-      const $ = (id) => document.getElementById(id);
-      const fields = {
-        name: $("name"),
-        mode: $("mode"),
-        ip: $("ip"),
-        ssid: $("ssid"),
-        hint: $("hint")
-      };
+      (() => {
+        const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+        const OUTPUT_LABELS = ["BLE", "SERIAL", "AUX OUT"];
+        const CLOCK_LABELS = ["Internal", "Plant"];
+        const DRUM_PARTS = [
+          { bit: 0, label: "Kick" },
+          { bit: 1, label: "Snare" },
+          { bit: 2, label: "Closed HH" },
+          { bit: 3, label: "Open HH" },
+          { bit: 4, label: "Tom 1" },
+          { bit: 5, label: "Tom 2" },
+          { bit: 6, label: "Ride" },
+          { bit: 7, label: "Crash" }
+        ];
 
-      async function refreshInfo() {
-        fields.hint.textContent = "Refreshing...";
-        try {
-          const info = await (await fetch("/api/info", { cache: "no-store" })).json();
-          fields.name.textContent = info.name || "BECA";
-          fields.mode.textContent = (info.mode || "--").toUpperCase();
-          fields.ip.textContent = info.ip || "--";
-          fields.ssid.textContent = info.ssid || "Not saved";
-          if (info.wifi_error) {
-            fields.hint.textContent = info.wifi_hint
-              ? info.wifi_error + " " + info.wifi_hint
-              : info.wifi_error;
-          } else {
-            fields.hint.textContent = "Device ready. Use the BECA desktop app for full control.";
-          }
-        } catch (err) {
-          fields.hint.textContent = "Could not load device info. Try /setup if BECA is recovering.";
-          fields.name.textContent = "Unavailable";
-          fields.mode.textContent = "--";
-          fields.ip.textContent = "--";
-          fields.ssid.textContent = "--";
+        const state = {
+          params: null,
+          effects: [],
+          palettes: [],
+          runtime: null,
+          synth: null,
+          noteList: [],
+          noteVelocity: 0,
+          drumMask: 0,
+          drumHitMask: 0,
+          plantPoints: Array.from({ length: 42 }, () => 0),
+          scopeValue: 0,
+          syncLocked: false,
+          auxReady: true
+        };
+
+        const el = {
+          banner: document.querySelector("#banner"),
+          connectionPill: document.querySelector("#connection-pill"),
+          modePill: document.querySelector("#mode-pill"),
+          outputPill: document.querySelector("#output-pill"),
+          scopePill: document.querySelector("#scope-pill"),
+          chart: document.querySelector("#scope-chart"),
+          lastNote: document.querySelector("#last-note"),
+          lastVelocity: document.querySelector("#last-velocity"),
+          clockStatus: document.querySelector("#clock-status"),
+          noteReadout: document.querySelector("#note-readout"),
+          noteStrip: document.querySelector("#note-strip"),
+          outputGroup: document.querySelector("#output-group"),
+          clockGroup: document.querySelector("#clock-group"),
+          ledStack: document.querySelector("#led-stack"),
+          drumGrid: document.querySelector("#drum-grid"),
+          syncButton: document.querySelector("#sync-button"),
+          muteButton: document.querySelector("#mute-button"),
+          norepButton: document.querySelector("#control-norep"),
+          randomButton: document.querySelector("#random-button"),
+          refreshButton: document.querySelector("#refresh-button"),
+          testChordButton: document.querySelector("#test-chord-button"),
+          presetResetButton: document.querySelector("#preset-reset-button"),
+          auxPill: document.querySelector("#aux-pill"),
+          ledPill: document.querySelector("#led-pill"),
+          fxChip: document.querySelector("#fx-chip"),
+          paletteChip: document.querySelector("#palette-chip"),
+          brightnessChip: document.querySelector("#brightness-chip"),
+          motionChip: document.querySelector("#motion-chip"),
+          transportChip: document.querySelector("#transport-chip"),
+          syncLockChip: document.querySelector("#sync-lock-chip"),
+          auxReadyChip: document.querySelector("#aux-ready-chip"),
+          summaryCopy: document.querySelector("#summary-copy"),
+          valueMode: document.querySelector("#value-mode"),
+          valueScale: document.querySelector("#value-scale"),
+          valueRoot: document.querySelector("#value-root"),
+          valueBpm: document.querySelector("#value-bpm"),
+          valueTs: document.querySelector("#value-ts"),
+          valueSwing: document.querySelector("#value-swing"),
+          valueRest: document.querySelector("#value-rest"),
+          valueSens: document.querySelector("#value-sens"),
+          valueOctave: document.querySelector("#value-octave"),
+          valueClock: document.querySelector("#value-clock"),
+          valueNoRep: document.querySelector("#value-norep"),
+          valueRandom: document.querySelector("#value-random"),
+          valuePreset: document.querySelector("#value-preset"),
+          valueMaster: document.querySelector("#value-master"),
+          valueDrive: document.querySelector("#value-drive"),
+          valueCutoff: document.querySelector("#value-cutoff"),
+          valueResonance: document.querySelector("#value-resonance"),
+          valueAttack: document.querySelector("#value-attack"),
+          valueRelease: document.querySelector("#value-release"),
+          valueDecay: document.querySelector("#value-decay"),
+          valueSustain: document.querySelector("#value-sustain"),
+          valueDelayMix: document.querySelector("#value-delay-mix"),
+          valueDelayFeedback: document.querySelector("#value-delay-feedback"),
+          valueDrumMask: document.querySelector("#value-drum-mask"),
+          valueFx: document.querySelector("#value-fx"),
+          valuePal: document.querySelector("#value-pal"),
+          valueBright: document.querySelector("#value-bright"),
+          valueVs: document.querySelector("#value-vs"),
+          valueVi: document.querySelector("#value-vi"),
+          valueOutput: document.querySelector("#value-output"),
+          valueSync: document.querySelector("#value-sync"),
+          valueMute: document.querySelector("#value-mute"),
+          valueRuntime: document.querySelector("#value-runtime"),
+          controlMode: document.querySelector("#control-mode"),
+          controlScale: document.querySelector("#control-scale"),
+          controlRoot: document.querySelector("#control-root"),
+          controlTs: document.querySelector("#control-ts"),
+          controlLo: document.querySelector("#control-lo"),
+          controlHi: document.querySelector("#control-hi"),
+          controlPreset: document.querySelector("#control-preset"),
+          controlFx: document.querySelector("#control-fx"),
+          controlPal: document.querySelector("#control-pal"),
+          controlBpm: document.querySelector("#control-bpm"),
+          controlSwing: document.querySelector("#control-swing"),
+          controlRest: document.querySelector("#control-rest"),
+          controlSens: document.querySelector("#control-sens"),
+          controlBright: document.querySelector("#control-bright"),
+          controlVs: document.querySelector("#control-vs"),
+          controlVi: document.querySelector("#control-vi"),
+          controlMaster: document.querySelector("#control-master"),
+          controlDrive: document.querySelector("#control-drive"),
+          controlCutoff: document.querySelector("#control-cutoff"),
+          controlResonance: document.querySelector("#control-resonance"),
+          controlAttack: document.querySelector("#control-attack"),
+          controlRelease: document.querySelector("#control-release"),
+          controlDecay: document.querySelector("#control-decay"),
+          controlSustain: document.querySelector("#control-sustain"),
+          controlDelayMix: document.querySelector("#control-delay-mix"),
+          controlDelayFeedback: document.querySelector("#control-delay-feedback")
+        };
+
+        function noteLeafSvg() {
+          return `
+            <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path fill-rule="evenodd" clip-rule="evenodd" d="M100 48.864C100 77.106 77.106 100 48.864 100H0V51.136C0 22.894 22.894 0 51.136 0H100v48.864ZM51.136 11.364c-21.965 0-39.772 17.807-39.772 39.772V81.17l42.005-42.005c2.219-2.219 5.817-2.219 8.036 0 2.219 2.219 2.219 5.817 0 8.036L19.967 88.636h28.897c21.965 0 39.772-17.807 39.772-39.772V11.364H51.136Z" fill="currentColor"/>
+            </svg>
+          `;
         }
-      }
 
-      $("refresh").addEventListener("click", refreshInfo);
-      refreshInfo();
+        function setBanner(message, tone = "") {
+          el.banner.textContent = message;
+          el.banner.className = "banner";
+          if (tone) el.banner.classList.add(tone);
+        }
+
+        function setConnection(message, tone = "status-live") {
+          el.connectionPill.textContent = message;
+          el.connectionPill.className = `pill ${tone}`;
+        }
+
+        function fmtNumber(value, digits = 2) {
+          const n = Number(value);
+          if (!Number.isFinite(n)) return "--";
+          return n.toFixed(digits);
+        }
+
+        function fmtPercent(value) {
+          const n = Number(value);
+          if (!Number.isFinite(n)) return "--";
+          return `${Math.round(n * 100)}%`;
+        }
+
+        function noteNameFromMidi(midi) {
+          if (!Number.isFinite(midi)) return "--";
+          const pc = ((midi % 12) + 12) % 12;
+          const oct = Math.floor(midi / 12) - 1;
+          return `${NOTE_NAMES[pc]}${oct}`;
+        }
+
+        function noteNamesFromList(list) {
+          return list.map((midi) => noteNameFromMidi(midi).toLowerCase());
+        }
+
+        function inferChord(list) {
+          if (!Array.isArray(list) || list.length < 3) return "";
+          const pcs = [...new Set(list.map((value) => ((value % 12) + 12) % 12))];
+          if (pcs.length < 3) return "";
+          for (const root of pcs) {
+            const rel = pcs
+              .map((pc) => (pc - root + 12) % 12)
+              .sort((a, b) => a - b)
+              .join(",");
+            if (rel.includes("0,4,7")) return `${NOTE_NAMES[root].toLowerCase()}maj`;
+            if (rel.includes("0,3,7")) return `${NOTE_NAMES[root].toLowerCase()}min`;
+            if (rel.includes("0,4,7,11")) return `${NOTE_NAMES[root].toLowerCase()}maj7`;
+            if (rel.includes("0,3,7,10")) return `${NOTE_NAMES[root].toLowerCase()}min7`;
+            if (rel.includes("0,5,7")) return `${NOTE_NAMES[root].toLowerCase()}sus4`;
+            if (rel.includes("0,2,7")) return `${NOTE_NAMES[root].toLowerCase()}sus2`;
+          }
+          return "";
+        }
+
+        function addPlantPoint(value) {
+          const next = Math.max(0, Math.min(1, Number(value) || 0));
+          state.scopeValue = next;
+          state.plantPoints.push(next);
+          if (state.plantPoints.length > 42) state.plantPoints.shift();
+          renderChart();
+        }
+
+        function renderChart() {
+          const width = 900;
+          const height = 280;
+          const baseline = height - 44;
+          const points = state.plantPoints
+            .map((value, index) => {
+              const x = (index / Math.max(1, state.plantPoints.length - 1)) * width;
+              const y = baseline - value * 144;
+              return `${x.toFixed(2)},${y.toFixed(2)}`;
+            })
+            .join(" ");
+
+          const areaPoints = `0,${baseline} ${points} ${width},${baseline}`;
+          el.chart.innerHTML = `
+            <defs>
+              <linearGradient id="line-gradient" x1="0" x2="1" y1="0" y2="0">
+                <stop offset="0%" stop-color="#008351" />
+                <stop offset="100%" stop-color="#88c439" />
+              </linearGradient>
+              <linearGradient id="fill-gradient" x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0%" stop-color="rgba(0,131,81,0.22)" />
+                <stop offset="100%" stop-color="rgba(0,131,81,0.02)" />
+              </linearGradient>
+            </defs>
+            <rect x="0" y="0" width="${width}" height="${height}" fill="#ffffff" />
+            <g opacity="0.24" stroke="#a9b8ae" stroke-width="1">
+              <line x1="0" x2="${width}" y1="52" y2="52" />
+              <line x1="0" x2="${width}" y1="104" y2="104" />
+              <line x1="0" x2="${width}" y1="156" y2="156" />
+              <line x1="0" x2="${width}" y1="208" y2="208" />
+            </g>
+            <polygon points="${areaPoints}" fill="url(#fill-gradient)" />
+            <polyline
+              points="${points}"
+              fill="none"
+              stroke="url(#line-gradient)"
+              stroke-width="5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          `;
+          el.scopePill.textContent = `Signal ${fmtNumber(state.scopeValue, 3)}`;
+        }
+
+        function renderNoteStrip() {
+          el.noteStrip.innerHTML = "";
+          const pcs = new Set(state.noteList.map((midi) => ((midi % 12) + 12) % 12));
+          NOTE_NAMES.forEach((name, index) => {
+            const cell = document.createElement("div");
+            cell.className = "note-cell";
+            if (pcs.has(index)) cell.classList.add("is-on");
+            const leaf = document.createElement("span");
+            leaf.className = "note-leaf";
+            leaf.innerHTML = noteLeafSvg();
+            const label = document.createElement("span");
+            label.className = "note-name";
+            label.textContent = name;
+            cell.append(leaf, label);
+            el.noteStrip.appendChild(cell);
+          });
+        }
+
+        function renderLedStack() {
+          const runtime = state.runtime || {};
+          const activeCount = Math.max(
+            1,
+            Math.round((((runtime.vi || 0) / 255) * 0.55 + state.scopeValue * 0.45) * 8)
+          );
+          el.ledStack.innerHTML = "";
+          for (let i = 0; i < 8; i += 1) {
+            const leaf = document.createElement("div");
+            leaf.className = "led-leaf";
+            if (i < activeCount) leaf.classList.add("is-on");
+            if (((state.drumHitMask >> i) & 1) === 1) leaf.classList.add("is-hit");
+            leaf.innerHTML = noteLeafSvg();
+            el.ledStack.appendChild(leaf);
+          }
+        }
+
+        function renderDrumGrid() {
+          el.drumGrid.innerHTML = "";
+          let enabledCount = 0;
+          DRUM_PARTS.forEach((part) => {
+            const active = ((state.drumMask >> part.bit) & 1) === 1;
+            const hit = ((state.drumHitMask >> part.bit) & 1) === 1;
+            if (active) enabledCount += 1;
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "drum-button";
+            if (active) button.classList.add("is-active");
+            if (hit) button.classList.add("is-hit");
+            button.innerHTML = `
+              <span class="drum-name">${part.label}</span>
+              <span class="drum-state">${active ? "enabled" : "muted"}</span>
+            `;
+            button.addEventListener("click", async () => {
+              const nextMask = active ? state.drumMask & ~(1 << part.bit) : state.drumMask | (1 << part.bit);
+              await postSet("drumsel", nextMask);
+            });
+            el.drumGrid.appendChild(button);
+          });
+          el.valueDrumMask.textContent = `${enabledCount} on`;
+        }
+
+        function fillSelect(select, values, labeler) {
+          select.innerHTML = "";
+          values.forEach((value, index) => {
+            const option = document.createElement("option");
+            option.value = String(index);
+            option.textContent = labeler ? labeler(value, index) : String(value);
+            select.appendChild(option);
+          });
+        }
+
+        function fillSelectFromValues(select, values) {
+          select.innerHTML = "";
+          values.forEach((value) => {
+            const option = document.createElement("option");
+            option.value = String(value);
+            option.textContent = String(value);
+            select.appendChild(option);
+          });
+        }
+
+        function buildSegmented(container, items, onSelect) {
+          container.innerHTML = "";
+          items.forEach((item) => {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.dataset.value = String(item.value);
+            button.textContent = item.label;
+            button.addEventListener("click", () => {
+              if (button.classList.contains("is-disabled")) return;
+              onSelect(item.value);
+            });
+            container.appendChild(button);
+          });
+        }
+
+        function updateSegmented(container, activeValue, disabledValue = null) {
+          Array.from(container.children).forEach((button) => {
+            const value = button.dataset.value;
+            button.classList.toggle("is-active", value === String(activeValue));
+            button.classList.toggle("is-disabled", disabledValue !== null && value === String(disabledValue));
+          });
+        }
+
+        function bindRange(input, key, formatter, sink) {
+          input.addEventListener("input", () => sink(formatter(input.value)));
+          input.addEventListener("change", () => postSet(key, formatter(input.value)));
+        }
+
+        function bindPreview(input, formatter, sink) {
+          input.addEventListener("input", () => sink(formatter(input.value)));
+        }
+
+        async function getJson(path) {
+          const response = await fetch(path, { cache: "no-store" });
+          if (!response.ok) throw new Error(`${path} returned ${response.status}`);
+          return response.json();
+        }
+
+        async function postForm(path, form) {
+          const body = new URLSearchParams();
+          Object.entries(form).forEach(([key, value]) => body.set(key, String(value)));
+          const response = await fetch(path, { method: "POST", body });
+          if (!response.ok) {
+            let message = `${path} returned ${response.status}`;
+            try {
+              const payload = await response.json();
+              if (payload && payload.err) message = payload.err;
+            } catch (error) {}
+            throw new Error(message);
+          }
+          const type = response.headers.get("Content-Type") || "";
+          return type.includes("application/json") ? response.json() : response.text();
+        }
+
+        async function postSet(key, value) {
+          try {
+            await postForm("/api/set", { key, value });
+            setBanner(`Updated ${key}.`, "ok");
+          } catch (error) {
+            setBanner(`Could not update ${key}: ${error.message}`, "error");
+            throw error;
+          }
+        }
+
+        async function postSynth(data, successMessage = "Synth updated.") {
+          try {
+            const nextSynth = await postForm("/api/synth", data);
+            state.synth = nextSynth;
+            renderSynth();
+            setBanner(successMessage, "ok");
+          } catch (error) {
+            setBanner(`Synth update failed: ${error.message}`, "error");
+          }
+        }
+
+        function applyParamsMetadata() {
+          if (!state.params) return;
+          fillSelect(el.controlMode, state.params.modes || [], (value) => value);
+          fillSelect(el.controlScale, state.params.scales || [], (value) => value);
+          fillSelect(el.controlRoot, NOTE_NAMES);
+          fillSelectFromValues(el.controlTs, state.params.time_signatures || []);
+          fillSelect(el.controlLo, Array.from({ length: 9 }, (_, index) => index + 1), (value) => `C${value}`);
+          fillSelect(el.controlHi, Array.from({ length: 9 }, (_, index) => index + 1), (value) => `C${value}`);
+          fillSelect(el.controlPreset, state.params.synth_presets || [], (value) => value);
+          fillSelect(el.controlFx, state.effects, (value) => value);
+          fillSelect(el.controlPal, state.palettes, (value) => value);
+
+          const ranges = state.params.ranges || {};
+          if (ranges.bpm) {
+            el.controlBpm.min = ranges.bpm[0];
+            el.controlBpm.max = ranges.bpm[1];
+          }
+          if (ranges.swing) {
+            el.controlSwing.min = ranges.swing[0];
+            el.controlSwing.max = ranges.swing[1];
+          }
+          if (ranges.rest) {
+            el.controlRest.min = ranges.rest[0];
+            el.controlRest.max = ranges.rest[1];
+          }
+          if (ranges.sens) {
+            el.controlSens.min = ranges.sens[0];
+            el.controlSens.max = ranges.sens[1];
+          }
+          if (ranges.bright) {
+            el.controlBright.min = ranges.bright[0];
+            el.controlBright.max = ranges.bright[1];
+          }
+          if (ranges.master) {
+            el.controlMaster.min = ranges.master[0];
+            el.controlMaster.max = ranges.master[1];
+          }
+          if (ranges.drive) {
+            el.controlDrive.min = ranges.drive[0];
+            el.controlDrive.max = ranges.drive[1];
+          }
+          if (ranges.cutoff) {
+            el.controlCutoff.min = ranges.cutoff[0];
+            el.controlCutoff.max = ranges.cutoff[1];
+          }
+          if (ranges.resonance) {
+            el.controlResonance.min = ranges.resonance[0];
+            el.controlResonance.max = ranges.resonance[1];
+          }
+          if (ranges.attack) {
+            el.controlAttack.min = ranges.attack[0];
+            el.controlAttack.max = ranges.attack[1];
+            el.controlDecay.min = ranges.decay[0];
+            el.controlDecay.max = ranges.decay[1];
+            el.controlSustain.min = ranges.sustain[0];
+            el.controlSustain.max = ranges.sustain[1];
+            el.controlRelease.min = ranges.release[0];
+            el.controlRelease.max = ranges.release[1];
+          }
+          if (ranges.delay_mix) {
+            el.controlDelayMix.min = ranges.delay_mix[0];
+            el.controlDelayMix.max = ranges.delay_mix[1];
+            el.controlDelayFeedback.min = ranges.delay_feedback[0];
+            el.controlDelayFeedback.max = ranges.delay_feedback[1];
+          }
+
+          buildSegmented(
+            el.outputGroup,
+            OUTPUT_LABELS.map((label, index) => ({ label, value: index })),
+            (value) => postSet("outputmode", value)
+          );
+          buildSegmented(
+            el.clockGroup,
+            CLOCK_LABELS.map((label, index) => ({ label, value: index })),
+            (value) => postSet("clock", value)
+          );
+        }
+
+        function renderRuntime() {
+          const runtime = state.runtime;
+          if (!runtime) return;
+
+          state.auxReady = runtime.aux_ready !== 0;
+          state.syncLocked = runtime.daw_lock !== 0;
+          const modeName = state.params?.modes?.[runtime.mode] || "Unknown";
+          const scaleName = state.params?.scales?.[runtime.scale] || "Unknown";
+          const rootName = NOTE_NAMES[runtime.root] || "--";
+          const outputName = OUTPUT_LABELS[runtime.outputmode] || "--";
+          const clockName = state.syncLocked ? "DAW Lock" : CLOCK_LABELS[runtime.clock] || "--";
+
+          el.modePill.textContent = `Mode: ${modeName}`;
+          el.outputPill.textContent = `Output: ${outputName}`;
+          el.outputPill.className = "pill";
+          el.valueMode.textContent = modeName;
+          el.valueScale.textContent = scaleName;
+          el.valueRoot.textContent = rootName;
+          el.valueBpm.textContent = `${runtime.bpm} bpm`;
+          el.valueTs.textContent = runtime.ts || "--";
+          el.valueSwing.textContent = `${runtime.swing}%`;
+          el.valueRest.textContent = fmtPercent(runtime.rest);
+          el.valueSens.textContent = fmtNumber(runtime.sens, 2);
+          el.valueOctave.textContent = `C${runtime.lo} - C${runtime.hi}`;
+          el.valueClock.textContent = CLOCK_LABELS[runtime.clock] || "--";
+          el.valueNoRep.textContent = runtime.nr ? "ON" : "OFF";
+          el.valueFx.textContent = runtime.fxname || state.effects[runtime.fx] || "--";
+          el.valuePal.textContent = runtime.palname || state.palettes[runtime.pal] || "--";
+          el.valueBright.textContent = String(runtime.bright);
+          el.valueVs.textContent = String(runtime.vs);
+          el.valueVi.textContent = String(runtime.vi);
+          el.valueOutput.textContent = outputName;
+          el.valueSync.textContent = runtime.daw_sync ? (state.syncLocked ? "LOCK" : "ON") : "OFF";
+          el.valueMute.textContent = runtime.io_muted ? "ON" : "OFF";
+          el.valueRuntime.textContent = runtime.io_muted ? "muted" : "steady";
+          el.lastNote.textContent = runtime.last ? noteNameFromMidi(Number(runtime.last)) : "--";
+          el.lastVelocity.textContent = runtime.vel ? String(runtime.vel) : "--";
+          el.clockStatus.textContent = clockName;
+
+          el.transportChip.textContent = `Transport: ${runtime.bpm} bpm • ${runtime.ts}`;
+          el.syncLockChip.textContent = `Sync lock: ${state.syncLocked ? "locked" : "free"}`;
+          el.auxReadyChip.textContent = state.auxReady
+            ? "Aux: ready"
+            : `Aux: wait ${runtime.aux_wait_ms || 0} ms`;
+          el.summaryCopy.textContent =
+            `${modeName} in ${scaleName} on ${rootName}, routed to ${outputName}. ` +
+            `${state.auxReady ? "Aux engine is available." : "Aux engine is cooling down before it can be selected."}`;
+          el.fxChip.textContent = `Effect: ${runtime.fxname || state.effects[runtime.fx] || "--"}`;
+          el.paletteChip.textContent = `Palette: ${runtime.palname || state.palettes[runtime.pal] || "--"}`;
+          el.brightnessChip.textContent = `Brightness: ${runtime.bright}`;
+          el.motionChip.textContent = `Motion: ${runtime.vs} • Energy: ${runtime.vi}`;
+          el.auxPill.textContent = state.auxReady
+            ? "Aux status: ready"
+            : `Aux status: wait ${runtime.aux_wait_ms || 0} ms`;
+          el.ledPill.textContent = `LEDs ${runtime.fxname || "active"}`;
+
+          el.controlMode.value = String(runtime.mode);
+          el.controlScale.value = String(runtime.scale);
+          el.controlRoot.value = String(runtime.root);
+          el.controlTs.value = String(runtime.ts || "");
+          el.controlLo.value = String(runtime.lo);
+          el.controlHi.value = String(runtime.hi);
+          el.controlBpm.value = String(runtime.bpm);
+          el.controlSwing.value = String(runtime.swing);
+          el.controlRest.value = String(runtime.rest);
+          el.controlSens.value = String(runtime.sens);
+          el.controlBright.value = String(runtime.bright);
+          el.controlVs.value = String(runtime.vs);
+          el.controlVi.value = String(runtime.vi);
+          el.controlFx.value = String(runtime.fx);
+          el.controlPal.value = String(runtime.pal);
+
+          el.syncButton.classList.toggle("is-active", Boolean(runtime.daw_sync));
+          el.syncButton.textContent = runtime.daw_sync ? "Sync enabled" : "Sync disabled";
+          el.muteButton.classList.toggle("is-active", Boolean(runtime.io_muted));
+          el.muteButton.textContent = runtime.io_muted ? "Muted" : "Mute outputs";
+          el.norepButton.classList.toggle("is-active", Boolean(runtime.nr));
+          el.norepButton.textContent = runtime.nr ? "No repeat ON" : "Keep notes moving";
+
+          updateSegmented(el.outputGroup, runtime.outputmode, state.auxReady ? null : 2);
+          updateSegmented(el.clockGroup, runtime.clock);
+
+          renderLedStack();
+          renderDrumGrid();
+        }
+
+        function renderSynth() {
+          const synth = state.synth;
+          if (!synth) return;
+          el.controlPreset.value = String(synth.preset);
+          el.controlMaster.value = String(synth.master);
+          el.controlDrive.value = String(synth.drive);
+          el.controlCutoff.value = String(synth.cutoff);
+          el.controlResonance.value = String(synth.resonance);
+          el.controlAttack.value = String(synth.attack);
+          el.controlRelease.value = String(synth.release);
+          el.controlDecay.value = String(synth.decay);
+          el.controlSustain.value = String(synth.sustain);
+          el.controlDelayMix.value = String(synth.delay_mix);
+          el.controlDelayFeedback.value = String(synth.delay_feedback);
+
+          el.valuePreset.textContent = synth.preset_name || "--";
+          el.valueMaster.textContent = fmtNumber(synth.master, 2);
+          el.valueDrive.textContent = fmtNumber(synth.drive, 2);
+          el.valueCutoff.textContent = `${Math.round(Number(synth.cutoff) || 0)} hz`;
+          el.valueResonance.textContent = fmtNumber(synth.resonance, 2);
+          el.valueAttack.textContent = fmtNumber(synth.attack, 2);
+          el.valueRelease.textContent = fmtNumber(synth.release, 2);
+          el.valueDecay.textContent = fmtNumber(synth.decay, 2);
+          el.valueSustain.textContent = fmtNumber(synth.sustain, 2);
+          el.valueDelayMix.textContent = fmtNumber(synth.delay_mix, 2);
+          el.valueDelayFeedback.textContent = fmtNumber(synth.delay_feedback, 2);
+        }
+
+        function renderNotes() {
+          if (!state.noteList.length) {
+            el.noteReadout.textContent = "Waiting for notes...";
+          } else {
+            const names = noteNamesFromList(state.noteList);
+            const chord = inferChord(state.noteList);
+            el.noteReadout.textContent = chord ? `${names.join(" ")} | ${chord}` : names.join(" ");
+          }
+          renderNoteStrip();
+        }
+
+        function applyStatePayload(payload) {
+          state.runtime = payload;
+          renderRuntime();
+          if (payload.last) {
+            const lastMidi = Number(payload.last);
+            if (Number.isFinite(lastMidi) && !state.noteList.length) {
+              state.noteList = [lastMidi];
+              renderNotes();
+            }
+          }
+        }
+
+        function applyNotesPayload(payload) {
+          state.noteList = Array.isArray(payload.notes) ? payload.notes.map(Number).filter(Number.isFinite) : [];
+          state.noteVelocity = Number(payload.vel || payload.last_vel || 0);
+          renderNotes();
+        }
+
+        function applyDrumPayload(payload) {
+          state.drumHitMask = Number(payload.hit || 0);
+          state.drumMask = Number(payload.sel || state.drumMask || 0);
+          renderLedStack();
+          renderDrumGrid();
+        }
+
+        async function refreshAll() {
+          setConnection("Refreshing BECA...", "status-live");
+          setBanner("Refreshing live state…");
+          try {
+            const [params, effects, palettes, runtime, synth, notes, drum, plant] = await Promise.all([
+              getJson("/api/params"),
+              getJson("/effects"),
+              getJson("/palettes"),
+              getJson("/api/state"),
+              getJson("/api/synth"),
+              getJson("/api/notes"),
+              getJson("/api/drum"),
+              getJson("/api/plant")
+            ]);
+            state.params = params;
+            state.effects = effects.list || [];
+            state.palettes = palettes.list || [];
+            state.synth = synth;
+            applyParamsMetadata();
+            applyStatePayload(runtime);
+            applyNotesPayload(notes);
+            applyDrumPayload(drum);
+            addPlantPoint(plant.value || 0);
+            renderSynth();
+            setConnection("BECA live", "status-live");
+            setBanner("Live controls synced.", "ok");
+          } catch (error) {
+            setConnection("BECA unavailable", "status-error");
+            setBanner(`Could not load BECA state: ${error.message}`, "error");
+          }
+        }
+
+        function setupRealtime() {
+          const events = new EventSource("/events");
+          events.addEventListener("hello", () => {
+            setConnection("BECA live", "status-live");
+          });
+          events.addEventListener("state", (event) => {
+            try {
+              applyStatePayload(JSON.parse(event.data));
+            } catch (error) {}
+          });
+          events.addEventListener("scope", (event) => {
+            addPlantPoint(event.data);
+          });
+          events.addEventListener("note", (event) => {
+            const [, velRaw, , listRaw] = String(event.data).split("|");
+            const list = (listRaw || "")
+              .split(",")
+              .map((value) => Number(value))
+              .filter(Number.isFinite);
+            applyNotesPayload({ notes: list, vel: Number(velRaw || 0) });
+          });
+          events.addEventListener("drum", (event) => {
+            const [hit, sel] = String(event.data)
+              .split("|")
+              .map((value) => Number(value || 0));
+            applyDrumPayload({ hit, sel });
+          });
+          events.onerror = () => {
+            setConnection("Reconnecting...", "status-warn");
+            setBanner("Live stream interrupted. BECA is reconnecting…", "warn");
+          };
+        }
+
+        function bindEvents() {
+          bindRange(el.controlSens, "sens", (value) => Number(value).toFixed(2), (value) => {
+            el.valueSens.textContent = value;
+          });
+          bindRange(el.controlBpm, "bpm", (value) => Number(value), (value) => {
+            el.valueBpm.textContent = `${value} bpm`;
+          });
+          bindRange(el.controlSwing, "swing", (value) => Number(value), (value) => {
+            el.valueSwing.textContent = `${value}%`;
+          });
+          bindRange(el.controlRest, "rest", (value) => Number(value).toFixed(2), (value) => {
+            el.valueRest.textContent = `${Math.round(Number(value) * 100)}%`;
+          });
+          bindRange(el.controlBright, "bright", (value) => Number(value), (value) => {
+            el.valueBright.textContent = String(value);
+          });
+          bindRange(el.controlVs, "vs", (value) => Number(value), (value) => {
+            el.valueVs.textContent = String(value);
+          });
+          bindRange(el.controlVi, "vi", (value) => Number(value), (value) => {
+            el.valueVi.textContent = String(value);
+          });
+
+          el.controlMode.addEventListener("change", () => postSet("mode", el.controlMode.value));
+          el.controlScale.addEventListener("change", () => postSet("scale", el.controlScale.value));
+          el.controlRoot.addEventListener("change", () => postSet("root", el.controlRoot.value));
+          el.controlTs.addEventListener("change", () => postSet("ts", el.controlTs.value));
+          el.controlLo.addEventListener("change", async () => {
+            await postSet("lo", el.controlLo.value);
+            if (Number(el.controlHi.value) < Number(el.controlLo.value)) {
+              el.controlHi.value = el.controlLo.value;
+              await postSet("hi", el.controlHi.value);
+            }
+          });
+          el.controlHi.addEventListener("change", async () => {
+            await postSet("hi", el.controlHi.value);
+            if (Number(el.controlLo.value) > Number(el.controlHi.value)) {
+              el.controlLo.value = el.controlHi.value;
+              await postSet("lo", el.controlLo.value);
+            }
+          });
+          el.controlFx.addEventListener("change", () => postSet("fx", el.controlFx.value));
+          el.controlPal.addEventListener("change", () => postSet("pal", el.controlPal.value));
+
+          el.controlPreset.addEventListener("change", () =>
+            postSynth({ preset: el.controlPreset.value }, "Synth preset updated.")
+          );
+          bindPreview(el.controlMaster, (value) => Number(value).toFixed(2), (value) => {
+            el.valueMaster.textContent = value;
+          });
+          el.controlMaster.addEventListener("change", () =>
+            postSynth({ master: el.controlMaster.value }, "Synth master updated.")
+          );
+          bindPreview(el.controlDrive, (value) => Number(value).toFixed(2), (value) => {
+            el.valueDrive.textContent = value;
+          });
+          el.controlDrive.addEventListener("change", () =>
+            postSynth({ drive: el.controlDrive.value }, "Synth drive updated.")
+          );
+          bindPreview(el.controlCutoff, (value) => Number(value), (value) => {
+            el.valueCutoff.textContent = `${Math.round(Number(value))} hz`;
+          });
+          el.controlCutoff.addEventListener("change", () =>
+            postSynth({ cutoff: el.controlCutoff.value }, "Filter cutoff updated.")
+          );
+          bindPreview(el.controlResonance, (value) => Number(value).toFixed(2), (value) => {
+            el.valueResonance.textContent = value;
+          });
+          el.controlResonance.addEventListener("change", () =>
+            postSynth({ resonance: el.controlResonance.value }, "Resonance updated.")
+          );
+          bindPreview(el.controlAttack, (value) => Number(value).toFixed(2), (value) => {
+            el.valueAttack.textContent = value;
+          });
+          el.controlAttack.addEventListener("change", () =>
+            postSynth({ attack: el.controlAttack.value }, "Attack updated.")
+          );
+          bindPreview(el.controlRelease, (value) => Number(value).toFixed(2), (value) => {
+            el.valueRelease.textContent = value;
+          });
+          el.controlRelease.addEventListener("change", () =>
+            postSynth({ release: el.controlRelease.value }, "Release updated.")
+          );
+          bindPreview(el.controlDecay, (value) => Number(value).toFixed(2), (value) => {
+            el.valueDecay.textContent = value;
+          });
+          el.controlDecay.addEventListener("change", () =>
+            postSynth({ decay: el.controlDecay.value }, "Decay updated.")
+          );
+          bindPreview(el.controlSustain, (value) => Number(value).toFixed(2), (value) => {
+            el.valueSustain.textContent = value;
+          });
+          el.controlSustain.addEventListener("change", () =>
+            postSynth({ sustain: el.controlSustain.value }, "Sustain updated.")
+          );
+          bindPreview(el.controlDelayMix, (value) => Number(value).toFixed(2), (value) => {
+            el.valueDelayMix.textContent = value;
+          });
+          el.controlDelayMix.addEventListener("change", () =>
+            postSynth({ delay_mix: el.controlDelayMix.value }, "Delay mix updated.")
+          );
+          bindPreview(el.controlDelayFeedback, (value) => Number(value).toFixed(2), (value) => {
+            el.valueDelayFeedback.textContent = value;
+          });
+          el.controlDelayFeedback.addEventListener("change", () =>
+            postSynth(
+              { delay_feedback: el.controlDelayFeedback.value },
+              "Delay feedback updated."
+            )
+          );
+
+          el.syncButton.addEventListener("click", async () => {
+            const next = state.runtime && state.runtime.daw_sync ? 0 : 1;
+            await postSet("daw_sync", next);
+          });
+          el.muteButton.addEventListener("click", async () => {
+            const next = state.runtime && state.runtime.io_muted ? 0 : 1;
+            await postSet("mute", next);
+          });
+          el.norepButton.addEventListener("click", async () => {
+            const next = state.runtime && state.runtime.nr ? 0 : 1;
+            await postSet("norep", next);
+          });
+          el.randomButton.addEventListener("click", async () => {
+            try {
+              await fetch("/rand");
+              setBanner("Randomized live system.", "ok");
+            } catch (error) {
+              setBanner(`Randomize failed: ${error.message}`, "error");
+            }
+          });
+          el.refreshButton.addEventListener("click", refreshAll);
+          el.testChordButton.addEventListener("click", async () => {
+            try {
+              await getJson("/api/synth/test");
+              setBanner("Aux test chord triggered.", "ok");
+            } catch (error) {
+              setBanner(`Aux test chord failed: ${error.message}`, "error");
+            }
+          });
+          el.presetResetButton.addEventListener("click", async () => {
+            await postSynth({ reset: 1 }, "Synth preset reset.");
+          });
+        }
+
+        function seedVisuals() {
+          for (let i = 0; i < 12; i += 1) {
+            state.plantPoints[i] = 0.35 + Math.sin(i * 0.45) * 0.08;
+          }
+          renderChart();
+          renderNoteStrip();
+          renderLedStack();
+          renderDrumGrid();
+        }
+
+        async function init() {
+          seedVisuals();
+          bindEvents();
+          await refreshAll();
+          setupRealtime();
+        }
+
+        init().catch((error) => {
+          setConnection("BECA unavailable", "status-error");
+          setBanner(`Initialization failed: ${error.message}`, "error");
+        });
+      })();
     </script>
   </body>
 </html>
