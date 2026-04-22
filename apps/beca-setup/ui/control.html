@@ -546,7 +546,11 @@
           resonance: 0.7,
           master: 0.25,
           outputmode: "serial",
-          daw_sync: 1
+          daw_sync: 1,
+          encoder_setting: 0,
+          encoder_setting_name: "sensitivity",
+          encoder_volume_mode: 0,
+          encoder_led_count: 4
         },
         activeNotes: [0, 4, 7],
         chordName: "cmaj"
@@ -760,6 +764,65 @@
         return settingDefinitions.find((setting) => setting.id === id);
       }
 
+      function settingIdToEncoderToken(id) {
+        switch (id) {
+          case "sensitivity": return "sensitivity";
+          case "preset": return "preset";
+          case "scale": return "scale";
+          case "root": return "root";
+          case "tempo": return "tempo";
+          case "swing": return "swing";
+          case "rest": return "rest";
+          case "octaveRange": return "octave_range";
+          case "timeSig": return "time_sig";
+          case "noteLength": return "note_length";
+          case "filter": return "filter";
+          case "resonance": return "resonance";
+          default: return "sensitivity";
+        }
+      }
+
+      function encoderTokenToSettingId(token) {
+        switch (String(token || "").toLowerCase()) {
+          case "sensitivity":
+          case "sens":
+            return "sensitivity";
+          case "preset":
+          case "mode":
+            return "preset";
+          case "scale":
+            return "scale";
+          case "root":
+          case "root_note":
+            return "root";
+          case "tempo":
+          case "bpm":
+            return "tempo";
+          case "swing":
+            return "swing";
+          case "rest":
+            return "rest";
+          case "octave":
+          case "octave_range":
+          case "oct_range":
+            return "octaveRange";
+          case "time_sig":
+          case "timesig":
+          case "ts":
+            return "timeSig";
+          case "note_length":
+          case "notelength":
+            return "noteLength";
+          case "filter":
+          case "cutoff":
+            return "filter";
+          case "resonance":
+            return "resonance";
+          default:
+            return "sensitivity";
+        }
+      }
+
       function setScale() {
         const host = el.viewport.closest(".control-host") || el.viewport.parentElement || document.body;
         const bounds = host.getBoundingClientRect();
@@ -797,6 +860,18 @@
         return json;
       }
 
+      async function postEncoderAction(action) {
+        return postSet("encoder_action", action);
+      }
+
+      async function postEncoderSetting(settingId) {
+        return postSet("encoder_setting", settingIdToEncoderToken(settingId));
+      }
+
+      async function postEncoderVolumeMode(on) {
+        return postSet("encoder_volume_mode", on ? "1" : "0");
+      }
+
       function mergeLiveState(next) {
         if (!next || typeof next !== "object") {
           return;
@@ -805,6 +880,10 @@
         if (typeof state.live.outputname === "string") {
           state.live.outputmode = state.live.outputname.toLowerCase();
         }
+        if (typeof state.live.encoder_setting_name === "string") {
+          state.selectedSettingId = encoderTokenToSettingId(state.live.encoder_setting_name);
+        }
+        state.volumeModeActive = Boolean(state.live.encoder_volume_mode);
       }
 
       async function loadInitialState() {
@@ -901,9 +980,8 @@
           value.style.color = state.selectedSettingId === setting.id && !state.volumeModeActive ? setting.color : setting.color;
 
           button.append(name, value);
-          button.addEventListener("click", () => {
-            state.volumeModeActive = false;
-            state.selectedSettingId = setting.id;
+          button.addEventListener("click", async () => {
+            await postEncoderSetting(setting.id);
             renderAll();
           });
 
@@ -993,9 +1071,15 @@
       function renderLeds() {
         const current = state.volumeModeActive ? null : getSetting(state.selectedSettingId);
         const color = state.volumeModeActive ? "#f12129" : current?.color || "#8bc43e";
-        const onCount = state.volumeModeActive
-          ? clamp(Math.round((state.live.master ?? 0.25) * 8), 1, 8)
-          : getLedCountForSetting(current);
+        const onCount = clamp(
+          Number(state.live.encoder_led_count) || (
+            state.volumeModeActive
+              ? Math.round((state.live.master ?? 0.25) * 8)
+              : getLedCountForSetting(current)
+          ),
+          1,
+          8
+        );
 
         el.ledColumn.innerHTML = "";
         Array.from({ length: 8 }, (_, index) => index).forEach((index) => {
@@ -1050,12 +1134,8 @@
         return settingDefinitions;
       }
 
-      function selectNextSetting() {
-        const settings = currentCycle();
-        const currentIndex = settings.findIndex((setting) => setting.id === state.selectedSettingId);
-        const nextIndex = currentIndex === -1 ? 0 : (currentIndex + 1) % settings.length;
-        state.selectedSettingId = settings[nextIndex].id;
-        state.volumeModeActive = false;
+      async function selectNextSetting() {
+        await postEncoderAction("next");
       }
 
       async function adjustCurrentValue(direction) {
@@ -1080,9 +1160,7 @@
         state.holdTimer = window.setTimeout(async () => {
           state.longPressTriggered = true;
           state.suppressClickUntil = performance.now() + 350;
-          const currentIndex = OUTPUTS.indexOf((state.live.outputmode || "serial").toLowerCase());
-          const next = OUTPUTS[(currentIndex + 1) % OUTPUTS.length];
-          await postSet("outputmode", next);
+          await postEncoderAction("cycle_output");
           renderAll();
         }, 520);
       }
@@ -1104,18 +1182,17 @@
 
         if (state.clickCount === 3) {
           state.clickCount = 0;
-          fetch("/rand").catch((error) => console.error("Randomize failed", error));
+          postEncoderAction("randomize").catch((error) => console.error("Randomize failed", error));
           return;
         }
 
         state.clickTimer = window.setTimeout(() => {
           if (state.clickCount === 1) {
-            selectNextSetting();
+            selectNextSetting().catch((error) => console.error(error));
           } else if (state.clickCount === 2) {
-            state.volumeModeActive = !state.volumeModeActive;
+            postEncoderAction("toggle_volume").catch((error) => console.error(error));
           }
           state.clickCount = 0;
-          renderAll();
         }, 260);
       }
 
@@ -1130,7 +1207,7 @@
         }
 
         el.randomButton.addEventListener("click", () => {
-          fetch("/rand").catch((error) => console.error("Randomize failed", error));
+          postEncoderAction("randomize").catch((error) => console.error("Randomize failed", error));
         });
 
         el.syncButton.addEventListener("click", async () => {
@@ -1139,8 +1216,8 @@
           renderAll();
         });
 
-        el.volumeCard.addEventListener("click", () => {
-          state.volumeModeActive = true;
+        el.volumeCard.addEventListener("click", async () => {
+          await postEncoderVolumeMode(true);
           renderAll();
         });
 

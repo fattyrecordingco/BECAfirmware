@@ -484,6 +484,8 @@ EncoderSettingId gEncoderSetting = ENC_SET_SENS;
 bool gEncoderVolumeMode = false;
 uint32_t gEncoderNavUntilMs = 0;
 static inline bool encoderNavVisible(uint32_t nowMs);
+static inline const char* encoderSettingApiName(EncoderSettingId setting);
+static inline bool parseEncoderSettingArg(const String& value, EncoderSettingId& out);
 
 struct Transport {
   uint16_t bpm;
@@ -1125,6 +1127,56 @@ static inline CRGB encoderSettingColor(EncoderSettingId setting) {
   }
 }
 
+static inline const char* encoderSettingApiName(EncoderSettingId setting) {
+  switch (setting) {
+    case ENC_SET_SENS:        return "sensitivity";
+    case ENC_SET_MODE:        return "preset";
+    case ENC_SET_SCALE:       return "scale";
+    case ENC_SET_ROOT:        return "root";
+    case ENC_SET_TEMPO:       return "tempo";
+    case ENC_SET_SWING:       return "swing";
+    case ENC_SET_REST:        return "rest";
+    case ENC_SET_OCTAVE:      return "octave_range";
+    case ENC_SET_TIME_SIG:    return "time_sig";
+    case ENC_SET_NOTE_LENGTH: return "note_length";
+    case ENC_SET_FILTER:      return "filter";
+    case ENC_SET_RESONANCE:   return "resonance";
+    default:                  return "sensitivity";
+  }
+}
+
+static inline bool parseEncoderSettingArg(const String& value, EncoderSettingId& out) {
+  if (value.length() == 0) return false;
+  bool isNumeric = true;
+  for (uint16_t i = 0; i < value.length(); ++i) {
+    char c = value.charAt(i);
+    if (c < '0' || c > '9') { isNumeric = false; break; }
+  }
+  if (isNumeric) {
+    int idx = value.toInt();
+    if (idx < 0 || idx >= (int)ENC_SET_COUNT) return false;
+    out = (EncoderSettingId)idx;
+    return true;
+  }
+
+  String key = value;
+  key.toLowerCase();
+  key.replace(" ", "_");
+  if (key == "sensitivity" || key == "sens")                    { out = ENC_SET_SENS; return true; }
+  if (key == "preset" || key == "mode")                         { out = ENC_SET_MODE; return true; }
+  if (key == "scale")                                           { out = ENC_SET_SCALE; return true; }
+  if (key == "root" || key == "root_note")                      { out = ENC_SET_ROOT; return true; }
+  if (key == "tempo" || key == "bpm")                           { out = ENC_SET_TEMPO; return true; }
+  if (key == "swing")                                           { out = ENC_SET_SWING; return true; }
+  if (key == "rest")                                            { out = ENC_SET_REST; return true; }
+  if (key == "octave" || key == "octave_range" || key == "oct_range") { out = ENC_SET_OCTAVE; return true; }
+  if (key == "time_sig" || key == "timesig" || key == "ts")     { out = ENC_SET_TIME_SIG; return true; }
+  if (key == "note_length" || key == "notelength")              { out = ENC_SET_NOTE_LENGTH; return true; }
+  if (key == "filter" || key == "cutoff")                       { out = ENC_SET_FILTER; return true; }
+  if (key == "resonance")                                       { out = ENC_SET_RESONANCE; return true; }
+  return false;
+}
+
 static inline uint8_t encoderSettingLedCount() {
   beca::SynthParams p;
   switch (gEncoderSetting) {
@@ -1159,15 +1211,22 @@ static inline uint8_t encoderSettingLedCount() {
   }
 }
 
+static inline uint8_t encoderDisplayedLedCount() {
+  if (gEncoderVolumeMode) {
+    beca::SynthParams p;
+    gSynth.getParams(p);
+    return (uint8_t)constrain((int)roundf(p.master * LED_COUNT), 1, LED_COUNT);
+  }
+  return encoderSettingLedCount();
+}
+
 static inline void renderEncoderNavLeds() {
   fill_solid(leds, LED_COUNT, CRGB::Black);
 
   CRGB color = CRGB(241, 33, 41);
   uint8_t onCount = 1;
   if (gEncoderVolumeMode) {
-    beca::SynthParams p;
-    gSynth.getParams(p);
-    onCount = (uint8_t)constrain((int)roundf(p.master * LED_COUNT), 1, LED_COUNT);
+    onCount = encoderDisplayedLedCount();
   } else {
     color = encoderSettingColor(gEncoderSetting);
     onCount = encoderSettingLedCount();
@@ -1179,23 +1238,7 @@ static inline void renderEncoderNavLeds() {
 }
 
 static inline void renderLEDs() {
-  if (encoderNavVisible(millis())) {
-    renderEncoderNavLeds();
-  } else {
-    switch (fxMode) {
-      case FX_GRADIENT_FLOW: fxGradientFlow(); break;
-      case FX_PALETTE_WAVE:  fxPaletteWave();  break;
-      case FX_SOFT_SWEEP:    fxSoftSweep();    break;
-      case FX_COMET_TRAILS:  fxCometTrails();  break;
-      case FX_JUGGLE:        fxJuggle();       break;
-      case FX_GLITTER_VEIL:  fxGlitterVeil();  break;
-      case FX_QUIET_FIRE:    fxQuietFire();    break;
-      case FX_NEON_BARS:     fxNeonBars();     break;
-      case FX_SPARKLE_MIST:  fxSparkleMist();  break;
-      case FX_SPLIT_FADE:    fxSplitFade();    break;
-      default:               fxGradientFlow(); break;
-    }
-  }
+  renderEncoderNavLeds();
   FastLED.setBrightness(gBrightness);
   FastLED.show();
   noteEnergy *= noteDecay;
@@ -2000,6 +2043,8 @@ struct LastState {
   uint8_t  drumsel;
   uint8_t  auxready;
   uint8_t  note_length;
+  uint8_t  encoder_setting;
+  uint8_t  encoder_volume_mode;
   float    cutoff;
   float    resonance;
   float    master;
@@ -2097,6 +2142,8 @@ static inline bool stateChanged() {
   if (LS.drumsel != (uint8_t)drumSelMask) return true;
   if (LS.auxready != (auxSwitchReady() ? 1 : 0)) return true;
   if (LS.note_length != gNoteLengthIndex) return true;
+  if (LS.encoder_setting != (uint8_t)gEncoderSetting) return true;
+  if (LS.encoder_volume_mode != (gEncoderVolumeMode ? 1u : 0u)) return true;
   if (fabsf(LS.cutoff - p.cutoffHz) > 0.01f) return true;
   if (fabsf(LS.resonance - p.resonance) > 0.0001f) return true;
   if (fabsf(LS.master - p.master) > 0.0001f) return true;
@@ -2136,6 +2183,8 @@ static inline void captureState() {
   LS.drumsel = (uint8_t)drumSelMask;
   LS.auxready = auxSwitchReady() ? 1 : 0;
   LS.note_length = gNoteLengthIndex;
+  LS.encoder_setting = (uint8_t)gEncoderSetting;
+  LS.encoder_volume_mode = gEncoderVolumeMode ? 1u : 0u;
   LS.cutoff = p.cutoffHz;
   LS.resonance = p.resonance;
   LS.master = p.master;
@@ -2145,7 +2194,7 @@ static inline size_t renderStateJson(char* out, size_t outLen, bool bumpVersion)
   captureState();
   if (bumpVersion) stateVersion++;
   const uint32_t ver = stateVersion;
-  char buf[1100];
+  char buf[1280];
   snprintf(buf, sizeof(buf),
     "{\"ver\":%u,"
     "\"ble\":%u,"
@@ -2177,6 +2226,10 @@ static inline size_t renderStateJson(char* out, size_t outLen, bool bumpVersion)
     "\"aux_wait_ms\":%lu,"
     "\"note_length_idx\":%u,"
     "\"note_length\":\"%s\","
+    "\"encoder_setting\":%u,"
+    "\"encoder_setting_name\":\"%s\","
+    "\"encoder_volume_mode\":%u,"
+    "\"encoder_led_count\":%u,"
     "\"cutoff\":%.2f,"
     "\"resonance\":%.3f,"
     "\"master\":%.2f,"
@@ -2214,6 +2267,10 @@ static inline size_t renderStateJson(char* out, size_t outLen, bool bumpVersion)
     (unsigned long)auxSwitchWaitMs(),
     LS.note_length,
     currentNoteLengthLabelC(),
+    LS.encoder_setting,
+    encoderSettingApiName((EncoderSettingId)LS.encoder_setting),
+    LS.encoder_volume_mode,
+    encoderDisplayedLedCount(),
     (double)LS.cutoff,
     (double)LS.resonance,
     (double)LS.master,
@@ -2772,6 +2829,64 @@ static inline bool applyParamByKey(const String& keyIn, const String& valueIn, S
     gNoteLengthIndex = nextIdx;
     recalcTransport(true);
     return true;
+  }
+  if (key == "encoder_setting") {
+    EncoderSettingId next = gEncoderSetting;
+    if (!parseEncoderSettingArg(value, next)) {
+      err = "invalid encoder setting";
+      return false;
+    }
+    gEncoderSetting = next;
+    normalizeEncoderSetting();
+    gEncoderVolumeMode = false;
+    showEncoderNav(4000);
+    return true;
+  }
+  if (key == "encoder_volume_mode") {
+    bool on = gEncoderVolumeMode;
+    if (!parseOnOffArg(value, on)) {
+      err = "invalid encoder volume mode";
+      return false;
+    }
+    gEncoderVolumeMode = on;
+    showEncoderNav(gEncoderVolumeMode ? 6000 : 4000);
+    return true;
+  }
+  if (key == "encoder_action") {
+    String action = value;
+    action.toLowerCase();
+    if (action == "next") {
+      gEncoderVolumeMode = false;
+      cycleEncoderSetting();
+      showEncoderNav(4000);
+      return true;
+    }
+    if (action == "toggle_volume") {
+      gEncoderVolumeMode = !gEncoderVolumeMode;
+      showEncoderNav(gEncoderVolumeMode ? 6000 : 4000);
+      return true;
+    }
+    if (action == "cycle_output") {
+      uint8_t next = (uint8_t)((gOutputMode + 1u) % 3u);
+      if (next == OUTPUT_AUX && !auxSwitchReady()) {
+        err = "aux not ready";
+        return false;
+      }
+      setOutputMode(next);
+      saveOutputModePref();
+      normalizeEncoderSetting();
+      gEncoderVolumeMode = false;
+      showEncoderNav(5200);
+      return true;
+    }
+    if (action == "randomize") {
+      gEncoderVolumeMode = false;
+      randomizeBasicSettingsInline();
+      showEncoderNav(4000);
+      return true;
+    }
+    err = "invalid encoder action";
+    return false;
   }
 
   if (key == "outputmode") {
