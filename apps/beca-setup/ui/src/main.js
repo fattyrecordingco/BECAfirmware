@@ -263,7 +263,7 @@ function describeTarget(target) {
 function updateTargetSummary(status) {
   const target = status?.target;
   state.selectedTargetId = status?.selected_id || null;
-  state.controlReady = Boolean(target?.control_ready && status?.transport);
+  state.controlReady = Boolean(status?.transport === "network" && target?.network_url);
   state.controlIssue = target?.issue || status?.detail || "";
 
   if (!target) {

@@ -68,7 +68,9 @@ pub async fn discover_beca_targets(
     state: State<'_, RuntimeState>,
 ) -> Result<ControlDiscoveryResult, String> {
     let bridge_running = state.bridge_child.lock().await.is_some();
-    let serial_targets = discover_serial_targets(bridge_running).await;
+    let serial_probe_guard = state.serial_op_lock.try_lock().ok();
+    let serial_targets = discover_serial_targets(bridge_running, serial_probe_guard.is_some()).await;
+    drop(serial_probe_guard);
     let network_targets = discover_network_targets().await;
     let targets = merge_targets(serial_targets, network_targets);
 
@@ -228,10 +230,17 @@ async fn build_selection_status(
         let transport = preferred_transport(&target);
         let detail = match transport {
             Some("network") => {
-                let mut detail = format!(
-                    "Live control is running over Wi-Fi at {}.",
-                    target.network_url.clone().unwrap_or_default()
-                );
+                let mut detail = if target.network_ready {
+                    format!(
+                        "Live control is running over Wi-Fi at {}.",
+                        target.network_url.clone().unwrap_or_default()
+                    )
+                } else {
+                    format!(
+                        "Live control will use Wi-Fi at {}.",
+                        target.network_url.clone().unwrap_or_default()
+                    )
+                };
                 if let Some(serial_port) = target.serial_port.as_deref() {
                     detail.push_str(&format!(
                         " USB on {serial_port} stays free for smoother serial MIDI."
@@ -361,16 +370,12 @@ async fn network_request_with_client(
     })
 }
 
-fn serial_json(serial_port: &str, command: &str, expected_tag: &str) -> anyhow::Result<Value> {
-    run_serial_command_json(serial_port, command, expected_tag, 3_800, 1)
-}
-
 fn parse_json_body(body: &str) -> Value {
     serde_json::from_str(body).unwrap_or_else(|_| json!({ "ok": 0, "raw": body }))
 }
 
 fn preferred_transport(target: &ControlTarget) -> Option<&'static str> {
-    if target.network_ready {
+    if target.network_url.is_some() {
         return Some("network");
     }
     None
@@ -390,7 +395,10 @@ fn network_only_control_issue(target: &ControlTarget) -> String {
     detail
 }
 
-async fn discover_serial_targets(bridge_running: bool) -> Vec<ControlTarget> {
+async fn discover_serial_targets(
+    bridge_running: bool,
+    serial_probe_allowed: bool,
+) -> Vec<ControlTarget> {
     let ports = detect_beca_ports();
     let likely_ports: Vec<_> = ports.into_iter().filter(|port| port.likely_beca).collect();
     let mut targets = Vec::with_capacity(likely_ports.len());
@@ -415,7 +423,7 @@ async fn discover_serial_targets(bridge_running: bool) -> Vec<ControlTarget> {
             issue: None,
         };
 
-        if !bridge_running {
+        if !bridge_running && serial_probe_allowed {
             let port_name = port.port_name.clone();
             if let Ok(info) = tokio::task::spawn_blocking(move || {
                 run_serial_command_json(&port_name, "@C WIFI_INFO", "WIFI_INFO", 2_500, 1)
@@ -426,20 +434,16 @@ async fn discover_serial_targets(bridge_running: bool) -> Vec<ControlTarget> {
                 apply_wifi_info(&mut target, &info);
             }
 
-            let port_name = port.port_name.clone();
-            match tokio::task::spawn_blocking(move || probe_serial_control(&port_name)).await {
-                Ok(Ok(())) => {
-                    target.serial_ready = true;
-                    target.control_ready = true;
-                }
-                Ok(Err(err)) => {
-                    target.issue = Some(describe_control_probe_error("USB serial", &err));
-                }
-                Err(_) => {
-                    target.issue = Some(
-                        "USB serial was found, but the live control probe could not finish."
-                            .to_string(),
-                    );
+            if let Some(url) = target.network_url.clone() {
+                match probe_network_control(&url).await {
+                    Ok(()) => {
+                        target.network_ready = true;
+                        target.control_ready = true;
+                        target.issue = None;
+                    }
+                    Err(err) => {
+                        target.issue = Some(describe_control_probe_error("Wi-Fi", &err));
+                    }
                 }
             }
         }
@@ -602,11 +606,6 @@ fn apply_wifi_info(target: &mut ControlTarget, payload: &Value) {
             target.description = format!("{} mode", mode.trim().to_uppercase());
         }
     }
-}
-
-fn probe_serial_control(serial_port: &str) -> anyhow::Result<()> {
-    let state = serial_json(serial_port, "@C STATE", "STATE")?;
-    validate_state_payload(&state)
 }
 
 async fn probe_network_control(base_url: &str) -> anyhow::Result<()> {
