@@ -1,0 +1,11 @@
+{
+  "name": "beca-control-m4l",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Node-for-Max transport layer for BECA Control",
+  "main": "beca_control_node.js",
+  "license": "MIT",
+  "dependencies": {
+    "serialport": "^12.0.0"
+  }
+}

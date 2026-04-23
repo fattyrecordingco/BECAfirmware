@@ -1,5 +1,7 @@
 use anyhow::{anyhow, Context, Result};
-use beca_bridge::{list_midi_outputs, list_serial_ports, parse_beca_midi_line};
+use beca_bridge::{
+    list_midi_outputs, list_serial_ports, parse_beca_midi_line, transform_bridge_packet,
+};
 use clap::{Parser, Subcommand};
 use midir::{MidiOutput, MidiOutputConnection};
 use serde::Serialize;
@@ -30,6 +32,12 @@ enum Commands {
         serial_port: String,
         #[arg(long)]
         midi_port: String,
+        #[arg(long)]
+        secondary_midi_port: Option<String>,
+        #[arg(long)]
+        microfreak_mode: bool,
+        #[arg(long)]
+        secondary_microfreak_mode: bool,
         #[arg(long, default_value_t = 115200)]
         baud: u32,
         #[arg(long, default_value_t = 1500)]
@@ -38,6 +46,8 @@ enum Commands {
     TestNote {
         #[arg(long)]
         midi_port: String,
+        #[arg(long)]
+        secondary_midi_port: Option<String>,
     },
 }
 
@@ -60,14 +70,29 @@ fn main() -> Result<()> {
         Commands::Run {
             serial_port,
             midi_port,
+            secondary_midi_port,
+            microfreak_mode,
+            secondary_microfreak_mode,
             baud,
             reconnect_ms,
         } => {
-            run_bridge(&serial_port, &midi_port, baud, reconnect_ms)?;
+            run_bridge(
+                &serial_port,
+                &midi_port,
+                secondary_midi_port.as_deref(),
+                microfreak_mode,
+                secondary_microfreak_mode,
+                baud,
+                reconnect_ms,
+            )?;
         }
-        Commands::TestNote { midi_port } => {
-            let mut out = open_midi_output(&midi_port)?;
-            send_test_note(&mut out)?;
+        Commands::TestNote {
+            midi_port,
+            secondary_midi_port,
+        } => {
+            let mut routes =
+                open_output_routes(&midi_port, false, secondary_midi_port.as_deref(), false)?;
+            send_test_note(&mut routes)?;
             println!("{}", r#"{"status":"ok","detail":"test note sent"}"#);
         }
     }
@@ -75,7 +100,15 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn run_bridge(serial_port_name: &str, midi_port_name: &str, baud: u32, reconnect_ms: u64) -> Result<()> {
+fn run_bridge(
+    serial_port_name: &str,
+    midi_port_name: &str,
+    secondary_midi_port_name: Option<&str>,
+    microfreak_mode: bool,
+    secondary_microfreak_mode: bool,
+    baud: u32,
+    reconnect_ms: u64,
+) -> Result<()> {
     let running = Arc::new(AtomicBool::new(true));
     let running_for_handler = running.clone();
     ctrlc::set_handler(move || {
@@ -83,8 +116,13 @@ fn run_bridge(serial_port_name: &str, midi_port_name: &str, baud: u32, reconnect
     })
     .context("failed to install signal handler")?;
 
-    let mut midi_out = open_midi_output(midi_port_name)?;
-    emit_status("status", "connected", &format!("MIDI output ready: {midi_port_name}"));
+    let mut routes = open_output_routes(
+        midi_port_name,
+        microfreak_mode,
+        secondary_midi_port_name,
+        secondary_microfreak_mode,
+    )?;
+    emit_status("status", "connected", &describe_routes(&routes));
 
     while running.load(Ordering::SeqCst) {
         match serialport::new(serial_port_name, baud)
@@ -98,8 +136,12 @@ fn run_bridge(serial_port_name: &str, midi_port_name: &str, baud: u32, reconnect
                     &format!("Serial connected: {serial_port_name} @ {baud}"),
                 );
                 let mut sent = 0usize;
-                if let Err(err) = run_bridge_session(port, &mut midi_out, &running, &mut sent) {
-                    emit_status("status", "reconnecting", &format!("Serial disconnected: {err}"));
+                if let Err(err) = run_bridge_session(port, &mut routes, &running, &mut sent) {
+                    emit_status(
+                        "status",
+                        "reconnecting",
+                        &format!("Serial disconnected: {err}"),
+                    );
                 }
             }
             Err(err) => {
@@ -122,7 +164,7 @@ fn run_bridge(serial_port_name: &str, midi_port_name: &str, baud: u32, reconnect
 
 fn run_bridge_session(
     port: Box<dyn SerialPort>,
-    midi_out: &mut MidiOutputConnection,
+    routes: &mut [OutputRoute],
     running: &AtomicBool,
     sent_count: &mut usize,
 ) -> Result<()> {
@@ -139,12 +181,22 @@ fn run_bridge_session(
                     continue;
                 }
                 if let Some(packet) = parse_beca_midi_line(&line) {
-                    midi_out
-                        .send(&packet.as_bytes())
-                        .context("failed to send midi packet")?;
-                    *sent_count += 1;
-                    if *sent_count % 16 == 0 {
-                        emit_status("activity", "running", &format!("midi_packets={sent_count}"));
+                    for route in routes.iter_mut() {
+                        if let Some(packet) =
+                            transform_bridge_packet(&packet, route.microfreak_mode)
+                        {
+                            route.connection.send(&packet.as_bytes()).with_context(|| {
+                                format!("failed to send midi packet to {}", route.name)
+                            })?;
+                            *sent_count += 1;
+                            if *sent_count % 16 == 0 {
+                                emit_status(
+                                    "activity",
+                                    "running",
+                                    &format!("midi_packets={sent_count}"),
+                                );
+                            }
+                        }
                     }
                 }
             }
@@ -158,6 +210,56 @@ fn run_bridge_session(
     }
 
     Ok(())
+}
+
+struct OutputRoute {
+    name: String,
+    connection: MidiOutputConnection,
+    microfreak_mode: bool,
+}
+
+fn open_output_routes(
+    primary_name: &str,
+    primary_microfreak_mode: bool,
+    secondary_name: Option<&str>,
+    secondary_microfreak_mode: bool,
+) -> Result<Vec<OutputRoute>> {
+    if let Some(secondary_name) = secondary_name {
+        if primary_name.eq_ignore_ascii_case(secondary_name) {
+            return Err(anyhow!(
+                "Primary and mirrored MIDI outputs must be different devices."
+            ));
+        }
+    }
+
+    let mut routes = vec![OutputRoute {
+        name: primary_name.to_string(),
+        connection: open_midi_output(primary_name)?,
+        microfreak_mode: primary_microfreak_mode,
+    }];
+
+    if let Some(secondary_name) = secondary_name.filter(|name| !name.trim().is_empty()) {
+        routes.push(OutputRoute {
+            name: secondary_name.to_string(),
+            connection: open_midi_output(secondary_name)?,
+            microfreak_mode: secondary_microfreak_mode,
+        });
+    }
+
+    Ok(routes)
+}
+
+fn describe_routes(routes: &[OutputRoute]) -> String {
+    let mut parts = Vec::with_capacity(routes.len());
+    for route in routes {
+        let label = if route.microfreak_mode {
+            format!("{} (MicroFreak mode)", route.name)
+        } else {
+            route.name.clone()
+        };
+        parts.push(label);
+    }
+    format!("MIDI outputs ready: {}", parts.join(" | "))
 }
 
 fn open_midi_output(target_name: &str) -> Result<MidiOutputConnection> {
@@ -188,7 +290,11 @@ fn open_midi_output(target_name: &str) -> Result<MidiOutputConnection> {
 
     for port in &ports {
         let name = midi_out.port_name(port)?;
-        if name.eq_ignore_ascii_case(target_name) || name.to_ascii_lowercase().contains(&target_name.to_ascii_lowercase()) {
+        if name.eq_ignore_ascii_case(target_name)
+            || name
+                .to_ascii_lowercase()
+                .contains(&target_name.to_ascii_lowercase())
+        {
             return midi_out
                 .connect(port, "BECA Bridge")
                 .with_context(|| format!("failed to open MIDI output {name}"));
@@ -221,12 +327,16 @@ fn best_midi_port_index(midi_out: &MidiOutput, ports: &[midir::MidiOutputPort]) 
     Ok(0)
 }
 
-fn send_test_note(midi_out: &mut MidiOutputConnection) -> Result<()> {
+fn send_test_note(routes: &mut [OutputRoute]) -> Result<()> {
     let notes = [60u8, 64u8, 67u8];
     for note in notes {
-        midi_out.send(&[0x90, note, 96])?;
+        for route in routes.iter_mut() {
+            route.connection.send(&[0x90, note, 96])?;
+        }
         thread::sleep(Duration::from_millis(60));
-        midi_out.send(&[0x80, note, 0])?;
+        for route in routes.iter_mut() {
+            route.connection.send(&[0x80, note, 0])?;
+        }
     }
     Ok(())
 }

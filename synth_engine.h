@@ -40,7 +40,7 @@ struct SynthParams {
 
 class SynthEngine {
  public:
-  static constexpr uint8_t kPresetCount = 18;
+  static constexpr uint8_t kPresetCount = 6;
 
   SynthEngine();
 

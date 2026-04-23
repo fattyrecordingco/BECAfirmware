@@ -8,6 +8,9 @@ use tokio::fs;
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum FlashTool {
     Espflash,
@@ -25,10 +28,17 @@ pub struct FlashCommandConfig {
 }
 
 pub fn resolve_flash_tool(base_dir: &Path) -> Option<(FlashTool, PathBuf)> {
-    let candidates = [
-        (FlashTool::Espflash, base_dir.join(sidecar_name("espflash"))),
-        (FlashTool::Esptool, base_dir.join(sidecar_name("esptool"))),
-    ];
+    let candidates = if cfg!(target_os = "windows") {
+        vec![
+            (FlashTool::Esptool, base_dir.join(sidecar_name("esptool"))),
+            (FlashTool::Espflash, base_dir.join(sidecar_name("espflash"))),
+        ]
+    } else {
+        vec![
+            (FlashTool::Espflash, base_dir.join(sidecar_name("espflash"))),
+            (FlashTool::Esptool, base_dir.join(sidecar_name("esptool"))),
+        ]
+    };
 
     for (tool, path) in candidates {
         if path.exists() {
@@ -98,6 +108,7 @@ pub async fn flash_firmware(cfg: &FlashCommandConfig) -> Result<()> {
     for arg in build_flash_args(cfg) {
         cmd.arg(arg);
     }
+    apply_background_process_flags(&mut cmd);
 
     let output = cmd
         .output()
@@ -123,8 +134,8 @@ pub async fn backup_nvs(
     offset: &str,
     size: &str,
 ) -> Result<()> {
-    let output = Command::new(tool)
-        .arg("--chip")
+    let mut cmd = Command::new(tool);
+    cmd.arg("--chip")
         .arg("esp32")
         .arg("--port")
         .arg(port)
@@ -133,7 +144,9 @@ pub async fn backup_nvs(
         .arg("read_flash")
         .arg(offset)
         .arg(size)
-        .arg(output_path)
+        .arg(output_path);
+    apply_background_process_flags(&mut cmd);
+    let output = cmd
         .output()
         .await
         .with_context(|| format!("failed to run NVS backup tool: {}", tool.display()))?;
@@ -155,8 +168,8 @@ pub async fn restore_nvs(
     backup_path: &Path,
     offset: &str,
 ) -> Result<()> {
-    let output = Command::new(tool)
-        .arg("--chip")
+    let mut cmd = Command::new(tool);
+    cmd.arg("--chip")
         .arg("esp32")
         .arg("--port")
         .arg(port)
@@ -164,7 +177,9 @@ pub async fn restore_nvs(
         .arg(baud.to_string())
         .arg("write_flash")
         .arg(offset)
-        .arg(backup_path)
+        .arg(backup_path);
+    apply_background_process_flags(&mut cmd);
+    let output = cmd
         .output()
         .await
         .with_context(|| format!("failed to run NVS restore tool: {}", tool.display()))?;
@@ -199,6 +214,7 @@ fn build_flash_args(cfg: &FlashCommandConfig) -> Vec<String> {
             "--baud".to_string(),
             cfg.baud.to_string(),
             "--non-interactive".to_string(),
+            "--skip-update-check".to_string(),
             cfg.offset.clone(),
             cfg.firmware_path.display().to_string(),
         ],
@@ -209,19 +225,23 @@ fn build_flash_args(cfg: &FlashCommandConfig) -> Vec<String> {
             cfg.port.clone(),
             "--baud".to_string(),
             cfg.baud.to_string(),
-            "write_flash".to_string(),
-            "--flash_mode".to_string(),
+            "write-flash".to_string(),
+            "--flash-mode".to_string(),
             "dio".to_string(),
-            "--flash_freq".to_string(),
+            "--flash-freq".to_string(),
             "40m".to_string(),
-            "--flash_size".to_string(),
+            "--flash-size".to_string(),
             "detect".to_string(),
             cfg.offset.clone(),
             cfg.firmware_path.display().to_string(),
-            "verify_flash".to_string(),
-            cfg.offset.clone(),
-            cfg.firmware_path.display().to_string(),
         ],
+    }
+}
+
+fn apply_background_process_flags(cmd: &mut Command) {
+    #[cfg(target_os = "windows")]
+    {
+        cmd.creation_flags(CREATE_NO_WINDOW);
     }
 }
 
@@ -259,11 +279,12 @@ mod tests {
         assert_eq!(args.first().expect("first arg"), "write-bin");
         assert!(args.contains(&"--port".to_string()));
         assert!(args.contains(&"COM5".to_string()));
+        assert!(args.contains(&"--skip-update-check".to_string()));
         assert!(args.contains(&"0x0".to_string()));
     }
 
     #[test]
-    fn esptool_keeps_verify_flow() {
+    fn esptool_uses_write_flash_command() {
         let cfg = FlashCommandConfig {
             tool: FlashTool::Esptool,
             tool_path: PathBuf::from("esptool"),
@@ -274,7 +295,7 @@ mod tests {
         };
 
         let args = build_flash_args(&cfg);
-        assert!(args.contains(&"write_flash".to_string()));
-        assert!(args.contains(&"verify_flash".to_string()));
+        assert!(args.contains(&"write-flash".to_string()));
+        assert!(args.contains(&"--flash-mode".to_string()));
     }
 }

@@ -3,101 +3,150 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>BECA Setup</title>
+    <title>BECA</title>
     <link rel="stylesheet" href="./src/styles.css" />
   </head>
   <body>
-    <main class="shell">
-      <header class="topbar">
-        <div class="brand">
-          <h1>BECA Setup</h1>
-          <p>Plant Synth Installer + Wi-Fi Setup + Serial MIDI Bridge</p>
-        </div>
-        <div class="pill">ESP32-PICO-V3</div>
-      </header>
-
-      <section class="card" id="step-connect">
-        <div class="step-head">
-          <span class="badge">Step 1</span>
-          <h2>Connect BECA</h2>
-        </div>
-        <p id="connect-status">Scanning USB serial ports...</p>
-        <div class="row">
-          <button id="btn-scan">Rescan Device</button>
-          <span id="port-chip" class="hint"></span>
-        </div>
-        <ul id="port-fixes" class="hint-list"></ul>
+    <main class="app-root">
+      <section class="surface-screen active" data-screen-view="control">
+        <div id="control-host" class="control-host"></div>
+        <p id="control-status" class="support-hidden" aria-hidden="true">Loading control surface.</p>
+        <button id="btn-refresh-control" class="support-hidden" type="button">refresh control</button>
       </section>
 
-      <section class="card" id="step-firmware">
-        <div class="step-head">
-          <span class="badge">Step 2</span>
-          <h2>Update Firmware</h2>
+      <section class="surface-screen" data-screen-view="setup">
+        <div class="setup-viewport">
+          <section class="setup-frame">
+            <div class="setup-logo" aria-hidden="true">
+              <svg viewBox="0 0 498 372" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M397.017 323.145V137.412c0-2.944.935-4.876 2.805-5.795 2.244-1.104 6.358-1.656 12.342-1.656h70.689c5.984 0 9.911.552 11.781 1.656 2.244.919 3.366 2.851 3.366 5.795v185.733h-45.442v-55.747h-11.221v55.747h-44.32Zm44.32-173.866v98.524h11.221v-98.524h-11.221Z" fill="currentColor"/>
+                <path d="M329.951 338.074h11.22V205.554h44.321v153.018c0 5.084-1.123 8.58-3.367 10.487-1.87 1.589-5.797 2.383-11.781 2.383h-70.688c-5.984 0-10.098-.794-12.342-2.383-1.87-1.907-2.805-5.403-2.805-10.487V50.63c0-5.085.935-8.422 2.805-10.011 2.244-1.907 6.358-2.86 12.342-2.86h70.688c5.984 0 9.911.953 11.781 2.86 2.244 1.589 3.367 4.926 3.367 10.011v145.39h-44.321V71.128h-11.22v266.946Z" fill="currentColor"/>
+                <path d="M272.984 144.437v33.368h-55.541v122.51h11.22V187.816h44.321v145.867H172.001V0h100.983v134.903h-44.321V33.368h-11.22v111.069h55.541Z" fill="currentColor"/>
+                <path d="M103.659 23.27v77.456h11.579V23.27h-11.579Zm0 100.726v85.434h11.579v-85.434h-11.579Zm45.16-13.297h-1.737v3.989h1.737c5.017 0 8.491.665 10.421 1.994 1.93 1.108 2.895 3.435 2.895 6.981v100.061c0 3.546-1.158 5.984-3.474 7.314-1.93 1.108-5.79 1.662-11.579 1.662H56.762V0h90.32c5.789 0 9.649.665 11.579 1.995 2.316 1.108 3.474 3.435 3.474 6.981v92.747c0 3.324-.965 5.651-2.895 6.981-1.93 1.33-5.404 1.995-10.421 1.995Z" fill="currentColor"/>
+                <path fill-rule="evenodd" clip-rule="evenodd" d="M24.588 195.819c-12.009 0-21.744-9.735-21.744-21.744V92.865C2.844 80.856 12.579 71.121 24.588 71.121c12.009 0 21.744 9.735 21.744 21.744v81.21c0 12.009-9.735 21.744-21.744 21.744Zm-14.224-21.744c0 7.856 6.368 14.225 14.224 14.225 7.856 0 14.224-6.369 14.224-14.225V92.865c0-7.856-6.368-14.224-14.224-14.224-7.856 0-14.224 6.368-14.224 14.224v81.21Z" fill="currentColor"/>
+                <path d="M24.588 16.854c13.579 0 24.588 11.008 24.588 24.588 0 13.579-11.009 24.587-24.588 24.587C11.008 66.029 0 55.021 0 41.442 0 27.862 11.008 16.854 24.588 16.854Z" fill="currentColor"/>
+              </svg>
+            </div>
+
+            <div class="setup-top-actions">
+              <button id="btn-open-control" class="setup-top-icon setup-top-icon-muted" type="button" aria-label="Open control">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M2 12h5l2.2-6 4.2 13 2.3-7H22" />
+                </svg>
+              </button>
+
+              <button id="btn-open-setup" class="setup-top-icon setup-top-icon-active" type="button" aria-label="Open setup" aria-current="page">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="3.2" />
+                  <path d="M19.4 15a1 1 0 0 0 .2 1.1l.1.1a1 1 0 0 1 0 1.4l-1.2 1.2a1 1 0 0 1-1.4 0l-.1-.1a1 1 0 0 0-1.1-.2 1 1 0 0 0-.6.9V20a1 1 0 0 1-1 1h-1.7a1 1 0 0 1-1-1v-.2a1 1 0 0 0-.6-.9 1 1 0 0 0-1.1.2l-.1.1a1 1 0 0 1-1.4 0l-1.2-1.2a1 1 0 0 1 0-1.4l.1-.1a1 1 0 0 0 .2-1.1 1 1 0 0 0-.9-.6H4a1 1 0 0 1-1-1v-1.7a1 1 0 0 1 1-1h.2a1 1 0 0 0 .9-.6 1 1 0 0 0-.2-1.1l-.1-.1a1 1 0 0 1 0-1.4l1.2-1.2a1 1 0 0 1 1.4 0l.1.1a1 1 0 0 0 1.1.2 1 1 0 0 0 .6-.9V4a1 1 0 0 1 1-1h1.7a1 1 0 0 1 1 1v.2a1 1 0 0 0 .6.9 1 1 0 0 0 1.1-.2l.1-.1a1 1 0 0 1 1.4 0l1.2 1.2a1 1 0 0 1 0 1.4l-.1.1a1 1 0 0 0-.2 1.1 1 1 0 0 0 .9.6h.2a1 1 0 0 1 1 1v1.7a1 1 0 0 1-1 1h-.2a1 1 0 0 0-.9.6Z" />
+                </svg>
+              </button>
+            </div>
+
+            <div class="setup-row setup-row-connect">
+              <div class="setup-copy">
+                <h2>connect BECA:</h2>
+                <p>use a usb c data cable while uploading firmware or using the serial midi connection</p>
+              </div>
+              <div id="connect-status" class="setup-status-box">not connected</div>
+              <button id="btn-scan" class="setup-button setup-button-solid" type="button">rescan device</button>
+              <div id="port-chip" class="setup-microcopy"></div>
+              <ul id="port-fixes" class="setup-fixes"></ul>
+            </div>
+
+            <div class="setup-row setup-row-firmware">
+              <div class="setup-copy">
+                <h2>upload firmware:</h2>
+                <p>this is the code that BECA runs, upload the latest firmware as we update the codebase</p>
+              </div>
+              <label class="sr-only" for="firmware-select">firmware version</label>
+              <select id="firmware-select" class="setup-select"></select>
+              <button id="btn-flash" class="setup-button setup-button-solid" type="button">flash firmware</button>
+              <progress id="flash-progress" max="100" value="0"></progress>
+              <p id="flash-status" class="setup-microcopy">waiting to flash</p>
+            </div>
+
+            <div class="setup-row setup-row-name">
+              <div class="setup-copy">
+                <h2>name the device</h2>
+                <p>access the control page on any browser using www.&lt;beca-name&gt;.local</p>
+              </div>
+              <label class="sr-only" for="wifi-name">device name</label>
+              <input id="wifi-name" class="setup-input setup-input-wide" type="text" placeholder="beca-name" />
+            </div>
+
+            <div class="setup-row setup-row-wifi">
+              <div class="setup-copy">
+                <h2>select wifi network</h2>
+                <p>make sure the network has 2.4GHz, flash + save wifi if it fails to connect</p>
+              </div>
+              <label class="sr-only" for="wifi-ssid">wifi name</label>
+              <select id="wifi-ssid" class="setup-select">
+                <option value="">wifi name</option>
+              </select>
+              <label class="sr-only" for="wifi-pass">wifi password</label>
+              <input id="wifi-pass" class="setup-input" type="password" placeholder="password" />
+              <input id="wifi-ssid-manual" class="support-hidden" type="text" placeholder="manual ssid" />
+              <p id="selected-target-status" class="setup-inline-note">connect BECA first to configure Wi-Fi</p>
+              <button id="btn-wifi-scan" class="setup-button setup-button-solid setup-button-wide" type="button">rescan networks</button>
+              <div class="setup-action-row">
+                <button id="btn-flash-wifi" class="setup-button" type="button">flash + save wifi</button>
+                <button id="btn-wifi-save" class="setup-button setup-button-solid" type="button">save &amp; reboot</button>
+                <button id="btn-wifi-forget" class="setup-button" type="button">forget network</button>
+              </div>
+              <p id="wifi-status" class="setup-microcopy">waiting for device</p>
+            </div>
+
+            <div class="setup-row setup-row-bridge">
+              <div class="setup-copy">
+                <h2>MIDI bridge</h2>
+                <p>use this to convert serial to midi and split the serial channels so multiple devices can connect to one BECA</p>
+              </div>
+              <label class="sr-only" for="midi-select">primary output</label>
+              <select id="midi-select" class="setup-select">
+                <option value="">output1</option>
+              </select>
+              <button id="btn-start-bridge" class="setup-button setup-button-solid" type="button">connect bridge</button>
+              <label class="sr-only" for="midi-mirror-select">mirror output</label>
+              <select id="midi-mirror-select" class="setup-select">
+                <option value="">output2</option>
+              </select>
+              <button id="btn-test-note" class="setup-button" type="button">send test note</button>
+              <label class="setup-toggle support-hidden" for="microfreak-mode">
+                <input id="microfreak-mode" type="checkbox" />
+                <span>microfreak primary</span>
+              </label>
+              <label class="setup-toggle support-hidden" for="midi-mirror-microfreak-mode">
+                <input id="midi-mirror-microfreak-mode" type="checkbox" checked />
+                <span>microfreak mirror</span>
+              </label>
+              <div class="setup-bridge-status">
+                <p id="bridge-status" class="setup-microcopy">bridge not running</p>
+                <span id="activity" class="activity-dot" aria-hidden="true"></span>
+              </div>
+            </div>
+
+            <div class="setup-row setup-row-help">
+              <h2>how does BECA work?</h2>
+              <p>setup stays guided and minimal while the control page mirrors the hardware LED language so users can learn the instrument and gradually move away from software.</p>
+            </div>
+          </section>
         </div>
-        <label for="firmware-select">Firmware version</label>
-        <select id="firmware-select"></select>
-        <div class="row">
-          <button id="btn-backup">Backup Settings</button>
-          <button id="btn-flash" class="primary">Flash Selected Firmware</button>
-          <button id="btn-restore">Restore Settings</button>
-        </div>
-        <progress id="flash-progress" max="100" value="0"></progress>
-        <p id="flash-status" class="hint">Waiting to flash.</p>
       </section>
 
-      <section class="card" id="step-wifi">
-        <div class="step-head">
-          <span class="badge">Step 3</span>
-          <h2>Set Wi-Fi</h2>
-        </div>
-        <p id="wifi-status" class="hint">Connect BECA first to configure Wi-Fi over USB.</p>
-        <label for="wifi-name">Device Name (.local)</label>
-        <input id="wifi-name" type="text" placeholder="beca-xxxx" />
-        <label for="wifi-ssid">Wi-Fi Network (2.4GHz)</label>
-        <div class="row">
-          <select id="wifi-ssid">
-            <option value="">Scan networks</option>
-          </select>
-          <button id="btn-wifi-scan">Rescan Networks</button>
-        </div>
-        <label for="wifi-ssid-manual">Wi-Fi Network (manual entry)</label>
-        <input id="wifi-ssid-manual" type="text" placeholder="Type SSID if scan is unreliable on macOS" />
-        <label for="wifi-pass">Password</label>
-        <input id="wifi-pass" type="password" placeholder="********" />
-        <div class="row">
-          <button id="btn-flash-wifi">Flash + Save Wi-Fi</button>
-          <button id="btn-wifi-save" class="primary">Save and Reboot</button>
-          <button id="btn-wifi-forget">Forget Wi-Fi</button>
-        </div>
-        <p class="hint">macOS fallback: if scan/info keeps timing out, type SSID manually and use Flash + Save Wi-Fi.</p>
-      </section>
-
-      <section class="card" id="step-bridge">
-        <div class="step-head">
-          <span class="badge">Step 4</span>
-          <h2>Start Bridge</h2>
-        </div>
-        <label for="midi-select">MIDI Output</label>
-        <select id="midi-select"></select>
-        <div class="row">
-          <button id="btn-start-bridge" class="primary">Start Bridge</button>
-          <button id="btn-stop-bridge">Stop Bridge</button>
-          <button id="btn-test-note">Test Note</button>
-        </div>
-        <p id="bridge-status" class="hint">Bridge not running.</p>
-        <div id="activity" class="activity-dot"></div>
-      </section>
-
-      <section class="card details">
-        <div class="row row-spread">
-          <button id="btn-export">Export Diagnostics Zip</button>
-          <button id="btn-copy">Copy Logs</button>
-        </div>
-        <details>
-          <summary>Show details</summary>
-          <pre id="log-view"></pre>
-        </details>
-      </section>
+      <div class="support-hidden" aria-hidden="true">
+        <button id="btn-discover" type="button">discover</button>
+        <button id="btn-backup" type="button">backup</button>
+        <button id="btn-restore" type="button">restore</button>
+        <div id="transport-pill"></div>
+        <div id="target-name"></div>
+        <div id="target-transport"></div>
+        <div id="target-detail"></div>
+        <select id="device-select"></select>
+        <button id="btn-copy" type="button">copy</button>
+        <button id="btn-export" type="button">export</button>
+        <pre id="log-view"></pre>
+      </div>
     </main>
 
     <script type="module" src="./src/main.js"></script>

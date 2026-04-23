@@ -1,7 +1,8 @@
 use anyhow::{anyhow, Context, Result};
 use beca_flasher::flash::{download_firmware, FlashCommandConfig, FlashTool};
 use beca_flasher::{
-    backup_nvs, detect_beca_ports, fetch_latest_manifest, flash_firmware, resolve_flash_tool, restore_nvs,
+    backup_nvs, detect_beca_ports, fetch_latest_manifest, flash_firmware, resolve_flash_tool,
+    restore_nvs,
 };
 use clap::{Parser, Subcommand};
 use serde::Serialize;
@@ -96,9 +97,9 @@ async fn main() -> Result<()> {
             tool_path,
             cache_dir,
         } => {
-            let manifest = fetch_latest_manifest(&repo)
-                .await
-                .with_context(|| format!("unable to fetch manifest from latest release for {repo}"))?;
+            let manifest = fetch_latest_manifest(&repo).await.with_context(|| {
+                format!("unable to fetch manifest from latest release for {repo}")
+            })?;
 
             let selected = if firmware.eq_ignore_ascii_case("latest-stable") {
                 manifest
@@ -107,7 +108,9 @@ async fn main() -> Result<()> {
             } else {
                 manifest
                     .by_version_for_hardware(&firmware, &hardware)
-                    .ok_or_else(|| anyhow!("firmware {firmware} is not available for hardware {hardware}"))?
+                    .ok_or_else(|| {
+                        anyhow!("firmware {firmware} is not available for hardware {hardware}")
+                    })?
             };
 
             let downloaded = download_firmware(selected, &cache_dir)

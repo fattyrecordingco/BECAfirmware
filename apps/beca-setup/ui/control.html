@@ -1,0 +1,1771 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>BECA Control</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f6f4ef;
+        --panel: #ffffff;
+        --accent: #008351;
+        --border: #bebebe;
+        --off: #d4d4cf;
+        --off-text: #bebeb9;
+        --shadow: 0 22px 44px rgba(0, 131, 81, 0.08);
+        --mono: "Geist Mono", "SFMono-Regular", "JetBrains Mono", monospace;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+      }
+
+      body {
+        background: var(--bg);
+        color: var(--accent);
+        font-family: var(--mono);
+      }
+
+      button,
+      input,
+      select,
+      a {
+        font: inherit;
+      }
+
+      button,
+      a {
+        cursor: pointer;
+      }
+
+      .control-app {
+        width: 100vw;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        overflow: hidden;
+        padding: clamp(10px, 1.4vw, 18px);
+      }
+
+      .control-viewport {
+        width: calc(575px * var(--ui-scale, 1));
+        height: calc(842px * var(--ui-scale, 1));
+        display: flex;
+        justify-content: center;
+        align-items: flex-start;
+        max-width: calc(100% - 8px);
+        max-height: calc(100% - 8px);
+      }
+
+      .control-frame {
+        position: relative;
+        flex: none;
+        width: 575px;
+        height: 842px;
+        background: var(--panel);
+        border: 2px solid var(--accent);
+        border-radius: 24px;
+        box-shadow: var(--shadow);
+        overflow: hidden;
+        transform: scale(var(--ui-scale, 1));
+        transform-origin: top center;
+      }
+
+      .logo-lockup,
+      .mode-button,
+      .mode-link,
+      .chart-caption,
+      .chart-panel,
+      .midi-head,
+      .midi-strip,
+      .settings-grid,
+      .volume-card,
+      .output-card,
+      .random-card,
+      .sync-card,
+      .led-column,
+      .flower-button {
+        position: absolute;
+      }
+
+      .logo-lockup {
+        left: 20px;
+        top: 20px;
+        width: 98px;
+        height: 74px;
+        color: var(--accent);
+      }
+
+      .logo-lockup svg,
+      .mode-icon svg,
+      .leaf svg,
+      .led svg,
+      .flower svg,
+      .dice svg {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+
+      .mode-button,
+      .mode-link {
+        display: grid;
+        place-items: center;
+        text-decoration: none;
+        background: transparent;
+      }
+
+      .mode-button {
+        top: 24px;
+        left: 426px;
+        width: 64px;
+        height: 64px;
+        border-radius: 999px;
+        border: 2px solid var(--accent);
+        color: var(--accent);
+      }
+
+      .mode-link {
+        top: 34px;
+        left: 501px;
+        width: 42px;
+        height: 42px;
+        color: #c9c9c5;
+      }
+
+      .mode-icon {
+        width: 28px;
+        height: 28px;
+      }
+
+      .chart-caption,
+      .midi-label,
+      .setting-name,
+      .output-label,
+      .sync-label,
+      .volume-label {
+        font-size: 11px;
+        line-height: 1.15;
+      }
+
+      .chart-caption {
+        left: 20px;
+        top: 95px;
+        color: var(--off-text);
+      }
+
+      .chart-panel {
+        left: 20px;
+        top: 111px;
+        width: 350px;
+        height: 150px;
+        border: 2px solid var(--border);
+        border-radius: 13px;
+        overflow: hidden;
+      }
+
+      .chart-panel svg {
+        width: 100%;
+        height: 100%;
+      }
+
+      .midi-head {
+        left: 20px;
+        top: 282px;
+        width: 350px;
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+      }
+
+      .midi-label {
+        color: var(--off-text);
+      }
+
+      .midi-readout {
+        font-size: 12px;
+        font-weight: 400;
+      }
+
+      .midi-strip {
+        left: 20px;
+        top: 320px;
+        width: 350px;
+        display: grid;
+        grid-template-columns: repeat(12, 1fr);
+        gap: 4px;
+      }
+
+      .midi-cell {
+        display: grid;
+        justify-items: center;
+        gap: 4px;
+      }
+
+      .leaf {
+        width: 22px;
+        height: 22px;
+        color: var(--off);
+      }
+
+      .midi-cell.is-on .leaf {
+        color: var(--accent);
+      }
+
+      .midi-note {
+        font-size: 9px;
+        line-height: 1;
+        color: var(--off-text);
+      }
+
+      .midi-cell.is-on .midi-note {
+        color: var(--accent);
+        font-weight: 700;
+      }
+
+      .settings-grid {
+        left: 20px;
+        top: 388px;
+        width: 350px;
+        display: grid;
+        grid-template-columns: repeat(2, 165px);
+        column-gap: 20px;
+        row-gap: 7px;
+      }
+
+      .setting-button,
+      .volume-card,
+      .output-card,
+      .random-card,
+      .sync-card,
+      .output-option {
+        border-radius: 11px;
+      }
+
+      .setting-button {
+        width: 165px;
+        height: 36px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 0 12px;
+        border: 2px solid var(--border);
+        background: #ffffff;
+        color: var(--accent);
+        box-shadow: 0 2px 0 rgba(0, 131, 81, 0.02);
+        transition: background 120ms ease, color 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+      }
+
+      .setting-button.is-selected {
+        border-color: var(--accent);
+        background: var(--accent);
+        color: #ffffff;
+        box-shadow: 0 10px 18px rgba(0, 131, 81, 0.12);
+      }
+
+      .setting-button.is-wide {
+        width: 350px;
+        grid-column: 1 / span 2;
+      }
+
+      .setting-value {
+        font-size: 11px;
+        line-height: 1.15;
+        color: inherit;
+        max-width: 84px;
+        overflow: hidden;
+        text-align: right;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .volume-card {
+        left: 20px;
+        top: 690px;
+        width: 350px;
+        height: 42px;
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        padding: 0 12px;
+        border: 2px solid var(--border);
+        background: #ffffff;
+        color: var(--accent);
+        box-shadow: 0 2px 0 rgba(0, 131, 81, 0.02);
+        transition: background 120ms ease, color 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+      }
+
+      .volume-card.is-selected {
+        border-color: var(--accent);
+        background: var(--accent);
+        color: #ffffff;
+        box-shadow: 0 10px 18px rgba(0, 131, 81, 0.12);
+      }
+
+      .volume-meter {
+        display: flex;
+        gap: 4px;
+        margin-left: auto;
+        margin-right: 12px;
+      }
+
+      .meter-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        opacity: 0.24;
+        transform: scale(0.86);
+        transition: opacity 100ms ease, transform 100ms ease;
+      }
+
+      .meter-dot.is-on {
+        opacity: 1;
+        transform: scale(1);
+      }
+
+      .volume-value {
+        font-size: 11px;
+        color: inherit;
+      }
+
+      .output-card {
+        left: 20px;
+        top: 740px;
+        width: 350px;
+        height: 42px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 0 10px;
+        border: 2px solid var(--border);
+        background: #ffffff;
+        box-shadow: 0 2px 0 rgba(0, 131, 81, 0.02);
+      }
+
+      .output-label {
+        flex: 0 0 48px;
+      }
+
+      .output-options {
+        flex: 1 1 auto;
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        align-items: center;
+        gap: 6px;
+      }
+
+      .output-option {
+        min-width: 0;
+        height: 22px;
+        border: 1.5px solid var(--border);
+        border-radius: 999px;
+        background: transparent;
+        padding: 0 4px;
+        color: var(--accent);
+        font-size: 9.5px;
+        line-height: 19px;
+        text-transform: lowercase;
+        letter-spacing: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+      }
+
+      .output-option.is-active {
+        border-color: var(--accent);
+        background: var(--accent);
+        color: #ffffff;
+        box-shadow: 0 8px 16px rgba(0, 131, 81, 0.12);
+      }
+
+      .random-card {
+        left: 20px;
+        top: 790px;
+        width: 80px;
+        height: 40px;
+        display: grid;
+        place-items: center;
+        border: 2px solid var(--border);
+        background: #ffffff;
+        color: var(--accent);
+        box-shadow: 0 2px 0 rgba(0, 131, 81, 0.02);
+      }
+
+      .dice {
+        width: 26px;
+        height: 26px;
+      }
+
+      .sync-card {
+        left: 112px;
+        top: 790px;
+        width: 258px;
+        height: 40px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 12px;
+        border: 2px solid var(--border);
+        background: #ffffff;
+        color: var(--accent);
+        box-shadow: 0 2px 0 rgba(0, 131, 81, 0.02);
+        transition: background 120ms ease, color 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+      }
+
+      .sync-card.is-selected {
+        border-color: var(--accent);
+        background: var(--accent);
+        color: #ffffff;
+        box-shadow: 0 10px 18px rgba(0, 131, 81, 0.12);
+      }
+
+      .sync-value {
+        font-size: 11px;
+      }
+
+      .led-column {
+        left: 432px;
+        top: 110px;
+        display: grid;
+        gap: 10px;
+      }
+
+      .led {
+        width: 44px;
+        height: 44px;
+        color: var(--off);
+        opacity: 1;
+        filter: none;
+        transition: color 100ms ease, transform 100ms ease, filter 100ms ease;
+      }
+
+      .led.is-on {
+        color: currentColor;
+        filter: drop-shadow(0 0 1.2px rgba(106, 116, 110, 0.72));
+      }
+
+      .flower-button {
+        left: 408px;
+        top: 644px;
+        width: 122px;
+        height: 122px;
+        display: grid;
+        place-items: center;
+        border: 0;
+        background: transparent;
+        color: var(--accent);
+        padding: 0;
+      }
+
+      .flower {
+        width: 122px;
+        height: 122px;
+        transform: rotate(var(--encoder-angle, 0deg));
+        transition: transform 100ms ease;
+      }
+
+      @media (max-width: 700px), (max-height: 920px) {
+        .control-app {
+          padding: 16px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="control-app">
+      <div class="control-viewport" id="viewport">
+        <section class="control-frame">
+          <div class="logo-lockup" id="brand-lockup" aria-hidden="true"></div>
+
+          <button class="mode-button" type="button" aria-label="Control view">
+            <span class="mode-icon" id="wave-icon" aria-hidden="true"></span>
+          </button>
+          <a class="mode-link" href="/setup" aria-label="Setup view">
+            <span class="mode-icon" id="gear-icon" aria-hidden="true"></span>
+          </a>
+
+          <div class="chart-caption">plant input:</div>
+          <section class="chart-panel" aria-label="Plant monitor">
+            <svg id="plant-chart" viewBox="0 0 350 162" preserveAspectRatio="none"></svg>
+          </section>
+
+          <div class="midi-head">
+            <span class="midi-label">note/chord played:</span>
+            <strong class="midi-readout" id="midi-readout">c3 e3 g3 | cmaj</strong>
+          </div>
+          <section class="midi-strip" id="midi-strip" aria-label="MIDI monitor"></section>
+
+          <section class="settings-grid" id="settings-grid" aria-label="Settings"></section>
+
+          <button class="volume-card" id="volume-card" type="button" aria-label="Volume">
+            <span class="volume-label">volume</span>
+            <span class="volume-meter" id="volume-meter" aria-hidden="true"></span>
+            <span class="volume-value" id="volume-value">0.25</span>
+          </button>
+
+          <section class="output-card" aria-label="Output">
+            <span class="output-label">output</span>
+            <div class="output-options" id="output-options"></div>
+          </section>
+
+          <button class="random-card" id="random-button" type="button" aria-label="Randomize">
+            <span class="dice" id="dice-icon" aria-hidden="true"></span>
+          </button>
+
+          <button class="sync-card" id="sync-button" type="button" aria-label="DAW sync">
+            <span class="sync-label">daw sync</span>
+            <span class="sync-value" id="sync-value">ON</span>
+          </button>
+
+          <aside class="led-column" id="led-column" aria-label="On-board LED mirror"></aside>
+
+          <button class="flower-button" id="encoder-button" type="button" aria-label="On-screen encoder">
+            <span class="flower" id="flower-icon" aria-hidden="true"></span>
+          </button>
+        </section>
+      </div>
+    </main>
+
+    <script>
+      const NOTE_LABELS = ["C", "C'", "D", "D'", "E", "F'", "F", "G", "G'", "A'", "A", "B"];
+      const NOTE_NAMES = ["c", "c#", "d", "d#", "e", "f#", "f", "g", "g#", "a#", "a", "b"];
+      const MODE_LABELS = ["notes", "arpeggio", "chords", "drums"];
+      const SCALE_LABELS = ["maj", "min", "dorian", "lyd", "mix", "pent min", "pent maj", "harm min", "phryg", "whole", "maj7", "min7", "dom7", "sus2", "sus4"];
+      const NOTE_LENGTHS = ["1/32", "1/16t", "1/16", "1/8t", "1/8", "1/4", "1/2", "1/1"];
+      const OUTPUTS = ["ble", "serial", "aux out"];
+      const TIME_SIGNATURES = ["1-1", "2-2", "2-4", "3-4", "4-4", "5-4", "7-4", "6-8", "9-8", "12-8", "4-8", "4-16", "8-32"];
+      const LED_SLOT_COUNT = 8;
+      const LED_DISPLAY_SETTING = 0;
+      const LED_DISPLAY_VOLUME = 1;
+      const LED_DISPLAY_OUTPUT = 2;
+      const LED_DISPLAY_RANDOM = 3;
+      const LED_OFF_COLOR = "#d4d4cf";
+      const DEFAULT_SYNTH_PRESETS = [
+        "Fatty Neon Lead",
+        "Prism Poly Lead",
+        "Verdant Pad",
+        "Forest Choir Pad",
+        "Thick Mono Bass",
+        "Rubber Bass"
+      ];
+      const METER_COLORS = ["#8bc43e", "#8bc43e", "#a9cd39", "#d6d92e", "#fed605", "#ffb500", "#ff8117", "#f12129"];
+      const SETTING_COLORS = {
+        sensitivity: "#8bc43e",
+        preset: "#fed605",
+        scale: "#fe5501",
+        root: "#1bc8f8",
+        tempo: "#f12129",
+        swing: "#7239d9",
+        rest: "#ed29ac",
+        octaveRange: "#ffffff",
+        timeSig: "#12c99c",
+        noteLength: "#124cec",
+        filter: "#25bf45",
+        resonance: "#ffb500"
+      };
+      const OUTPUT_PATTERNS = {
+        ble: ["#1bc8f8", null, "#1bc8f8", null, "#1bc8f8", null, "#1bc8f8", null],
+        serial: ["#7239d9", "#12c99c", "#8bc43e", "#8bc43e", "#fed605", "#fed605", "#fe5501", "#f12129"],
+        "aux out": ["#8bc43e", "#8bc43e", null, null, null, null, null, null]
+      };
+      const RANDOM_PATTERN = ["#7239d9", null, "#8bc43e", null, "#fed605", null, "#fe5501", null];
+
+        const state = {
+          selectedSettingId: "sensitivity",
+          volumeModeActive: false,
+          encoderAngle: 0,
+          interactionHoldUntil: 0,
+          interactionEpoch: 0,
+          interactionSyncTimer: null,
+          clickCount: 0,
+        clickTimer: null,
+        holdTimer: null,
+        longPressTriggered: false,
+        suppressClickUntil: 0,
+        dragStartY: null,
+        dragLastY: null,
+        dragMoved: false,
+        plantPoints: Array.from({ length: 34 }, () => 0.45),
+        params: {
+          synth_presets: [...DEFAULT_SYNTH_PRESETS]
+        },
+        live: {
+          sens: 0.25,
+          mode: 2,
+          scale: 0,
+          root: 0,
+          bpm: 120,
+          ts: "4/4",
+          swing: 0,
+          rest: 0,
+          lo: 1,
+          hi: 8,
+          preset: 0,
+          preset_name: DEFAULT_SYNTH_PRESETS[0],
+          note_length: "1/16",
+          note_length_idx: 2,
+          cutoff: 220,
+          resonance: 0.7,
+          master: 0.25,
+          outputmode: "serial",
+          daw_sync: 1,
+          encoder_setting_name: "sensitivity",
+          encoder_volume_mode: 0,
+          led_display_mode: LED_DISPLAY_SETTING,
+          encoder_led_count: 4
+        },
+        activeNotes: [0, 4, 7],
+        chordName: "cmaj",
+        actionQueue: Promise.resolve(),
+        pendingAdjustment: 0,
+        flushingAdjustments: false,
+        wheelAccumulator: 0,
+        wheelLastTs: 0,
+        dragAccumulator: 0,
+        ledAnimationTimer: null
+      };
+
+      const el = {
+        viewport: document.getElementById("viewport"),
+        brandLockup: document.getElementById("brand-lockup"),
+        waveIcon: document.getElementById("wave-icon"),
+        gearIcon: document.getElementById("gear-icon"),
+        plantChart: document.getElementById("plant-chart"),
+        midiReadout: document.getElementById("midi-readout"),
+        midiStrip: document.getElementById("midi-strip"),
+        settingsGrid: document.getElementById("settings-grid"),
+        volumeCard: document.getElementById("volume-card"),
+        volumeMeter: document.getElementById("volume-meter"),
+        volumeValue: document.getElementById("volume-value"),
+        outputOptions: document.getElementById("output-options"),
+        syncButton: document.getElementById("sync-button"),
+        syncValue: document.getElementById("sync-value"),
+        randomButton: document.getElementById("random-button"),
+        ledColumn: document.getElementById("led-column"),
+        flowerIcon: document.getElementById("flower-icon"),
+        encoderButton: document.getElementById("encoder-button"),
+        diceIcon: document.getElementById("dice-icon")
+      };
+
+      const dom = {
+        midiCells: [],
+        settingButtons: new Map(),
+        outputButtons: new Map(),
+        ledLeaves: new Array(LED_SLOT_COUNT),
+        volumeDots: []
+      };
+
+      function clamp(value, min, max) {
+        return Math.max(min, Math.min(max, value));
+      }
+
+      function normalizeOutputModeToken(value, numericFallback = null) {
+        const text = String(value ?? "").trim().toLowerCase().replace(/_/g, " ");
+        if (text === "0" || (numericFallback === 0 && !text)) return "ble";
+        if (text === "1" || (numericFallback === 1 && !text)) return "serial";
+        if (text === "2" || (numericFallback === 2 && !text)) return "aux out";
+        if (text === "aux" || text === "aux out") return "aux out";
+        if (text === "ble" || text === "serial") return text;
+        if (numericFallback === 0) return "ble";
+        if (numericFallback === 1) return "serial";
+        if (numericFallback === 2) return "aux out";
+        return "serial";
+      }
+
+      function isAuxOutput() {
+        return normalizeOutputModeToken(state.live.outputmode, Number(state.live.outputmode)) === "aux out";
+      }
+
+      function getSynthPresetNames() {
+        return Array.isArray(state.params.synth_presets) && state.params.synth_presets.length
+          ? state.params.synth_presets
+          : DEFAULT_SYNTH_PRESETS;
+      }
+
+      function shortPresetLabel(name, index) {
+        return String(name || getSynthPresetNames()[index] || `preset ${index + 1}`)
+          .toLowerCase()
+          .replace(/^fatty\s+/, "")
+          .replace(/^prism poly\s+/, "prism ")
+          .replace(/^forest choir\s+/, "choir ")
+          .replace(/^thick mono\s+/, "mono ")
+          .replace(/^rubber\s+/, "rubber ");
+      }
+
+      function logoSvg() {
+        return `
+          <svg viewBox="0 0 498 372" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M397.017 323.145V137.412c0-2.944.935-4.876 2.805-5.795 2.244-1.104 6.358-1.656 12.342-1.656h70.689c5.984 0 9.911.552 11.781 1.656 2.244.919 3.366 2.851 3.366 5.795v185.733h-45.442v-55.747h-11.221v55.747h-44.32Zm44.32-173.866v98.524h11.221v-98.524h-11.221Z" fill="currentColor"/>
+            <path d="M329.951 338.074h11.22V205.554h44.321v153.018c0 5.084-1.123 8.58-3.367 10.487-1.87 1.589-5.797 2.383-11.781 2.383h-70.688c-5.984 0-10.098-.794-12.342-2.383-1.87-1.907-2.805-5.403-2.805-10.487V50.63c0-5.085.935-8.422 2.805-10.011 2.244-1.907 6.358-2.86 12.342-2.86h70.688c5.984 0 9.911.953 11.781 2.86 2.244 1.589 3.367 4.926 3.367 10.011v145.39h-44.321V71.128h-11.22v266.946Z" fill="currentColor"/>
+            <path d="M272.984 144.437v33.368h-55.541v122.51h11.22V187.816h44.321v145.867H172.001V0h100.983v134.903h-44.321V33.368h-11.22v111.069h55.541Z" fill="currentColor"/>
+            <path d="M103.659 23.27v77.456h11.579V23.27h-11.579Zm0 100.726v85.434h11.579v-85.434h-11.579Zm45.16-13.297h-1.737v3.989h1.737c5.017 0 8.491.665 10.421 1.994 1.93 1.108 2.895 3.435 2.895 6.981v100.061c0 3.546-1.158 5.984-3.474 7.314-1.93 1.108-5.79 1.662-11.579 1.662H56.762V0h90.32c5.789 0 9.649.665 11.579 1.995 2.316 1.108 3.474 3.435 3.474 6.981v92.747c0 3.324-.965 5.651-2.895 6.981-1.93 1.33-5.404 1.995-10.421 1.995Z" fill="currentColor"/>
+            <path fill-rule="evenodd" clip-rule="evenodd" d="M24.588 195.819c-12.009 0-21.744-9.735-21.744-21.744V92.865C2.844 80.856 12.579 71.121 24.588 71.121c12.009 0 21.744 9.735 21.744 21.744v81.21c0 12.009-9.735 21.744-21.744 21.744Zm-14.224-21.744c0 7.856 6.368 14.225 14.224 14.225 7.856 0 14.224-6.369 14.224-14.225V92.865c0-7.856-6.368-14.224-14.224-14.224-7.856 0-14.224 6.368-14.224 14.224v81.21Z" fill="currentColor"/>
+            <path d="M24.588 16.854c13.579 0 24.588 11.008 24.588 24.588 0 13.579-11.009 24.587-24.588 24.587C11.008 66.029 0 55.021 0 41.442 0 27.862 11.008 16.854 24.588 16.854Z" fill="currentColor"/>
+          </svg>
+        `;
+      }
+
+      function waveSvg() {
+        return `
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M2 12h5l2.2-6 4.2 13 2.3-7H22" />
+          </svg>
+        `;
+      }
+
+      function gearSvg() {
+        return `
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3.2" />
+            <path d="M19 12.8v-1.6l-1.8-.6a5.7 5.7 0 0 0-.5-1.2l.9-1.7-1.1-1.1-1.7.9a5.7 5.7 0 0 0-1.2-.5L13 5h-1.6l-.6 1.8a5.7 5.7 0 0 0-1.2.5l-1.7-.9-1.1 1.1.9 1.7a5.7 5.7 0 0 0-.5 1.2L5 11.2v1.6l1.8.6a5.7 5.7 0 0 0 .5 1.2l-.9 1.7 1.1 1.1 1.7-.9a5.7 5.7 0 0 0 1.2.5l.6 1.8H13l.6-1.8a5.7 5.7 0 0 0 1.2-.5l1.7.9 1.1-1.1-.9-1.7a5.7 5.7 0 0 0 .5-1.2z" />
+          </svg>
+        `;
+      }
+
+      function leafSvg() {
+        return `
+          <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path fill-rule="evenodd" clip-rule="evenodd" d="M100 48.864C100 77.106 77.106 100 48.864 100H0V51.136C0 22.894 22.894 0 51.136 0H100v48.864ZM51.136 11.364c-21.965 0-39.772 17.807-39.772 39.772V81.17l42.005-42.005c2.219-2.219 5.817-2.219 8.036 0 2.219 2.219 2.219 5.817 0 8.036L19.967 88.636h28.897c21.965 0 39.772-17.807 39.772-39.772V11.364H51.136Z" fill="currentColor"/>
+          </svg>
+        `;
+      }
+
+      function flowerSvg() {
+        return `
+          <svg viewBox="0 0 525 513" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M320.693 210.915C503.433 -70.305 21.113 -70.305 203.853 210.915C21.113 -70.305 -127.947 388.415 167.743 322.035C-127.947 388.415 262.263 671.935 262.263 390.715C262.263 671.935 652.483 388.415 356.783 322.035C652.473 388.415 503.423 -70.305 320.673 210.915H320.693ZM262.273 356.985C182.593 466.305 118.003 401.705 227.323 322.035C118.003 242.355 182.593 177.775 262.273 287.095C341.953 177.775 406.543 242.355 297.223 322.035C406.543 401.705 341.953 466.305 262.273 356.985Z" fill="currentColor"/>
+          </svg>
+        `;
+      }
+
+      function diceSvg() {
+        return `
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="4" />
+            <circle cx="8" cy="8" r="1.1" fill="currentColor" stroke="none" />
+            <circle cx="16" cy="8" r="1.1" fill="currentColor" stroke="none" />
+            <circle cx="12" cy="12" r="1.1" fill="currentColor" stroke="none" />
+            <circle cx="8" cy="16" r="1.1" fill="currentColor" stroke="none" />
+            <circle cx="16" cy="16" r="1.1" fill="currentColor" stroke="none" />
+          </svg>
+        `;
+      }
+
+      function getTimeSignatureIndex(value) {
+        const normalized = String(value || "4/4").replace("/", "-");
+        const index = TIME_SIGNATURES.indexOf(normalized);
+        return index === -1 ? 4 : index;
+      }
+
+      function getSetting(id) {
+        return settingDefinitions.find((setting) => setting.id === id);
+      }
+
+      function settingIdToEncoderToken(id) {
+        switch (id) {
+          case "sensitivity": return "sensitivity";
+          case "preset": return "preset";
+          case "scale": return "scale";
+          case "root": return "root";
+          case "tempo": return "tempo";
+          case "swing": return "swing";
+          case "rest": return "rest";
+          case "lowOctave": return "octave_low";
+          case "highOctave": return "octave_high";
+          case "timeSig": return "time_sig";
+          case "noteLength": return "note_length";
+          case "filter": return "filter";
+          case "resonance": return "resonance";
+          default: return "sensitivity";
+        }
+      }
+
+      function encoderTokenToSettingId(token) {
+        switch (String(token || "").toLowerCase()) {
+          case "sensitivity":
+          case "sens":
+            return "sensitivity";
+          case "preset":
+          case "mode":
+            return "preset";
+          case "scale":
+            return "scale";
+          case "root":
+          case "root_note":
+            return "root";
+          case "tempo":
+          case "bpm":
+            return "tempo";
+          case "swing":
+            return "swing";
+          case "rest":
+            return "rest";
+          case "octave_low":
+          case "low_octave":
+          case "low_oct":
+            return "lowOctave";
+          case "octave_high":
+          case "high_octave":
+          case "high_oct":
+            return "highOctave";
+          case "octave":
+          case "octave_range":
+          case "oct_range":
+            return "lowOctave";
+          case "time_sig":
+          case "timesig":
+          case "ts":
+            return "timeSig";
+          case "note_length":
+          case "notelength":
+            return "noteLength";
+          case "filter":
+          case "cutoff":
+            return "filter";
+          case "resonance":
+            return "resonance";
+          default:
+            return "sensitivity";
+        }
+      }
+
+      const settingDefinitions = [
+        {
+          id: "sensitivity",
+          label: "sensitivity",
+          color: SETTING_COLORS.sensitivity,
+          read: () => state.live.sens ?? 0,
+          write: (value) => postSet("sens", value.toFixed(2)),
+          step: (dir) => clamp((state.live.sens ?? 0) + dir * 0.01, 0, 0.5),
+          format: () => (state.live.sens ?? 0).toFixed(2)
+        },
+        {
+          id: "preset",
+          label: "preset",
+          color: SETTING_COLORS.preset,
+          read: () => isAuxOutput() ? (state.live.preset ?? 0) : (state.live.mode ?? 0),
+          write: (value) => isAuxOutput() ? postSet("preset", String(value)) : postSet("mode", String(value)),
+          step: (dir) => {
+            if (isAuxOutput()) {
+              return clamp((state.live.preset ?? 0) + dir, 0, getSynthPresetNames().length - 1);
+            }
+            return clamp((state.live.mode ?? 0) + dir, 0, 3);
+          },
+          format: () => isAuxOutput()
+            ? shortPresetLabel(state.live.preset_name, state.live.preset ?? 0)
+            : (MODE_LABELS[state.live.mode ?? 0] || "notes")
+        },
+        {
+          id: "scale",
+          label: "scale",
+          color: SETTING_COLORS.scale,
+          read: () => state.live.scale ?? 0,
+          write: (value) => postSet("scale", String(value)),
+          step: (dir) => clamp((state.live.scale ?? 0) + dir, 0, SCALE_LABELS.length - 1),
+          format: () => SCALE_LABELS[state.live.scale ?? 0] || "maj"
+        },
+        {
+          id: "root",
+          label: "root note",
+          color: SETTING_COLORS.root,
+          read: () => state.live.root ?? 0,
+          write: (value) => postSet("root", String(value)),
+          step: (dir) => clamp((state.live.root ?? 0) + dir, 0, 11),
+          format: () => NOTE_NAMES[state.live.root ?? 0] || "c"
+        },
+        {
+          id: "tempo",
+          label: "tempo",
+          color: SETTING_COLORS.tempo,
+          read: () => state.live.bpm ?? 120,
+          write: (value) => postSet("bpm", String(value)),
+          step: (dir) => clamp((state.live.bpm ?? 120) + dir, 20, 240),
+          format: () => String(state.live.bpm ?? 120)
+        },
+        {
+          id: "timeSig",
+          label: "time sig",
+          color: SETTING_COLORS.timeSig,
+          read: () => getTimeSignatureIndex(state.live.ts || "4/4"),
+          write: (value) => postSet("ts", TIME_SIGNATURES[value]),
+          step: (dir) => clamp(getTimeSignatureIndex(state.live.ts || "4/4") + dir, 0, TIME_SIGNATURES.length - 1),
+          format: () => (state.live.ts || "4/4").replace("-", "/")
+        },
+        {
+          id: "swing",
+          label: "swing",
+          color: SETTING_COLORS.swing,
+          read: () => state.live.swing ?? 0,
+          write: (value) => postSet("swing", String(value)),
+          step: (dir) => clamp((state.live.swing ?? 0) + dir, 0, 60),
+          format: () => String(state.live.swing ?? 0)
+        },
+        {
+          id: "rest",
+          label: "rest",
+          color: SETTING_COLORS.rest,
+          read: () => state.live.rest ?? 0,
+          write: (value) => postSet("rest", value.toFixed(2)),
+          step: (dir) => clamp((state.live.rest ?? 0) + dir * 0.01, 0, 0.8),
+          format: () => ((state.live.rest ?? 0) < 0.01 ? "0" : (state.live.rest ?? 0).toFixed(2))
+        },
+        {
+          id: "lowOctave",
+          label: "low octave",
+          color: SETTING_COLORS.octaveRange,
+          read: () => state.live.lo ?? 1,
+          write: (value) => postSet("lo", String(value)),
+          step: (dir) => clamp((state.live.lo ?? 1) + dir, 1, state.live.hi ?? 8),
+          format: () => `c${state.live.lo ?? 1}`
+        },
+        {
+          id: "highOctave",
+          label: "high octave",
+          color: SETTING_COLORS.octaveRange,
+          read: () => state.live.hi ?? 8,
+          write: (value) => postSet("hi", String(value)),
+          step: (dir) => clamp((state.live.hi ?? 8) + dir, state.live.lo ?? 1, 8),
+          format: () => `c${state.live.hi ?? 8}`
+        },
+        {
+          id: "filter",
+          label: "filter",
+          color: SETTING_COLORS.filter,
+          auxOnly: true,
+          read: () => state.live.cutoff ?? 220,
+          write: (value) => postSet("cutoff", String(value)),
+          step: (dir) => clamp(Math.round((state.live.cutoff ?? 220) * (dir > 0 ? 1.12 : 1 / 1.12)), 20, 18000),
+          format: () => `${Math.round(state.live.cutoff ?? 220)} hz`
+        },
+        {
+          id: "resonance",
+          label: "resonance",
+          color: SETTING_COLORS.resonance,
+          auxOnly: true,
+          read: () => state.live.resonance ?? 0.7,
+          write: (value) => postSet("resonance", value.toFixed(2)),
+          step: (dir) => clamp((state.live.resonance ?? 0.7) + dir * 0.05, 0.1, 10),
+          format: () => (state.live.resonance ?? 0.7).toFixed(2)
+        },
+        {
+          id: "noteLength",
+          label: "note length",
+          color: SETTING_COLORS.noteLength,
+          read: () => state.live.note_length_idx ?? 2,
+          write: (value) => postSet("note_length", String(value)),
+          step: (dir) => clamp((state.live.note_length_idx ?? 2) + dir, 0, NOTE_LENGTHS.length - 1),
+          format: () => state.live.note_length || NOTE_LENGTHS[state.live.note_length_idx ?? 2] || "1/16"
+        }
+      ];
+
+      function setScale() {
+        const host = el.viewport.closest(".control-host") || el.viewport.parentElement || document.body;
+        const bounds = host.getBoundingClientRect();
+        const viewportWidth = window.visualViewport?.width || window.innerWidth;
+        const viewportHeight = window.visualViewport?.height || window.innerHeight;
+        const availableWidth = Math.max(320, Math.min(bounds.width || viewportWidth, viewportWidth) - 20);
+        const availableHeight = Math.max(560, Math.min(bounds.height || viewportHeight, viewportHeight) - 20);
+        const scale = Math.min(availableWidth / 575, availableHeight / 842, 1.06);
+        document.documentElement.style.setProperty("--ui-scale", scale.toFixed(4));
+      }
+
+      function installArt() {
+        el.brandLockup.innerHTML = logoSvg();
+        el.waveIcon.innerHTML = waveSvg();
+        el.gearIcon.innerHTML = gearSvg();
+        el.diceIcon.innerHTML = diceSvg();
+        el.flowerIcon.innerHTML = flowerSvg();
+      }
+
+      function runExclusive(task) {
+        const run = state.actionQueue.then(task, task);
+        state.actionQueue = run.catch(() => {});
+        return run;
+      }
+
+      async function getJson(path) {
+        const response = await fetch(path);
+        if (!response.ok) {
+          throw new Error(`${path} returned ${response.status}`);
+        }
+        return response.json();
+      }
+
+      async function postSet(key, value, { refreshState = true } = {}) {
+        const body = new URLSearchParams({ key, value });
+        const response = await fetch("/api/set", { method: "POST", body });
+        if (!response.ok) {
+          let detail = `Failed to set ${key}`;
+          try {
+            const json = await response.json();
+            if (json?.err) detail = json.err;
+          } catch {
+            // ignore parse failures
+          }
+          throw new Error(detail);
+        }
+        const json = await response.json().catch(() => ({}));
+        const shouldAvoidImmediateRefresh = performance.now() < state.interactionHoldUntil;
+        const nextState = (refreshState &&
+          !shouldAvoidImmediateRefresh &&
+          !(json && typeof json === "object" && Object.keys(json).some((entry) => entry !== "ok")))
+          ? await getJson("/api/state").catch(() => json)
+          : json;
+        mergeLiveState(nextState);
+        renderLiveState();
+        return nextState;
+      }
+
+      function postEncoderAction(action) {
+        return postSet("encoder_action", action);
+      }
+
+      function postEncoderSetting(settingId) {
+        return postSet("encoder_setting", settingIdToEncoderToken(settingId), { refreshState: false });
+      }
+
+      function postEncoderVolumeMode(on) {
+        return postSet("encoder_volume_mode", on ? "1" : "0", { refreshState: false });
+      }
+
+      function holdInteractiveState(ms = 900) {
+        state.interactionEpoch += 1;
+        state.interactionHoldUntil = Math.max(state.interactionHoldUntil, performance.now() + ms);
+        scheduleInteractionStateSync(state.interactionEpoch);
+      }
+
+      function scheduleInteractionStateSync(epoch = state.interactionEpoch) {
+        clearTimeout(state.interactionSyncTimer);
+        const waitMs = Math.max(0, state.interactionHoldUntil - performance.now()) + 90;
+        state.interactionSyncTimer = window.setTimeout(async () => {
+          if (epoch !== state.interactionEpoch) return;
+          state.interactionSyncTimer = null;
+          try {
+            if (performance.now() < state.interactionHoldUntil) {
+              scheduleInteractionStateSync(epoch);
+              return;
+            }
+            const latest = await getJson("/api/state");
+            if (epoch !== state.interactionEpoch) return;
+            mergeLiveState(latest);
+            renderLiveState();
+          } catch (error) {
+            console.error("Interaction state sync failed", error);
+          }
+        }, waitMs);
+      }
+
+      function mergeLiveState(next, { allowDuringHold = true } = {}) {
+        if (!next || typeof next !== "object") return;
+        if (!allowDuringHold && performance.now() < state.interactionHoldUntil) {
+          scheduleInteractionStateSync(state.interactionEpoch);
+          return;
+        }
+        Object.assign(state.live, next);
+        state.live.outputmode = normalizeOutputModeToken(
+          state.live.outputname ?? state.live.outputmode,
+          Number.isFinite(Number(state.live.outputmode)) ? Number(state.live.outputmode) : null
+        );
+        if (typeof state.live.encoder_setting_name === "string") {
+          state.selectedSettingId = encoderTokenToSettingId(state.live.encoder_setting_name);
+        }
+        state.volumeModeActive = Boolean(state.live.encoder_volume_mode);
+      }
+
+      function setSelectedSetting(settingId) {
+        holdInteractiveState();
+        state.selectedSettingId = settingId;
+        state.volumeModeActive = false;
+        state.live.encoder_volume_mode = 0;
+        state.live.encoder_setting_name = settingIdToEncoderToken(settingId);
+        state.live.led_display_mode = LED_DISPLAY_SETTING;
+        state.live.encoder_led_count = getLedCountForSetting(getSetting(settingId));
+        renderLiveState();
+      }
+
+      function setVolumeMode(on) {
+        holdInteractiveState();
+        state.volumeModeActive = Boolean(on);
+        state.live.encoder_volume_mode = on ? 1 : 0;
+        state.live.led_display_mode = on ? LED_DISPLAY_VOLUME : LED_DISPLAY_SETTING;
+        state.live.encoder_led_count = on
+          ? clamp(Math.round((state.live.master ?? 0.25) * LED_SLOT_COUNT), 1, LED_SLOT_COUNT)
+          : getLedCountForSetting(getSetting(state.selectedSettingId));
+        renderLiveState();
+      }
+
+      function coerceSettingForOutput(output, currentSettingId = state.selectedSettingId) {
+        const normalizedOutput = normalizeOutputModeToken(output, null);
+        const currentSetting = getSetting(currentSettingId);
+        if (normalizedOutput !== "aux out" && currentSetting?.auxOnly) {
+          return "sensitivity";
+        }
+        return currentSettingId;
+      }
+
+      function setOutputMode(output) {
+        holdInteractiveState();
+        const normalizedOutput = normalizeOutputModeToken(output, null);
+        const nextSettingId = coerceSettingForOutput(normalizedOutput);
+        state.live.outputmode = normalizedOutput;
+        state.live.outputname = output;
+        state.live.led_display_mode = LED_DISPLAY_OUTPUT;
+        if (nextSettingId !== state.selectedSettingId) {
+          state.selectedSettingId = nextSettingId;
+          state.live.encoder_setting_name = settingIdToEncoderToken(nextSettingId);
+          state.live.encoder_led_count = getLedCountForSetting(getSetting(nextSettingId));
+        }
+        renderLiveState();
+      }
+
+      function applyOptimisticSettingValue(settingId, value) {
+        holdInteractiveState();
+        switch (settingId) {
+          case "sensitivity":
+            state.live.sens = value;
+            break;
+          case "preset":
+            if (isAuxOutput()) {
+              state.live.preset = value;
+              state.live.preset_name = getSynthPresetNames()[value] || DEFAULT_SYNTH_PRESETS[0];
+            } else {
+              state.live.mode = value;
+            }
+            break;
+          case "scale":
+            state.live.scale = value;
+            break;
+          case "root":
+            state.live.root = value;
+            break;
+          case "tempo":
+            state.live.bpm = value;
+            break;
+          case "timeSig":
+            state.live.ts = TIME_SIGNATURES[value] || state.live.ts;
+            break;
+          case "swing":
+            state.live.swing = value;
+            break;
+          case "rest":
+            state.live.rest = value;
+            break;
+          case "lowOctave":
+            state.live.lo = clamp(value, 1, state.live.hi ?? 8);
+            break;
+          case "highOctave":
+            state.live.hi = clamp(value, state.live.lo ?? 1, 8);
+            if ((state.live.lo ?? 1) > state.live.hi) {
+              state.live.lo = state.live.hi;
+            }
+            break;
+          case "noteLength":
+            state.live.note_length_idx = value;
+            state.live.note_length = NOTE_LENGTHS[value] || state.live.note_length;
+            break;
+          case "filter":
+            state.live.cutoff = value;
+            break;
+          case "resonance":
+            state.live.resonance = value;
+            break;
+          default:
+            break;
+        }
+        state.live.led_display_mode = LED_DISPLAY_SETTING;
+        state.live.encoder_led_count = getLedCountForSetting(getSetting(settingId));
+        renderLiveState();
+      }
+
+      async function loadInitialState() {
+        try {
+          const [baseState, paramsState] = await Promise.all([
+            getJson("/api/state"),
+            getJson("/api/params").catch(() => ({}))
+          ]);
+          if (Array.isArray(paramsState.synth_presets) && paramsState.synth_presets.length) {
+            state.params.synth_presets = paramsState.synth_presets;
+          }
+          mergeLiveState(baseState);
+          renderAll();
+        } catch (error) {
+          console.error("Initial control state failed", error);
+        }
+      }
+
+      function initMidi() {
+        NOTE_LABELS.forEach((label) => {
+          const cell = document.createElement("div");
+          cell.className = "midi-cell";
+
+          const leaf = document.createElement("span");
+          leaf.className = "leaf";
+          leaf.innerHTML = leafSvg();
+
+          const note = document.createElement("span");
+          note.className = "midi-note";
+          note.textContent = label;
+
+          cell.append(leaf, note);
+          el.midiStrip.appendChild(cell);
+          dom.midiCells.push(cell);
+        });
+      }
+
+      function initSettings() {
+        settingDefinitions.forEach((setting) => {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "setting-button";
+          if (setting.id === "noteLength") {
+            button.classList.add("is-wide");
+          }
+
+          const name = document.createElement("span");
+          name.className = "setting-name";
+          name.textContent = setting.label;
+
+          const value = document.createElement("span");
+          value.className = "setting-value";
+
+          button.append(name, value);
+          button.addEventListener("click", () => {
+              runExclusive(async () => {
+                if (setting.auxOnly && !isAuxOutput()) {
+                  setOutputMode("aux out");
+                  await postSet("outputmode", "aux out", { refreshState: false });
+                }
+                setSelectedSetting(setting.id);
+                await postEncoderSetting(setting.id);
+            }).catch((error) => console.error("Setting select failed", error));
+          });
+
+          el.settingsGrid.appendChild(button);
+          dom.settingButtons.set(setting.id, { button, value });
+        });
+      }
+
+      function initVolumeMeter() {
+        METER_COLORS.forEach((color) => {
+          const dot = document.createElement("span");
+          dot.className = "meter-dot";
+          dot.style.background = color;
+          el.volumeMeter.appendChild(dot);
+          dom.volumeDots.push(dot);
+        });
+      }
+
+      function initOutputs() {
+        OUTPUTS.forEach((output) => {
+          const option = document.createElement("button");
+          option.type = "button";
+          option.className = "output-option";
+          option.textContent = output;
+          option.addEventListener("click", () => {
+            runExclusive(async () => {
+              if (normalizeOutputModeToken(state.live.outputmode, Number(state.live.outputmode)) === output) {
+                return;
+              }
+              setOutputMode(output);
+              await postSet("outputmode", output, { refreshState: false });
+            }).catch((error) => console.error("Output change failed", error));
+          });
+          el.outputOptions.appendChild(option);
+          dom.outputButtons.set(output, option);
+        });
+      }
+
+      function initLeds() {
+        for (let slot = LED_SLOT_COUNT - 1; slot >= 0; slot -= 1) {
+          const led = document.createElement("span");
+          const visualIndex = LED_SLOT_COUNT - 1 - slot;
+          led.className = "led";
+          led.style.transform = visualIndex % 2 === 0 ? "scaleX(1)" : "scaleX(-1)";
+          led.innerHTML = leafSvg();
+          dom.ledLeaves[slot] = led;
+          el.ledColumn.appendChild(led);
+        }
+      }
+
+      function renderChart() {
+        const points = state.plantPoints
+          .map((value, index) => {
+            const x = index * (350 / (state.plantPoints.length - 1));
+            const y = 130 - value * 74;
+            return `${x.toFixed(2)},${y.toFixed(2)}`;
+          })
+          .join(" ");
+
+        el.plantChart.innerHTML = `
+          <rect x="0" y="0" width="350" height="162" fill="#ffffff"></rect>
+          <polyline points="${points}" fill="none" stroke="#008351" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></polyline>
+        `;
+      }
+
+      function inferChordName(notes) {
+        if (!notes.length) return "--";
+        const pitchSet = [...new Set(notes.map((note) => note % 12))].sort((a, b) => a - b);
+        if (pitchSet.length < 2) return `${NOTE_NAMES[pitchSet[0]]}`;
+        const root = pitchSet[0];
+        const hasMinor = pitchSet.includes((root + 3) % 12);
+        const hasMajor = pitchSet.includes((root + 4) % 12);
+        const suffix = hasMajor ? "maj" : hasMinor ? "min" : "";
+        return `${NOTE_NAMES[root]}${suffix}`;
+      }
+
+      function renderMidi() {
+        el.midiReadout.textContent = state.activeNotes.length
+          ? `${state.activeNotes.map((note) => `${NOTE_NAMES[note % 12]}${Math.floor(note / 12) - 1}`).join(" ")} | ${state.chordName}`
+          : "--";
+
+        const activePitchClasses = new Set(state.activeNotes.map((note) => note % 12));
+        dom.midiCells.forEach((cell, index) => {
+          cell.classList.toggle("is-on", activePitchClasses.has(index));
+        });
+      }
+
+      function renderSettings() {
+        settingDefinitions.forEach((setting) => {
+          const refs = dom.settingButtons.get(setting.id);
+          if (!refs) return;
+          refs.button.classList.toggle("is-selected", state.selectedSettingId === setting.id && !state.volumeModeActive);
+          refs.value.textContent = setting.format();
+          refs.button.title = `${setting.label}: ${setting.format()}`;
+        });
+      }
+
+      function renderVolume() {
+        el.volumeCard.classList.toggle("is-selected", state.volumeModeActive);
+        el.volumeValue.textContent = (state.live.master ?? 0.25).toFixed(2);
+        const lit = clamp(Math.round((state.live.master ?? 0.25) * LED_SLOT_COUNT), 1, LED_SLOT_COUNT);
+        dom.volumeDots.forEach((dot, index) => {
+          dot.classList.toggle("is-on", index < lit);
+        });
+      }
+
+      function renderOutputs() {
+        const activeOutput = normalizeOutputModeToken(state.live.outputmode, Number(state.live.outputmode));
+        OUTPUTS.forEach((output) => {
+          dom.outputButtons.get(output)?.classList.toggle("is-active", activeOutput === output);
+        });
+      }
+
+      function renderSync() {
+        const enabled = Boolean(state.live.daw_sync);
+        el.syncButton.classList.toggle("is-selected", enabled);
+        el.syncValue.textContent = enabled ? "ON" : "OFF";
+      }
+
+      function getLedCountForSetting(setting) {
+        if (!setting) return 1;
+        if (setting.id === "tempo") {
+          return 1;
+        }
+        if (setting.id === "lowOctave" || setting.id === "highOctave") {
+          return clamp((state.live.hi ?? 8) - (state.live.lo ?? 1) + 1, 1, LED_SLOT_COUNT);
+        }
+        const value = setting.read();
+        if (setting.id === "preset") {
+          if (isAuxOutput()) {
+            return clamp(Math.round(((value || 0) / Math.max(1, getSynthPresetNames().length - 1)) * (LED_SLOT_COUNT - 1)) + 1, 1, LED_SLOT_COUNT);
+          }
+          return clamp(Math.round(((value || 0) / 3) * (LED_SLOT_COUNT - 1)) + 1, 1, LED_SLOT_COUNT);
+        }
+        if (setting.id === "noteLength") {
+          return clamp(Math.round((value / (NOTE_LENGTHS.length - 1)) * (LED_SLOT_COUNT - 1)) + 1, 1, LED_SLOT_COUNT);
+        }
+        if (setting.id === "scale") {
+          return clamp(Math.round((value / (SCALE_LABELS.length - 1)) * (LED_SLOT_COUNT - 1)) + 1, 1, LED_SLOT_COUNT);
+        }
+        if (setting.id === "root") {
+          return clamp(Math.round((value / 11) * (LED_SLOT_COUNT - 1)) + 1, 1, LED_SLOT_COUNT);
+        }
+        if (setting.id === "timeSig") {
+          return clamp(Math.round((value / (TIME_SIGNATURES.length - 1)) * (LED_SLOT_COUNT - 1)) + 1, 1, LED_SLOT_COUNT);
+        }
+        if (setting.id === "swing") {
+          return clamp(Math.round(((value || 0) / 60) * LED_SLOT_COUNT), 1, LED_SLOT_COUNT);
+        }
+        if (setting.id === "rest") {
+          return clamp(Math.round(((value || 0) / 0.8) * LED_SLOT_COUNT), 1, LED_SLOT_COUNT);
+        }
+        if (setting.id === "sensitivity") {
+          return clamp(Math.round(((value || 0) / 0.5) * LED_SLOT_COUNT), 1, LED_SLOT_COUNT);
+        }
+        if (setting.id === "filter") {
+          return clamp(Math.round((Math.log10(Math.max(value, 20)) - Math.log10(20)) / (Math.log10(18000) - Math.log10(20)) * LED_SLOT_COUNT), 1, LED_SLOT_COUNT);
+        }
+        if (setting.id === "resonance") {
+          return clamp(Math.round(((value || 0.1) / 10) * LED_SLOT_COUNT), 1, LED_SLOT_COUNT);
+        }
+        return 4;
+      }
+
+      function buildPatternFromColors(colors) {
+        return Array.from({ length: LED_SLOT_COUNT }, (_, slot) => ({
+          color: colors[slot] || LED_OFF_COLOR,
+          on: Boolean(colors[slot])
+        }));
+      }
+
+      function buildTempoPattern(color) {
+        const bpm = clamp(Number(state.live.bpm) || 120, 20, 240);
+        const beatMs = Math.max(120, 60000 / bpm);
+        const activeSlot = Math.floor(performance.now() / beatMs) % LED_SLOT_COUNT;
+        return Array.from({ length: LED_SLOT_COUNT }, (_, slot) => ({
+          color,
+          on: slot === activeSlot
+        }));
+      }
+
+      function buildOctavePattern(color) {
+        const lo = clamp(Number(state.live.lo) || 1, 1, LED_SLOT_COUNT);
+        const hi = clamp(Number(state.live.hi) || lo, lo, LED_SLOT_COUNT);
+        return Array.from({ length: LED_SLOT_COUNT }, (_, slot) => ({
+          color,
+          on: slot + 1 >= lo && slot + 1 <= hi
+        }));
+      }
+
+      function buildSettingPattern() {
+        const current = getSetting(state.selectedSettingId);
+        const color = current?.color || SETTING_COLORS.sensitivity;
+        if (current?.id === "tempo") {
+          return buildTempoPattern(color);
+        }
+        if (current?.id === "lowOctave" || current?.id === "highOctave") {
+          return buildOctavePattern(color);
+        }
+        const onCount = clamp(
+          Number(state.live.encoder_led_count) || getLedCountForSetting(current),
+          1,
+          LED_SLOT_COUNT
+        );
+        return Array.from({ length: LED_SLOT_COUNT }, (_, slot) => ({
+          color,
+          on: slot < onCount
+        }));
+      }
+
+      function buildVolumePattern() {
+        const onCount = clamp(
+          Number(state.live.encoder_led_count) || Math.round((state.live.master ?? 0.25) * LED_SLOT_COUNT),
+          1,
+          LED_SLOT_COUNT
+        );
+        return Array.from({ length: LED_SLOT_COUNT }, (_, slot) => ({
+          color: METER_COLORS[Math.min(slot, METER_COLORS.length - 1)],
+          on: slot < onCount
+        }));
+      }
+
+      function buildLedPattern() {
+        const displayMode = clamp(Number(state.live.led_display_mode) || LED_DISPLAY_SETTING, LED_DISPLAY_SETTING, LED_DISPLAY_RANDOM);
+        if (displayMode === LED_DISPLAY_VOLUME) return buildVolumePattern();
+        if (displayMode === LED_DISPLAY_OUTPUT) {
+          return buildPatternFromColors(OUTPUT_PATTERNS[normalizeOutputModeToken(state.live.outputmode, Number(state.live.outputmode))] || OUTPUT_PATTERNS.serial);
+        }
+        if (displayMode === LED_DISPLAY_RANDOM) {
+          return buildPatternFromColors(RANDOM_PATTERN);
+        }
+        return buildSettingPattern();
+      }
+
+      function renderLeds() {
+        const pattern = buildLedPattern();
+        for (let slot = 0; slot < LED_SLOT_COUNT; slot += 1) {
+          const led = dom.ledLeaves[slot];
+          if (!led) continue;
+          led.style.color = pattern[slot].on ? pattern[slot].color : LED_OFF_COLOR;
+          led.classList.toggle("is-on", pattern[slot].on);
+        }
+      }
+
+      function renderFlower() {
+        el.encoderButton.style.setProperty("--encoder-angle", `${state.encoderAngle}deg`);
+      }
+
+      function renderLiveState() {
+        renderSettings();
+        renderVolume();
+        renderOutputs();
+        renderSync();
+        renderLeds();
+        renderFlower();
+      }
+
+      function renderAll() {
+        renderChart();
+        renderMidi();
+        renderLiveState();
+      }
+
+      function applyPlantValue(value) {
+        const next = clamp(Number(value) || 0, 0, 1);
+        state.plantPoints = [...state.plantPoints.slice(1), next];
+        renderChart();
+      }
+
+      function applyNotePayload(payload) {
+        if (!payload) return;
+        const parts = String(payload).split("|");
+        if (parts.length < 4) return;
+        const noteCsv = parts[3];
+        state.activeNotes = noteCsv
+          ? noteCsv.split(",").map((value) => Number(value)).filter((value) => Number.isFinite(value))
+          : [];
+        state.chordName = inferChordName(state.activeNotes);
+        renderMidi();
+      }
+
+      async function applyAdjustmentStep(direction) {
+        if (state.volumeModeActive) {
+          const next = clamp((state.live.master ?? 0.25) + direction * 0.01, 0, 1);
+          state.live.master = next;
+          state.live.led_display_mode = LED_DISPLAY_VOLUME;
+          state.live.encoder_led_count = clamp(Math.round(next * LED_SLOT_COUNT), 1, LED_SLOT_COUNT);
+          renderLiveState();
+          await postSet("master", next.toFixed(2));
+          return;
+        }
+        const setting = getSetting(state.selectedSettingId);
+        if (!setting) return;
+        if (setting.auxOnly && !isAuxOutput()) {
+          setOutputMode("aux out");
+          await postSet("outputmode", "aux out", { refreshState: false });
+        }
+        const nextValue = setting.step(direction);
+        applyOptimisticSettingValue(setting.id, nextValue);
+        await setting.write(nextValue);
+      }
+
+      function startAdjustmentFlush() {
+        if (state.flushingAdjustments) return;
+        state.flushingAdjustments = true;
+        runExclusive(async () => {
+          while (state.pendingAdjustment !== 0) {
+            const step = state.pendingAdjustment > 0 ? 1 : -1;
+            state.pendingAdjustment -= step;
+            await applyAdjustmentStep(step);
+          }
+        }).catch((error) => {
+          console.error("Adjustment failed", error);
+        }).finally(() => {
+          state.flushingAdjustments = false;
+          if (state.pendingAdjustment !== 0) startAdjustmentFlush();
+        });
+      }
+
+      function queueAdjustment(direction, steps = 1) {
+        const amount = Math.max(1, Math.floor(Math.abs(steps)));
+        state.pendingAdjustment = clamp(state.pendingAdjustment + direction * amount, -48, 48);
+        state.encoderAngle += direction * 14 * amount;
+        renderFlower();
+        startAdjustmentFlush();
+      }
+
+      function startLedAnimationLoop() {
+        if (state.ledAnimationTimer != null) return;
+        state.ledAnimationTimer = window.setInterval(() => {
+          if (document.hidden) return;
+          const displayMode = clamp(Number(state.live.led_display_mode) || LED_DISPLAY_SETTING, LED_DISPLAY_SETTING, LED_DISPLAY_RANDOM);
+          if (displayMode === LED_DISPLAY_SETTING && !state.volumeModeActive && state.selectedSettingId === "tempo") {
+            renderLeds();
+          }
+        }, 60);
+      }
+
+      function startHold() {
+        clearTimeout(state.holdTimer);
+        state.holdTimer = window.setTimeout(() => {
+          state.longPressTriggered = true;
+          state.suppressClickUntil = performance.now() + 350;
+          runExclusive(async () => {
+            await postEncoderAction("cycle_output");
+          }).catch((error) => console.error("Output cycle failed", error));
+        }, 520);
+      }
+
+      function clearHold() {
+        clearTimeout(state.holdTimer);
+        state.holdTimer = null;
+      }
+
+      function registerEncoderClick() {
+        const now = performance.now();
+        if (state.longPressTriggered || now < state.suppressClickUntil) {
+          state.longPressTriggered = false;
+          return;
+        }
+
+        state.clickCount += 1;
+        clearTimeout(state.clickTimer);
+
+        if (state.clickCount === 3) {
+          state.clickCount = 0;
+          runExclusive(async () => {
+            await postEncoderAction("randomize");
+          }).catch((error) => console.error("Randomize failed", error));
+          return;
+        }
+
+        state.clickTimer = window.setTimeout(() => {
+          if (state.clickCount === 1) {
+            runExclusive(async () => {
+              await postEncoderAction("next");
+            }).catch((error) => console.error("Next setting failed", error));
+          } else if (state.clickCount === 2) {
+            runExclusive(async () => {
+              await postEncoderAction("toggle_volume");
+            }).catch((error) => console.error("Volume toggle failed", error));
+          }
+          state.clickCount = 0;
+        }, 260);
+      }
+
+      function bindEvents() {
+        window.addEventListener("resize", setScale);
+        if (window.ResizeObserver) {
+          const host = el.viewport.closest(".control-host");
+          if (host) {
+            const observer = new ResizeObserver(() => setScale());
+            observer.observe(host);
+          }
+        }
+
+        el.randomButton.addEventListener("click", () => {
+          runExclusive(async () => {
+            holdInteractiveState(1200);
+            state.live.led_display_mode = LED_DISPLAY_RANDOM;
+            renderLiveState();
+            await postEncoderAction("randomize");
+          }).catch((error) => console.error("Randomize failed", error));
+        });
+
+        el.syncButton.addEventListener("click", () => {
+          runExclusive(async () => {
+            const nextSync = state.live.daw_sync ? 0 : 1;
+            holdInteractiveState(900);
+            state.live.daw_sync = nextSync;
+            renderSync();
+            await postSet("sync", nextSync ? "1" : "0");
+          }).catch((error) => console.error("Sync toggle failed", error));
+        });
+
+        el.volumeCard.addEventListener("click", () => {
+          runExclusive(async () => {
+            setVolumeMode(true);
+            await postEncoderVolumeMode(true);
+          }).catch((error) => console.error("Volume mode failed", error));
+        });
+
+        el.encoderButton.addEventListener("wheel", (event) => {
+          event.preventDefault();
+          const now = performance.now();
+          if ((now - state.wheelLastTs) > 180) {
+            state.wheelAccumulator = 0;
+          }
+          state.wheelLastTs = now;
+          const threshold = event.deltaMode === 0 ? 80 : 3;
+          state.wheelAccumulator += event.deltaY;
+          const steps = Math.floor(Math.abs(state.wheelAccumulator) / threshold);
+          if (steps > 0) {
+            queueAdjustment(state.wheelAccumulator > 0 ? -1 : 1, steps);
+            state.wheelAccumulator -= Math.sign(state.wheelAccumulator) * steps * threshold;
+          }
+        }, { passive: false });
+
+        el.encoderButton.addEventListener("pointerdown", (event) => {
+          el.encoderButton.setPointerCapture(event.pointerId);
+          state.dragStartY = event.clientY;
+          state.dragLastY = event.clientY;
+          state.dragAccumulator = 0;
+          state.dragMoved = false;
+          state.longPressTriggered = false;
+          startHold();
+        });
+
+        el.encoderButton.addEventListener("pointermove", (event) => {
+          if (state.dragLastY == null) return;
+          state.dragAccumulator += state.dragLastY - event.clientY;
+          state.dragLastY = event.clientY;
+          if (Math.abs(event.clientY - state.dragStartY) > 5) {
+            state.dragMoved = true;
+            clearHold();
+          }
+          const threshold = 20;
+          const steps = Math.floor(Math.abs(state.dragAccumulator) / threshold);
+          if (steps > 0) {
+            queueAdjustment(state.dragAccumulator > 0 ? 1 : -1, steps);
+            state.dragAccumulator -= Math.sign(state.dragAccumulator) * steps * threshold;
+            state.suppressClickUntil = performance.now() + 250;
+          }
+        });
+
+        el.encoderButton.addEventListener("pointerup", (event) => {
+          clearHold();
+          state.dragStartY = null;
+          state.dragLastY = null;
+          state.dragAccumulator = 0;
+          if (state.dragMoved) {
+            state.suppressClickUntil = performance.now() + 250;
+          }
+          el.encoderButton.releasePointerCapture(event.pointerId);
+        });
+
+        el.encoderButton.addEventListener("pointercancel", () => {
+          clearHold();
+          state.dragStartY = null;
+          state.dragLastY = null;
+          state.dragAccumulator = 0;
+        });
+
+        el.encoderButton.addEventListener("click", () => {
+          registerEncoderClick();
+        });
+      }
+
+      function bindEventStream() {
+        try {
+          const events = new EventSource("/events");
+          events.addEventListener("state", (event) => {
+            try {
+              mergeLiveState(JSON.parse(event.data), { allowDuringHold: false });
+              renderLiveState();
+            } catch (error) {
+              console.error("State parse failed", error);
+            }
+          });
+          events.addEventListener("scope", (event) => applyPlantValue(event.data));
+          events.addEventListener("note", (event) => applyNotePayload(event.data));
+        } catch (error) {
+          console.error("Event stream failed", error);
+        }
+      }
+
+      installArt();
+      initMidi();
+      initSettings();
+      initVolumeMeter();
+      initOutputs();
+      initLeds();
+      setScale();
+      bindEvents();
+      startLedAnimationLoop();
+      renderAll();
+      loadInitialState();
+      bindEventStream();
+    </script>
+  </body>
+</html>

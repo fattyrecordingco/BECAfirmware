@@ -5,7 +5,13 @@ export default defineConfig({
   root: resolve(__dirname, "ui"),
   build: {
     outDir: resolve(__dirname, "dist"),
-    emptyOutDir: true
+    emptyOutDir: true,
+    rollupOptions: {
+      input: {
+        app: resolve(__dirname, "ui", "index.html"),
+        control: resolve(__dirname, "ui", "control.html")
+      }
+    }
   },
   server: {
     port: 1420,

@@ -1,6 +1,6 @@
-# BECA Setup App
+# BECA Desktop App
 
-`BECA Setup` is a desktop installer/wizard for flashing BECA firmware, provisioning Wi-Fi over USB, and running the Serial -> MIDI bridge without manual terminal steps.
+`BECA` is the unified desktop app for flashing BECA firmware, provisioning Wi-Fi over USB, running the Serial -> MIDI bridge, and hosting the live control UI locally instead of on the ESP32.
 
 ## End-user manual
 
@@ -62,6 +62,8 @@ Named baseline for this cycle:
 - `Latest Stable` is selected by default.
 - Firmware binary is downloaded and SHA256 verified before flash.
 - Flash uses bundled `espflash` (or `esptool` if provided).
+- If bundled flash tooling is missing, app auto-repair downloads `espflash` (`v4.2.0`) and retries.
+- If `espflash` cannot connect to some CH340/CP210x boards, app auto-fallback retries with `esptool` (`v5.2.0` on Windows).
 - Flash now retries with safer baud rates when high-speed flashing fails (improves CH340/CP210x reliability on Windows/macOS/Linux).
 
 3. **Set Wi-Fi**
@@ -76,6 +78,7 @@ Named baseline for this cycle:
 - Starts bundled native `beca-bridge` process.
 - Auto-reconnects on serial disconnect.
 - Supports `Test Note` to verify MIDI routing.
+- Includes an optional `MicroFreak mode` toggle for direct Arturia MicroFreak note routing over the serial bridge.
 
 ## UI cohesion with BECA control page
 
@@ -131,7 +134,7 @@ Notes:
 - `beca-x.y.z-merged.bin`
 - `firmware-manifest.json`
 4. App release branch: `official-app-updates`.
-5. Publish BECA Setup release tag as `setup-vx.y.z` to trigger `.github/workflows/setup-installer-release.yml`.
+5. Publish BECA release tag as `setup-vx.y.z` to trigger `.github/workflows/setup-installer-release.yml`.
 6. Keep firmware and app releases separate so manifest lookup remains stable.
 
 ## Local development
@@ -158,7 +161,7 @@ Before packaging, copy sidecars into `apps/beca-setup/src-tauri/binaries/`:
 - `beca-bridge`
 - `beca-flasher`
 - `espflash`
-- `esptool` (optional, needed for backup/restore)
+- `esptool` (recommended for flash fallback and backup/restore)
 
 ## Diagnostics
 
@@ -171,14 +174,14 @@ Logs are written to the app data folder:
 
 ## Windows WebView2 notes
 
-- Prefer installer package (`BECA Setup_*_x64-setup.exe`) for end users.
-- Portable mode must ship `beca-setup.exe` and `WebView2Loader.dll` together.
+- Prefer installer package (`BECA_*_x64-setup.exe`) for end users.
+- Portable mode must ship `BECA.exe`, `WebView2Loader.dll`, and `binaries/` together.
 - If WebView2 runtime is missing, install:
   - https://go.microsoft.com/fwlink/p/?LinkId=2124703
 
 ## Firmware manifest troubleshooting
 
-If BECA Setup logs indicate manifest fetch failure:
+If BECA logs indicate manifest fetch failure:
 - It usually means no recent published release includes `firmware-manifest.json`.
 - Create/publish a release in `fattyrecordingco/BECAfirmware`.
 - Ensure release includes `firmware-manifest.json` asset.

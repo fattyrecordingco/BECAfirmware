@@ -1,6 +1,6 @@
 # Setup Installer Bundles
 
-This folder is the single local mirror for BECA Setup installers.
+This folder is the single local mirror for BECA installers.
 
 Platform folders:
 - `windows/`
