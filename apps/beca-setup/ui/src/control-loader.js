@@ -1,62 +1,34 @@
 import { installControlTransport } from "./control-main.js";
 
-let controlTemplate = null;
-let controlStyleInstalled = false;
+let controlHtml = "";
 
-function localizeControlStyles(styleText) {
-  return styleText
-    .replace(/\bbody::before\b/g, ".control-surface::before")
-    .replace(/\bbody::after\b/g, ".control-surface::after")
-    .replace(/\bbody\b/g, ".control-surface");
+async function loadControlHtml() {
+  if (controlHtml) return controlHtml;
+  const response = await window.fetch("./control.html");
+  if (!response.ok) {
+    throw new Error(`Failed to load control.html (${response.status})`);
+  }
+  controlHtml = await response.text();
+  return controlHtml;
 }
 
-function extractTemplate(doc) {
-  const style = doc.querySelector("style")?.textContent || "";
-  const classicScripts = Array.from(doc.querySelectorAll("script")).filter(
-    (script) => !script.type || script.type === "text/javascript"
-  );
-  const scriptText = classicScripts.map((script) => script.textContent || "").join("\n");
-  const body = doc.body.cloneNode(true);
-  body.querySelectorAll("script").forEach((script) => script.remove());
-  return {
-    styleText: localizeControlStyles(style),
-    bodyMarkup: body.innerHTML,
-    scriptText
-  };
+function createControlFrame(host) {
+  host.innerHTML = "";
+  const frame = document.createElement("iframe");
+  frame.className = "control-surface-frame";
+  frame.title = "BECA control surface";
+  frame.setAttribute("loading", "eager");
+  frame.setAttribute("referrerpolicy", "no-referrer");
+  frame.style.width = "100%";
+  frame.style.height = "100%";
+  frame.style.border = "0";
+  frame.style.background = "transparent";
+  host.appendChild(frame);
+  return frame;
 }
 
-async function loadTemplate() {
-  if (controlTemplate) return controlTemplate;
-  const html = await window.fetch("./control.html").then((response) => response.text());
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(html, "text/html");
-  controlTemplate = extractTemplate(doc);
-  return controlTemplate;
-}
-
-function installStyle(styleText) {
-  if (controlStyleInstalled) return;
-  const style = document.createElement("style");
-  style.id = "beca-control-surface-style";
-  style.textContent = styleText;
-  document.head.appendChild(style);
-  controlStyleInstalled = true;
-}
-
-function buildDocumentFacade(root) {
-  return {
-    body: root,
-    createElement: (...args) => document.createElement(...args),
-    getElementById: (id) => root.querySelector(`#${CSS.escape(id)}`),
-    querySelector: (...args) => root.querySelector(...args),
-    querySelectorAll: (...args) => root.querySelectorAll(...args),
-    addEventListener: (...args) => document.addEventListener(...args),
-    removeEventListener: (...args) => document.removeEventListener(...args)
-  };
-}
-
-function bindSettingsLink(root, onOpenSetup) {
-  const settingsLink = root.querySelector('a[href="/setup"]');
+function bindSettingsLink(frameWindow, onOpenSetup) {
+  const settingsLink = frameWindow.document.querySelector('a[href="/setup"]');
   if (!settingsLink) return;
   settingsLink.href = "#";
   settingsLink.addEventListener("click", (event) => {
@@ -65,20 +37,26 @@ function bindSettingsLink(root, onOpenSetup) {
   });
 }
 
+function writeFrameHtml(frame, html, onOpenSetup) {
+  const frameWindow = frame.contentWindow;
+  const frameDocument = frameWindow?.document;
+  if (!frameWindow || !frameDocument) {
+    throw new Error("Control frame is unavailable.");
+  }
+
+  installControlTransport(frameWindow);
+  frameDocument.open();
+  frameDocument.write(html);
+  frameDocument.close();
+  bindSettingsLink(frameWindow, onOpenSetup);
+}
+
 export async function mountControlSurface(host, { onOpenSetup, onStatus } = {}) {
   if (!host) return;
 
-  installControlTransport();
-  const template = await loadTemplate();
-  installStyle(template.styleText);
-
-  host.innerHTML = `<div class="control-surface">${template.bodyMarkup}</div>`;
-  const root = host.firstElementChild;
-  bindSettingsLink(root, onOpenSetup);
-
-  const documentFacade = buildDocumentFacade(root);
-  const runner = new Function("document", "window", "console", template.scriptText);
-  runner(documentFacade, window, console);
+  const html = await loadControlHtml();
+  const frame = createControlFrame(host);
+  writeFrameHtml(frame, html, onOpenSetup);
 
   onStatus?.("BECA unified surface loaded.");
 }

@@ -82,6 +82,11 @@ struct BridgeEvent {
 }
 
 #[derive(Debug, Serialize)]
+struct BridgeStatus {
+    running: bool,
+}
+
+#[derive(Debug, Serialize)]
 struct MidiOutOption {
     name: String,
 }
@@ -626,6 +631,13 @@ async fn start_bridge(
 }
 
 #[tauri::command]
+async fn bridge_status(state: State<'_, RuntimeState>) -> Result<BridgeStatus, String> {
+    Ok(BridgeStatus {
+        running: state.bridge_child.lock().await.is_some(),
+    })
+}
+
+#[tauri::command]
 async fn stop_bridge(app: AppHandle, state: State<'_, RuntimeState>) -> Result<(), String> {
     let mut lock = state.bridge_child.lock().await;
     if let Some(mut child) = lock.take() {
@@ -879,12 +891,18 @@ pub(crate) fn run_serial_command_json(
     let attempts = max_attempts.max(1);
     let total_deadline = Instant::now() + Duration::from_millis(timeout_ms);
     let is_wifi_scan_command = command.trim_start().starts_with("@C WIFI_SCAN");
+    let is_runtime_control_command = matches!(
+        expected_tag,
+        "LIVE" | "STATE" | "PLANT" | "NOTES" | "DRUM" | "SET" | "PARAMS" | "SYNTH" | "SYNTH_TEST"
+    );
     let allow_resend = matches!(expected_tag, "WIFI_INFO" | "WIFI_SCAN" | "PING");
     let mut per_attempt_timeout_ms = (timeout_ms / attempts as u64).max(2_200);
     if is_wifi_scan_command {
         per_attempt_timeout_ms = per_attempt_timeout_ms.max(7_000);
     }
-    let port_settle_ms = if cfg!(target_os = "macos") {
+    let port_settle_ms = if is_runtime_control_command {
+        if cfg!(target_os = "macos") { 320 } else { 160 }
+    } else if cfg!(target_os = "macos") {
         2_200
     } else {
         1_200
@@ -1565,6 +1583,7 @@ pub fn run() {
             save_wifi_credentials,
             forget_wifi_credentials,
             reboot_device,
+            bridge_status,
             start_bridge,
             stop_bridge,
             send_test_note,

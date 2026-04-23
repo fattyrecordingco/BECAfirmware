@@ -60,6 +60,7 @@ extern const char SETUP_HTML[] PROGMEM;
 #define I2S_DATA_PIN       25
 
 CRGB leds[LED_COUNT];
+CRGB ledsPhysical[LED_COUNT];
 uint8_t gBrightness = 154;
 
 // -------------------- BLE-MIDI --------------------
@@ -102,6 +103,7 @@ static inline bool isValidDen(uint8_t d);
 static inline void recalcTransport(bool resetPhase);
 static inline void pushStateIfChanged(bool force=false);
 static inline void saveOutputModePref();
+static inline void normalizeEncoderSetting();
 
 extern Preferences prefs;
 extern float restProb;
@@ -323,6 +325,7 @@ static inline void setOutputMode(uint8_t mode) {
   }
 
   gOutputMode = next;
+  normalizeEncoderSetting();
 
   if (outputModeIsAux()) {
     enforceAuxDrumGuard();
@@ -472,7 +475,8 @@ enum EncoderSettingId : uint8_t {
   ENC_SET_TEMPO,
   ENC_SET_SWING,
   ENC_SET_REST,
-  ENC_SET_OCTAVE,
+  ENC_SET_OCTAVE_LOW,
+  ENC_SET_OCTAVE_HIGH,
   ENC_SET_TIME_SIG,
   ENC_SET_NOTE_LENGTH,
   ENC_SET_FILTER,
@@ -483,9 +487,21 @@ enum EncoderSettingId : uint8_t {
 EncoderSettingId gEncoderSetting = ENC_SET_SENS;
 bool gEncoderVolumeMode = false;
 uint32_t gEncoderNavUntilMs = 0;
+enum LedDisplayMode : uint8_t {
+  LED_DISPLAY_SETTING = 0,
+  LED_DISPLAY_VOLUME,
+  LED_DISPLAY_OUTPUT,
+  LED_DISPLAY_RANDOM
+};
+LedDisplayMode gLedDisplayTransientMode = LED_DISPLAY_SETTING;
+uint32_t gLedDisplayTransientUntilMs = 0;
 static inline bool encoderNavVisible(uint32_t nowMs);
 static inline const char* encoderSettingApiName(EncoderSettingId setting);
 static inline bool parseEncoderSettingArg(const String& value, EncoderSettingId& out);
+static inline void normalizeEncoderSetting();
+static inline LedDisplayMode currentLedDisplayMode(uint32_t nowMs);
+static inline void clearLedDisplayTransient();
+static inline void showLedDisplay(LedDisplayMode mode, uint32_t holdMs);
 
 struct Transport {
   uint16_t bpm;
@@ -870,14 +886,14 @@ static inline void captureRuntimeState(RuntimeStateBlob& out) {
   out.io_muted = ioMuteActive() ? 1 : 0;
   out.daw_sync = gDawSyncEnabled ? 1 : 0;
   out.mode = (uint8_t)gMode;
-  out.clock = (uint8_t)gClock;
+  out.clock = (uint8_t)CLOCK_INTERNAL;
   out.scale = (uint8_t)gScale;
   out.root = (uint8_t)(rootMidi % 12);
   out.bpm = (uint16_t)constrain((int)bpm, 20, 240);
   out.swing = (uint8_t)constrain((int)swingPct, 0, 60);
   out.bright = gBrightness;
-  out.lo = (uint8_t)constrain((int)lowOct, 1, 9);
-  out.hi = (uint8_t)constrain((int)highOct, 1, 9);
+  out.lo = (uint8_t)constrain((int)lowOct, 1, 8);
+  out.hi = (uint8_t)constrain((int)highOct, 1, 8);
   out.fx = (uint8_t)fxMode;
   out.pal = (uint8_t)constrain((int)currentPaletteIndex, 0, (int)(NUM_BUILTIN + NUM_CUSTOM - 1));
   out.vs = visSpeed;
@@ -902,8 +918,8 @@ static inline bool runtimeStateValid(const RuntimeStateBlob& in) {
   if (in.root > 11) return false;
   if (in.bpm < 20 || in.bpm > 240) return false;
   if (in.swing > 60) return false;
-  if (in.lo < 1 || in.lo > 9) return false;
-  if (in.hi < 1 || in.hi > 9) return false;
+  if (in.lo < 1 || in.lo > 8) return false;
+  if (in.hi < 1 || in.hi > 8) return false;
   if (in.fx >= (uint8_t)FX_COUNT) return false;
   if (in.pal >= (uint8_t)(NUM_BUILTIN + NUM_CUSTOM)) return false;
   if (!isValidDen(in.den)) return false;
@@ -921,14 +937,14 @@ static inline bool loadRuntimeStateFromOpenPrefs(RuntimeStateBlob& out) {
 
 static inline void applyRuntimeState(const RuntimeStateBlob& in, bool applyOutputMode, bool applyMute) {
   gMode = (Mode)constrain((int)in.mode, 0, 3);
-  gClock = (ClockMode)constrain((int)in.clock, 0, 1);
+  gClock = CLOCK_INTERNAL;
   gScale = (ScaleType)constrain((int)in.scale, 0, 14);
   rootMidi = (uint8_t)(60 + (in.root % 12));
   bpm = (uint16_t)constrain((int)in.bpm, 20, 240);
   swingPct = (uint8_t)constrain((int)in.swing, 0, 60);
   gBrightness = (uint8_t)constrain((int)in.bright, 10, 255);
-  lowOct = (uint8_t)constrain((int)in.lo, 1, 9);
-  highOct = (uint8_t)constrain((int)in.hi, 1, 9);
+  lowOct = (uint8_t)constrain((int)in.lo, 1, 8);
+  highOct = (uint8_t)constrain((int)in.hi, 1, 8);
   if (highOct < lowOct) highOct = lowOct;
   fxMode = (EffectMode)constrain((int)in.fx, 0, (int)FX_COUNT - 1);
   currentPaletteIndex = (uint8_t)constrain((int)in.pal, 0, (int)(NUM_BUILTIN + NUM_CUSTOM - 1));
@@ -1118,7 +1134,8 @@ static inline CRGB encoderSettingColor(EncoderSettingId setting) {
     case ENC_SET_TEMPO:       return CRGB(241, 33, 41);
     case ENC_SET_SWING:       return CRGB(114, 57, 217);
     case ENC_SET_REST:        return CRGB(237, 41, 172);
-    case ENC_SET_OCTAVE:      return CRGB(255, 255, 255);
+    case ENC_SET_OCTAVE_LOW:
+    case ENC_SET_OCTAVE_HIGH: return CRGB(255, 255, 255);
     case ENC_SET_TIME_SIG:    return CRGB(18, 201, 156);
     case ENC_SET_NOTE_LENGTH: return CRGB(18, 76, 236);
     case ENC_SET_FILTER:      return CRGB(37, 191, 69);
@@ -1136,7 +1153,8 @@ static inline const char* encoderSettingApiName(EncoderSettingId setting) {
     case ENC_SET_TEMPO:       return "tempo";
     case ENC_SET_SWING:       return "swing";
     case ENC_SET_REST:        return "rest";
-    case ENC_SET_OCTAVE:      return "octave_range";
+    case ENC_SET_OCTAVE_LOW:  return "octave_low";
+    case ENC_SET_OCTAVE_HIGH: return "octave_high";
     case ENC_SET_TIME_SIG:    return "time_sig";
     case ENC_SET_NOTE_LENGTH: return "note_length";
     case ENC_SET_FILTER:      return "filter";
@@ -1169,7 +1187,15 @@ static inline bool parseEncoderSettingArg(const String& value, EncoderSettingId&
   if (key == "tempo" || key == "bpm")                           { out = ENC_SET_TEMPO; return true; }
   if (key == "swing")                                           { out = ENC_SET_SWING; return true; }
   if (key == "rest")                                            { out = ENC_SET_REST; return true; }
-  if (key == "octave" || key == "octave_range" || key == "oct_range") { out = ENC_SET_OCTAVE; return true; }
+  if (key == "octave" || key == "octave_range" || key == "oct_range" ||
+      key == "octave_low" || key == "low_octave" || key == "low_oct") {
+    out = ENC_SET_OCTAVE_LOW;
+    return true;
+  }
+  if (key == "octave_high" || key == "high_octave" || key == "high_oct") {
+    out = ENC_SET_OCTAVE_HIGH;
+    return true;
+  }
   if (key == "time_sig" || key == "timesig" || key == "ts")     { out = ENC_SET_TIME_SIG; return true; }
   if (key == "note_length" || key == "notelength")              { out = ENC_SET_NOTE_LENGTH; return true; }
   if (key == "filter" || key == "cutoff")                       { out = ENC_SET_FILTER; return true; }
@@ -1183,18 +1209,23 @@ static inline uint8_t encoderSettingLedCount() {
     case ENC_SET_SENS:
       return (uint8_t)constrain((int)roundf((sens / 0.5f) * LED_COUNT), 1, LED_COUNT);
     case ENC_SET_MODE:
+      if (outputModeIsAux()) {
+        gSynth.getParams(p);
+        return (uint8_t)constrain((int)roundf(((float)p.preset / (float)(beca::SynthEngine::kPresetCount - 1)) * (LED_COUNT - 1)) + 1, 1, LED_COUNT);
+      }
       return (uint8_t)constrain((int)roundf(((float)gMode / 3.0f) * (LED_COUNT - 1)) + 1, 1, LED_COUNT);
     case ENC_SET_SCALE:
       return (uint8_t)constrain((int)roundf(((float)gScale / 14.0f) * (LED_COUNT - 1)) + 1, 1, LED_COUNT);
     case ENC_SET_ROOT:
       return (uint8_t)constrain((int)roundf((((float)(rootMidi % 12)) / 11.0f) * (LED_COUNT - 1)) + 1, 1, LED_COUNT);
     case ENC_SET_TEMPO:
-      return (uint8_t)constrain((int)roundf((((float)bpm - 20.0f) / 220.0f) * LED_COUNT), 1, LED_COUNT);
+      return 1;
     case ENC_SET_SWING:
       return (uint8_t)constrain((int)roundf(((float)swingPct / 60.0f) * LED_COUNT), 1, LED_COUNT);
     case ENC_SET_REST:
       return (uint8_t)constrain((int)roundf((restProb / 0.8f) * LED_COUNT), 1, LED_COUNT);
-    case ENC_SET_OCTAVE:
+    case ENC_SET_OCTAVE_LOW:
+    case ENC_SET_OCTAVE_HIGH:
       return (uint8_t)constrain((int)(highOct - lowOct + 1), 1, LED_COUNT);
     case ENC_SET_TIME_SIG:
       return (uint8_t)constrain((int)roundf(((float)gTS.beats / 12.0f) * LED_COUNT), 1, LED_COUNT);
@@ -1220,33 +1251,148 @@ static inline uint8_t encoderDisplayedLedCount() {
   return encoderSettingLedCount();
 }
 
-static inline void renderEncoderNavLeds() {
+static inline void copyLogicalLedsToPhysical() {
+  for (uint8_t i = 0; i < LED_COUNT; ++i) {
+    ledsPhysical[i] = leds[i];
+  }
+}
+
+static inline uint8_t tempoMetronomeLedIndex(uint32_t nowMs) {
+  const uint16_t bpmSafe = (uint16_t)constrain((int)bpm, 20, 240);
+  const uint32_t beatMs = max<uint32_t>(120, (uint32_t)(60000UL / bpmSafe));
+  return (uint8_t)((nowMs / beatMs) % LED_COUNT);
+}
+
+static inline void renderOctaveRangeInfoLeds(const CRGB& color) {
+  const uint8_t lo = (uint8_t)constrain((int)lowOct, 1, LED_COUNT);
+  const uint8_t hi = (uint8_t)constrain((int)highOct, lo, LED_COUNT);
+  for (uint8_t octave = lo; octave <= hi; ++octave) {
+    leds[octave - 1] = color;
+  }
+}
+
+static inline void renderSettingInfoLeds() {
   fill_solid(leds, LED_COUNT, CRGB::Black);
 
-  CRGB color = CRGB(241, 33, 41);
-  uint8_t onCount = 1;
-  if (gEncoderVolumeMode) {
-    onCount = encoderDisplayedLedCount();
-  } else {
-    color = encoderSettingColor(gEncoderSetting);
-    onCount = encoderSettingLedCount();
+  const CRGB color = encoderSettingColor(gEncoderSetting);
+  switch (gEncoderSetting) {
+    case ENC_SET_TEMPO:
+      leds[tempoMetronomeLedIndex(millis())] = color;
+      break;
+    case ENC_SET_OCTAVE_LOW:
+    case ENC_SET_OCTAVE_HIGH:
+      renderOctaveRangeInfoLeds(color);
+      break;
+    default: {
+      const uint8_t onCount = encoderSettingLedCount();
+      for (uint8_t i = 0; i < onCount; ++i) {
+        leds[i] = color;
+      }
+      break;
+    }
   }
+}
+
+static inline void renderVolumeInfoLeds() {
+  static const CRGB kVolumeColors[LED_COUNT] = {
+    CRGB(139, 196, 62),
+    CRGB(139, 196, 62),
+    CRGB(169, 205, 57),
+    CRGB(214, 217, 46),
+    CRGB(254, 214, 5),
+    CRGB(255, 181, 0),
+    CRGB(255, 129, 23),
+    CRGB(241, 33, 41)
+  };
+
+  fill_solid(leds, LED_COUNT, CRGB::Black);
+  const uint8_t onCount = encoderDisplayedLedCount();
+  for (uint8_t i = 0; i < onCount; ++i) {
+    leds[i] = kVolumeColors[i];
+  }
+}
+
+static inline void renderOutputInfoLeds() {
+  static const CRGB kBlePattern[LED_COUNT] = {
+    CRGB(27, 200, 248),
+    CRGB::Black,
+    CRGB(27, 200, 248),
+    CRGB::Black,
+    CRGB(27, 200, 248),
+    CRGB::Black,
+    CRGB(27, 200, 248),
+    CRGB::Black
+  };
+  static const CRGB kSerialPattern[LED_COUNT] = {
+    CRGB(114, 57, 217),
+    CRGB(18, 201, 156),
+    CRGB(139, 196, 62),
+    CRGB(139, 196, 62),
+    CRGB(254, 214, 5),
+    CRGB(254, 214, 5),
+    CRGB(254, 85, 1),
+    CRGB(241, 33, 41)
+  };
+  static const CRGB kAuxPattern[LED_COUNT] = {
+    CRGB(139, 196, 62),
+    CRGB(139, 196, 62),
+    CRGB::Black,
+    CRGB::Black,
+    CRGB::Black,
+    CRGB::Black,
+    CRGB::Black,
+    CRGB::Black
+  };
+
+  const CRGB* pattern = kBlePattern;
+  if (outputModeIsSerial()) pattern = kSerialPattern;
+  else if (outputModeIsAux()) pattern = kAuxPattern;
+  for (uint8_t i = 0; i < LED_COUNT; ++i) {
+    leds[i] = pattern[i];
+  }
+}
+
+static inline void renderRandomInfoLeds() {
+  static const CRGB kRandomPattern[LED_COUNT] = {
+    CRGB(114, 57, 217),
+    CRGB::Black,
+    CRGB(139, 196, 62),
+    CRGB::Black,
+    CRGB(254, 214, 5),
+    CRGB::Black,
+    CRGB(254, 85, 1),
+    CRGB::Black
+  };
 
   for (uint8_t i = 0; i < LED_COUNT; ++i) {
-    leds[i] = (i >= (LED_COUNT - onCount)) ? color : CRGB::Black;
+    leds[i] = kRandomPattern[i];
   }
 }
 
 static inline void renderLEDs() {
-  renderEncoderNavLeds();
+  switch (currentLedDisplayMode(millis())) {
+    case LED_DISPLAY_VOLUME:
+      renderVolumeInfoLeds();
+      break;
+    case LED_DISPLAY_OUTPUT:
+      renderOutputInfoLeds();
+      break;
+    case LED_DISPLAY_RANDOM:
+      renderRandomInfoLeds();
+      break;
+    case LED_DISPLAY_SETTING:
+    default:
+      renderSettingInfoLeds();
+      break;
+  }
   FastLED.setBrightness(gBrightness);
+  copyLogicalLedsToPhysical();
   FastLED.show();
-  noteEnergy *= noteDecay;
 }
 
 static inline void startupAnim() {
-  fill_solid(leds, LED_COUNT, CRGB::Green); FastLED.show(); delay(35);
-  fill_solid(leds, LED_COUNT, CRGB::Black); FastLED.show(); delay(20);
+  fill_solid(leds, LED_COUNT, CRGB::Green); copyLogicalLedsToPhysical(); FastLED.show(); delay(35);
+  fill_solid(leds, LED_COUNT, CRGB::Black); copyLogicalLedsToPhysical(); FastLED.show(); delay(20);
   delay(0);
 }
 
@@ -1369,10 +1515,30 @@ bool encPressed = false;
 bool encHoldHandled = false;
 uint32_t encPressStartMs = 0;
 uint32_t encLastReleaseMs = 0;
+uint32_t encLastStepMs = 0;
 uint8_t encTapCount = 0;
 
 static inline void showEncoderNav(uint32_t holdMs = 4000) {
   gEncoderNavUntilMs = millis() + holdMs;
+}
+
+static inline void clearLedDisplayTransient() {
+  gLedDisplayTransientMode = LED_DISPLAY_SETTING;
+  gLedDisplayTransientUntilMs = 0;
+}
+
+static inline void showLedDisplay(LedDisplayMode mode, uint32_t holdMs) {
+  gLedDisplayTransientMode = mode;
+  gLedDisplayTransientUntilMs = millis() + holdMs;
+}
+
+static inline LedDisplayMode currentLedDisplayMode(uint32_t nowMs) {
+  if (gEncoderVolumeMode) return LED_DISPLAY_VOLUME;
+  if (gLedDisplayTransientMode != LED_DISPLAY_SETTING &&
+      (int32_t)(gLedDisplayTransientUntilMs - nowMs) > 0) {
+    return gLedDisplayTransientMode;
+  }
+  return LED_DISPLAY_SETTING;
 }
 
 static inline bool encoderNavVisible(uint32_t nowMs) {
@@ -1381,7 +1547,6 @@ static inline bool encoderNavVisible(uint32_t nowMs) {
 
 static inline bool encoderSettingEnabled(EncoderSettingId setting) {
   switch (setting) {
-    case ENC_SET_NOTE_LENGTH:
     case ENC_SET_FILTER:
     case ENC_SET_RESONANCE:
       return outputModeIsAux();
@@ -1428,7 +1593,7 @@ static inline void stepEncoderTimeSignature(int dir) {
 static inline void randomizeBasicSettingsInline() {
   gMode  = (Mode)random(0, drumsAllowedForCurrentOutput() ? 4 : 3);
   gScale = (ScaleType)random(0, 15);
-  bpm = ((int)random(90, 150) / 5) * 5;
+  bpm = (uint16_t)random(90, 151);
   lowOct  = random(1, 5);
   highOct = max<uint8_t>(lowOct, (uint8_t)random(lowOct, 9));
   sens = clampf(((float)random(0, 11)) / 20.0f, 0.0f, 0.5f);
@@ -1440,14 +1605,21 @@ static inline void randomizeBasicSettingsInline() {
 static inline void stepEncoderSelection(int dir) {
   beca::SynthParams p;
   const uint8_t prevMode = gOutputMode;
+  clearLedDisplayTransient();
 
   switch (gEncoderSetting) {
     case ENC_SET_SENS:
       sens = clampf(sens + (dir * 0.01f), 0.0f, 0.5f);
       break;
     case ENC_SET_MODE: {
-      int maxMode = drumsAllowedForCurrentOutput() ? 3 : 2;
-      gMode = (Mode)constrain((int)gMode + dir, 0, maxMode);
+      if (outputModeIsAux()) {
+        gSynth.getParams(p);
+        const int nextPreset = constrain((int)p.preset + dir, 0, (int)beca::SynthEngine::kPresetCount - 1);
+        gSynth.loadPreset((uint8_t)nextPreset);
+      } else {
+        int maxMode = drumsAllowedForCurrentOutput() ? 3 : 2;
+        gMode = (Mode)constrain((int)gMode + dir, 0, maxMode);
+      }
       break;
     }
     case ENC_SET_SCALE:
@@ -1460,8 +1632,7 @@ static inline void stepEncoderSelection(int dir) {
       break;
     }
     case ENC_SET_TEMPO: {
-      int next = constrain((int)bpm + dir * 5, 20, 240);
-      bpm = (uint16_t)((next / 5) * 5);
+      bpm = (uint16_t)constrain((int)bpm + dir, 20, 240);
       recalcTransport(false);
       break;
     }
@@ -1471,14 +1642,13 @@ static inline void stepEncoderSelection(int dir) {
     case ENC_SET_REST:
       restProb = clampf(restProb + dir * 0.01f, 0.0f, 0.8f);
       break;
-    case ENC_SET_OCTAVE:
-      if (dir > 0) {
-        if (highOct < 9) highOct++;
-        else if (lowOct < highOct) lowOct++;
-      } else {
-        if (lowOct > 1) lowOct--;
-        else if (highOct > lowOct) highOct--;
-      }
+    case ENC_SET_OCTAVE_LOW:
+      lowOct = (uint8_t)constrain((int)lowOct + dir, 1, 8);
+      if (lowOct > highOct) highOct = lowOct;
+      break;
+    case ENC_SET_OCTAVE_HIGH:
+      highOct = (uint8_t)constrain((int)highOct + dir, 1, 8);
+      if (highOct < lowOct) lowOct = highOct;
       break;
     case ENC_SET_TIME_SIG:
       stepEncoderTimeSignature(dir);
@@ -1506,6 +1676,7 @@ static inline void stepEncoderSelection(int dir) {
 
 static inline void stepEncoderVolume(int dir) {
   beca::SynthParams p;
+  clearLedDisplayTransient();
   gSynth.getParams(p);
   p.master = clampf(p.master + dir * 0.01f, 0.0f, 1.0f);
   gSynth.setParams(p);
@@ -1524,11 +1695,14 @@ static inline void applyEncoder() {
   int a = digitalRead(ENC_PIN_A);
   if (a != encLastA && a == LOW) {
     int b = digitalRead(ENC_PIN_B);
-    int dir = (b == HIGH) ? 1 : -1;
-    if (gEncoderVolumeMode) stepEncoderVolume(dir);
-    else stepEncoderSelection(dir);
-    showEncoderNav();
-    pushStateIfChanged(true);
+    if ((int32_t)(nowMs - encLastStepMs) >= 4) {
+      encLastStepMs = nowMs;
+      int dir = (b == HIGH) ? 1 : -1;
+      if (gEncoderVolumeMode) stepEncoderVolume(dir);
+      else stepEncoderSelection(dir);
+      showEncoderNav();
+      pushStateIfChanged(true);
+    }
   }
   encLastA = a;
 
@@ -1546,6 +1720,7 @@ static inline void applyEncoder() {
       setOutputMode(next);
       saveOutputModePref();
       normalizeEncoderSetting();
+      showLedDisplay(LED_DISPLAY_OUTPUT, 1600);
       showEncoderNav(5200);
       pushStateIfChanged(true);
     }
@@ -1565,6 +1740,7 @@ static inline void applyEncoder() {
 
   if (!encPressed && encTapCount > 0 && (int32_t)(nowMs - encLastReleaseMs) > 260) {
     if (encTapCount == 1) {
+      clearLedDisplayTransient();
       gEncoderVolumeMode = false;
       cycleEncoderSetting();
     } else if (encTapCount == 2) {
@@ -1572,6 +1748,7 @@ static inline void applyEncoder() {
     } else {
       gEncoderVolumeMode = false;
       randomizeBasicSettingsInline();
+      showLedDisplay(LED_DISPLAY_RANDOM, 1200);
     }
     encTapCount = 0;
     showEncoderNav(gEncoderVolumeMode ? 6000 : 4000);
@@ -1967,15 +2144,12 @@ static inline void transportTick() {
   if (T.stepInBar >= T.stepsPerBar) T.stepInBar = 0;
   if (ioMuteActive()) return;
 
-  if (gClock == CLOCK_INTERNAL) {
-    switch (gMode) {
-      case MODE_NOTE:  stepNOTE_internal();  break;
-      case MODE_ARP:   stepARP_internal();   break;
-      case MODE_CHORD: stepCHORD_internal(); break;
-      case MODE_DRUM:  stepDRUM_internal();  break;
-    }
-  } else {
-    step_fromPlantTrigger();
+  gClock = CLOCK_INTERNAL;
+  switch (gMode) {
+    case MODE_NOTE:  stepNOTE_internal();  break;
+    case MODE_ARP:   stepARP_internal();   break;
+    case MODE_CHORD: stepCHORD_internal(); break;
+    case MODE_DRUM:  stepDRUM_internal();  break;
   }
 }
 
@@ -2042,9 +2216,12 @@ struct LastState {
   uint8_t  den;
   uint8_t  drumsel;
   uint8_t  auxready;
+  uint8_t  preset;
   uint8_t  note_length;
   uint8_t  encoder_setting;
   uint8_t  encoder_volume_mode;
+  uint8_t  encoder_nav_active;
+  uint8_t  led_display_mode;
   float    cutoff;
   float    resonance;
   float    master;
@@ -2119,7 +2296,7 @@ static inline bool stateChanged() {
   if (LS.io_muted != (ioMuteActive() ? 1 : 0)) return true;
   if (LS.daw_sync != (gDawSyncEnabled ? 1 : 0)) return true;
   if (LS.daw_lock != (dawSyncLocked(0) ? 1 : 0)) return true;
-  if (LS.clock != (uint8_t)gClock) return true;
+  if (LS.clock != (uint8_t)CLOCK_INTERNAL) return true;
   if (LS.mode  != (uint8_t)gMode) return true;
   if (LS.scale != (uint8_t)gScale) return true;
   if (LS.root  != root) return true;
@@ -2141,9 +2318,12 @@ static inline bool stateChanged() {
   if (LS.vel   != lastVel) return true;
   if (LS.drumsel != (uint8_t)drumSelMask) return true;
   if (LS.auxready != (auxSwitchReady() ? 1 : 0)) return true;
+  if (LS.preset != p.preset) return true;
   if (LS.note_length != gNoteLengthIndex) return true;
   if (LS.encoder_setting != (uint8_t)gEncoderSetting) return true;
   if (LS.encoder_volume_mode != (gEncoderVolumeMode ? 1u : 0u)) return true;
+  if (LS.encoder_nav_active != (encoderNavVisible(millis()) ? 1u : 0u)) return true;
+  if (LS.led_display_mode != (uint8_t)currentLedDisplayMode(millis())) return true;
   if (fabsf(LS.cutoff - p.cutoffHz) > 0.01f) return true;
   if (fabsf(LS.resonance - p.resonance) > 0.0001f) return true;
   if (fabsf(LS.master - p.master) > 0.0001f) return true;
@@ -2160,7 +2340,7 @@ static inline void captureState() {
   LS.io_muted = ioMuteActive() ? 1 : 0;
   LS.daw_sync = gDawSyncEnabled ? 1 : 0;
   LS.daw_lock = dawSyncLocked(0) ? 1 : 0;
-  LS.clock = (uint8_t)gClock;
+  LS.clock = (uint8_t)CLOCK_INTERNAL;
   LS.mode  = (uint8_t)gMode;
   LS.scale = (uint8_t)gScale;
   LS.root  = (uint8_t)(rootMidi % 12);
@@ -2182,9 +2362,12 @@ static inline void captureState() {
   LS.den   = gTS.noteVal;
   LS.drumsel = (uint8_t)drumSelMask;
   LS.auxready = auxSwitchReady() ? 1 : 0;
+  LS.preset = p.preset;
   LS.note_length = gNoteLengthIndex;
   LS.encoder_setting = (uint8_t)gEncoderSetting;
   LS.encoder_volume_mode = gEncoderVolumeMode ? 1u : 0u;
+  LS.encoder_nav_active = encoderNavVisible(millis()) ? 1u : 0u;
+  LS.led_display_mode = (uint8_t)currentLedDisplayMode(millis());
   LS.cutoff = p.cutoffHz;
   LS.resonance = p.resonance;
   LS.master = p.master;
@@ -2194,7 +2377,7 @@ static inline size_t renderStateJson(char* out, size_t outLen, bool bumpVersion)
   captureState();
   if (bumpVersion) stateVersion++;
   const uint32_t ver = stateVersion;
-  char buf[1280];
+  char buf[1536];
   snprintf(buf, sizeof(buf),
     "{\"ver\":%u,"
     "\"ble\":%u,"
@@ -2224,11 +2407,15 @@ static inline size_t renderStateJson(char* out, size_t outLen, bool bumpVersion)
     "\"nr\":%u,"
     "\"aux_ready\":%u,"
     "\"aux_wait_ms\":%lu,"
+    "\"preset\":%u,"
+    "\"preset_name\":\"%s\","
     "\"note_length_idx\":%u,"
     "\"note_length\":\"%s\","
     "\"encoder_setting\":%u,"
     "\"encoder_setting_name\":\"%s\","
     "\"encoder_volume_mode\":%u,"
+    "\"encoder_nav_active\":%u,"
+    "\"led_display_mode\":%u,"
     "\"encoder_led_count\":%u,"
     "\"cutoff\":%.2f,"
     "\"resonance\":%.3f,"
@@ -2265,11 +2452,15 @@ static inline size_t renderStateJson(char* out, size_t outLen, bool bumpVersion)
     LS.nr,
     LS.auxready,
     (unsigned long)auxSwitchWaitMs(),
+    LS.preset,
+    beca::SynthEngine::presetName(LS.preset),
     LS.note_length,
     currentNoteLengthLabelC(),
     LS.encoder_setting,
     encoderSettingApiName((EncoderSettingId)LS.encoder_setting),
     LS.encoder_volume_mode,
+    LS.encoder_nav_active,
+    LS.led_display_mode,
     encoderDisplayedLedCount(),
     (double)LS.cutoff,
     (double)LS.resonance,
@@ -2349,9 +2540,7 @@ static inline void handleNotFound() {
 // -------------------- Control endpoints --------------------
 static inline void setBPM() {
   if (server.hasArg("v")) {
-    int b = server.arg("v").toInt();
-    b = (b / 5) * 5;
-    bpm = (uint16_t)constrain(b, 20, 240);
+    bpm = (uint16_t)constrain(server.arg("v").toInt(), 20, 240);
     recalcTransport(false);
     pushStateIfChanged(true);
   }
@@ -2368,13 +2557,13 @@ static inline void setSens()    {
 }
 
 static inline void setLowOct() {
-  if (server.hasArg("v")) lowOct = (uint8_t)constrain(server.arg("v").toInt(), 1, 9);
+  if (server.hasArg("v")) lowOct = (uint8_t)constrain(server.arg("v").toInt(), 1, 8);
   if (lowOct > highOct) highOct = lowOct;
   pushStateIfChanged(true);
   server.send(200, "text/plain", "OK");
 }
 static inline void setHighOct() {
-  if (server.hasArg("v")) highOct = (uint8_t)constrain(server.arg("v").toInt(), 1, 9);
+  if (server.hasArg("v")) highOct = (uint8_t)constrain(server.arg("v").toInt(), 1, 8);
   if (highOct < lowOct) lowOct = highOct;
   pushStateIfChanged(true);
   server.send(200, "text/plain", "OK");
@@ -2389,7 +2578,7 @@ static inline void setMode() {
   pushStateIfChanged(true);
   server.send(200, "text/plain", "OK");
 }
-static inline void setClock()  { if (server.hasArg("v")) gClock = (ClockMode)constrain(server.arg("v").toInt(), 0, 1); pushStateIfChanged(true); server.send(200,"text/plain","OK"); }
+static inline void setClock()  { gClock = CLOCK_INTERNAL; pushStateIfChanged(true); server.send(200,"text/plain","OK"); }
 static inline void setScale()  { if (server.hasArg("i")) gScale = (ScaleType)constrain(server.arg("i").toInt(), 0, 14); pushStateIfChanged(true); server.send(200,"text/plain","OK"); }
 
 static inline void setRoot() {
@@ -2700,7 +2889,7 @@ static inline String buildApiParamsJson() {
     if (i) json += ",";
     json += "\""; json += NOTE_LENGTH_LABELS[i]; json += "\"";
   }
-  json += "],\"output_modes\":[\"BLE\",\"SERIAL\",\"AUX OUT\"],\"clock_modes\":[\"Internal\",\"Plant\"]";
+  json += "],\"output_modes\":[\"BLE\",\"SERIAL\",\"AUX OUT\"]";
   json += ",\"synth_presets\":[";
   for (uint8_t i = 0; i < beca::SynthEngine::kPresetCount; ++i) {
     if (i) json += ",";
@@ -2766,11 +2955,10 @@ static inline bool applyParamByKey(const String& keyIn, const String& valueIn, S
   key.trim();
   value.trim();
   key.toLowerCase();
+  clearLedDisplayTransient();
 
   if (key == "bpm") {
-    int b = value.toInt();
-    b = (b / 5) * 5;
-    bpm = (uint16_t)constrain(b, 20, 240);
+    bpm = (uint16_t)constrain(value.toInt(), 20, 240);
     recalcTransport(false);
     return true;
   }
@@ -2778,12 +2966,12 @@ static inline bool applyParamByKey(const String& keyIn, const String& valueIn, S
   if (key == "bright") { gBrightness = (uint8_t)constrain(value.toInt(), 10, 255); return true; }
   if (key == "sens") { sens = clampf(value.toFloat(), 0.0f, 0.5f); return true; }
   if (key == "lo") {
-    lowOct = (uint8_t)constrain(value.toInt(), 1, 9);
+    lowOct = (uint8_t)constrain(value.toInt(), 1, 8);
     if (lowOct > highOct) highOct = lowOct;
     return true;
   }
   if (key == "hi") {
-    highOct = (uint8_t)constrain(value.toInt(), 1, 9);
+    highOct = (uint8_t)constrain(value.toInt(), 1, 8);
     if (highOct < lowOct) lowOct = highOct;
     return true;
   }
@@ -2793,7 +2981,7 @@ static inline bool applyParamByKey(const String& keyIn, const String& valueIn, S
     gMode = next;
     return true;
   }
-  if (key == "clock") { gClock = (ClockMode)constrain(value.toInt(), 0, 1); return true; }
+  if (key == "clock") { gClock = CLOCK_INTERNAL; return true; }
   if (key == "scale") { gScale = (ScaleType)constrain(value.toInt(), 0, 14); return true; }
   if (key == "root") {
     int semi = constrain(value.toInt(), 0, 11);
@@ -2876,12 +3064,14 @@ static inline bool applyParamByKey(const String& keyIn, const String& valueIn, S
       saveOutputModePref();
       normalizeEncoderSetting();
       gEncoderVolumeMode = false;
+      showLedDisplay(LED_DISPLAY_OUTPUT, 1600);
       showEncoderNav(5200);
       return true;
     }
     if (action == "randomize") {
       gEncoderVolumeMode = false;
       randomizeBasicSettingsInline();
+      showLedDisplay(LED_DISPLAY_RANDOM, 1200);
       showEncoderNav(4000);
       return true;
     }
@@ -2901,6 +3091,7 @@ static inline bool applyParamByKey(const String& keyIn, const String& valueIn, S
     }
     setOutputMode(next);
     saveOutputModePref();
+    showLedDisplay(LED_DISPLAY_OUTPUT, 1600);
     return true;
   }
   if (key == "sync" || key == "daw_sync") {
@@ -2973,18 +3164,22 @@ static inline void handleApiStateGet() {
   server.send(200, "application/json", buf);
 }
 
-static inline void handleApiPlantGet() {
-  sendNoCacheHeaders();
+static inline String buildApiPlantJson() {
   char buf[160];
   snprintf(
     buf, sizeof(buf),
     "{\"value\":%.4f,\"raw\":%u,\"raw2\":%u,\"ts\":%lu}",
     (double)gScopePlant, (unsigned)gPlantRaw1, (unsigned)gPlantRaw2, (unsigned long)millis()
   );
-  server.send(200, "application/json", buf);
+  return String(buf);
 }
 
-static inline void handleApiNotesGet() {
+static inline void handleApiPlantGet() {
+  sendNoCacheHeaders();
+  server.send(200, "application/json", buildApiPlantJson());
+}
+
+static inline String buildApiNotesJson() {
   uint8_t uiNotes[MAX_ACTIVE_NOTES];
   const uint8_t uiCount = uiCollectHeldNotes(uiNotes, MAX_ACTIVE_NOTES);
   char notesCsv[196];
@@ -3014,11 +3209,15 @@ static inline void handleApiNotesGet() {
     (unsigned)lastVel,
     (unsigned long)millis()
   );
-  server.send(200, "application/json", buf);
+  return String(buf);
 }
 
-static inline void handleApiDrumGet() {
+static inline void handleApiNotesGet() {
   sendNoCacheHeaders();
+  server.send(200, "application/json", buildApiNotesJson());
+}
+
+static inline String buildApiDrumJson() {
   char buf[128];
   snprintf(
     buf, sizeof(buf),
@@ -3027,7 +3226,35 @@ static inline void handleApiDrumGet() {
     (unsigned)((uint8_t)drumSelMask),
     (unsigned long)millis()
   );
-  server.send(200, "application/json", buf);
+  return String(buf);
+}
+
+static inline void handleApiDrumGet() {
+  sendNoCacheHeaders();
+  server.send(200, "application/json", buildApiDrumJson());
+}
+
+static inline String buildApiLiveJson() {
+  char stateBuf[1536];
+  renderStateJson(stateBuf, sizeof(stateBuf), false);
+
+  String out;
+  out.reserve(2400);
+  out += "{\"state\":";
+  out += stateBuf;
+  out += ",\"plant\":";
+  out += buildApiPlantJson();
+  out += ",\"notes\":";
+  out += buildApiNotesJson();
+  out += ",\"drum\":";
+  out += buildApiDrumJson();
+  out += "}";
+  return out;
+}
+
+static inline void handleApiLiveGet() {
+  sendNoCacheHeaders();
+  server.send(200, "application/json", buildApiLiveJson());
 }
 
 static inline void handleApiParamsGet() {
@@ -3072,7 +3299,7 @@ static inline void randomize() {
   fxMode = (EffectMode)random(0, (int)FX_COUNT);
   currentPaletteIndex = (uint8_t)random(0, NUM_BUILTIN + NUM_CUSTOM);
 
-  bpm = ((int)random(90, 150) / 5) * 5;
+  bpm = (uint16_t)random(90, 151);
   lowOct  = random(1, 5);
   highOct = max<uint8_t>(lowOct, (uint8_t)random(lowOct, 9));
   sens = clampf(((float)random(0, 11)) / 20.0f, 0.0f, 0.5f); // 0.00..0.50
@@ -3878,6 +4105,11 @@ static inline void handleSerialControlLine(const char *line) {
     return;
   }
 
+  if (strcmp(cmd, "LIVE") == 0) {
+    serialCtrlReply("LIVE", buildApiLiveJson());
+    return;
+  }
+
   if (strcmp(cmd, "PARAMS") == 0) {
     serialCtrlReply("PARAMS", buildApiParamsJson());
     return;
@@ -4025,7 +4257,7 @@ static inline void handleSerialControlLine(const char *line) {
     fxMode = (EffectMode)random(0, (int)FX_COUNT);
     currentPaletteIndex = (uint8_t)random(0, NUM_BUILTIN + NUM_CUSTOM);
 
-    bpm = ((int)random(90, 150) / 5) * 5;
+    bpm = (uint16_t)random(90, 151);
     lowOct  = random(1, 5);
     highOct = max<uint8_t>(lowOct, (uint8_t)random(lowOct, 9));
     sens = clampf(((float)random(0, 11)) / 20.0f, 0.0f, 0.5f);
@@ -4238,7 +4470,7 @@ void setup() {
   MIDI.setHandleContinue(onMidiContinue);
 
   // LEDs
-  FastLED.addLeds<LED_TYPE, LED_PIN, LED_COLOR_ORDER>(leds, LED_COUNT);
+  FastLED.addLeds<LED_TYPE, LED_PIN, LED_COLOR_ORDER>(ledsPhysical, LED_COUNT);
   FastLED.setBrightness(gBrightness);
   startupAnim();
 
@@ -4353,6 +4585,7 @@ void setup() {
   server.on("/api/mute",       HTTP_GET,  handleApiMuteGet);
   server.on("/api/mute",       HTTP_POST, handleApiMutePost);
   server.on("/api/sync",       HTTP_POST, handleApiSyncPost);
+  server.on("/api/live",       HTTP_GET,  handleApiLiveGet);
   server.on("/api/state",      HTTP_GET,  handleApiStateGet);
   server.on("/api/plant",      HTTP_GET,  handleApiPlantGet);
   server.on("/api/notes",      HTTP_GET,  handleApiNotesGet);

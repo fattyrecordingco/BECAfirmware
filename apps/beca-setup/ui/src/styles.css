@@ -68,13 +68,13 @@ input {
   min-height: 100vh;
   display: grid;
   place-items: center;
-  padding: 16px;
+  padding: 24px;
 }
 
 .surface-screen {
   display: none;
   width: 100%;
-  min-height: calc(100vh - 32px);
+  min-height: calc(100vh - 48px);
   place-items: center;
 }
 
@@ -84,13 +84,17 @@ input {
 
 .control-host,
 .setup-viewport {
-  width: min(575px, calc(100vw - 32px), calc((100vh - 32px) * 575 / 842));
+  width: min(575px, calc(100vw - 48px), calc((100vh - 48px) * 575 / 842));
   aspect-ratio: 575 / 842;
 }
 
 .control-host {
   display: grid;
   place-items: center;
+}
+
+.control-surface-frame {
+  display: block;
 }
 
 .control-placeholder {
@@ -104,6 +108,7 @@ input {
   border-radius: 24px;
   background: var(--panel);
   color: var(--accent);
+  box-shadow: 0 18px 42px rgba(0, 131, 81, 0.08);
 }
 
 .control-placeholder-top {
@@ -178,7 +183,8 @@ input {
   grid-template-columns: 1fr;
   align-content: start;
   gap: 14px;
-  padding: 108px 20px 20px;
+  padding: 102px 20px 20px;
+  box-shadow: 0 18px 42px rgba(0, 131, 81, 0.08);
 }
 
 .setup-logo {
@@ -190,12 +196,27 @@ input {
   color: var(--accent);
 }
 
-.setup-top-icon {
+.setup-top-actions {
   position: absolute;
+  top: 20px;
+  right: 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.setup-top-icon {
   display: grid;
   place-items: center;
   background: transparent;
   color: var(--accent);
+  border: 0;
+  padding: 0;
+  transition:
+    color 120ms ease,
+    border-color 120ms ease,
+    background 120ms ease,
+    transform 120ms ease;
 }
 
 .setup-top-icon svg {
@@ -204,21 +225,22 @@ input {
 }
 
 .setup-top-icon-active {
-  left: 427px;
-  top: 20px;
   width: 64px;
   height: 64px;
   border: 2px solid var(--accent);
   border-radius: 999px;
-  cursor: pointer;
+  cursor: default;
 }
 
 .setup-top-icon-muted {
-  left: 501px;
-  top: 34px;
   width: 34px;
   height: 34px;
   color: var(--muted);
+  cursor: pointer;
+}
+
+.setup-top-icon:disabled {
+  pointer-events: none;
 }
 
 .setup-row {
@@ -229,7 +251,7 @@ input {
 .setup-copy h2,
 .setup-row-help h2 {
   margin: 0;
-  font-size: 18px;
+  font-size: 17px;
   font-weight: 400;
   line-height: 1.1;
 }
@@ -249,7 +271,7 @@ input {
   border: 2px solid var(--border);
   border-radius: 11px;
   padding: 11px 12px;
-  min-height: 142px;
+  min-height: 126px;
 }
 
 .setup-status-box,
@@ -261,6 +283,12 @@ input {
   border-radius: 11px;
   background: #ffffff;
   color: var(--accent);
+  box-shadow: 0 2px 0 rgba(0, 131, 81, 0.02);
+  transition:
+    background 120ms ease,
+    color 120ms ease,
+    border-color 120ms ease,
+    box-shadow 120ms ease;
 }
 
 .setup-status-box,
@@ -272,15 +300,28 @@ input {
 }
 
 .setup-status-box {
-  left: 183px;
-  top: 15px;
-  width: 167px;
+  width: 100%;
   justify-content: center;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--accent);
+}
+
+.setup-status-box.is-error {
   color: var(--danger);
 }
 
 .setup-button {
   padding: 0 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  font-size: 11px;
+  line-height: 1;
+  text-transform: lowercase;
   cursor: pointer;
 }
 
@@ -290,14 +331,26 @@ input {
   color: #ffffff;
 }
 
+.setup-button-danger {
+  border-color: var(--danger);
+  background: #ffffff;
+  color: var(--danger);
+  box-shadow: 0 8px 18px rgba(255, 74, 66, 0.08);
+}
+
 .setup-button:hover,
 .setup-button:focus-visible {
-  filter: brightness(0.98);
+  box-shadow: 0 10px 18px rgba(0, 131, 81, 0.1);
+}
+
+.setup-button-danger:hover,
+.setup-button-danger:focus-visible {
+  box-shadow: 0 10px 18px rgba(255, 74, 66, 0.14);
 }
 
 .setup-select,
 .setup-input {
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .setup-select {
@@ -351,13 +404,14 @@ input {
 
 .setup-action-row {
   display: flex;
-  gap: 18px;
+  gap: 12px;
   flex-wrap: wrap;
 }
 
 .setup-action-row .setup-button {
   flex: 1 1 0;
-  min-width: 136px;
+  min-width: 0;
+  font-size: 10.5px;
 }
 
 .setup-row-bridge .setup-copy {
@@ -394,8 +448,8 @@ input {
 .setup-row-wifi,
 .setup-row-bridge {
   display: grid;
-  grid-template-columns: 164px minmax(0, 1fr) minmax(150px, 165px);
-  column-gap: 18px;
+  grid-template-columns: 158px minmax(0, 1fr) minmax(166px, 176px);
+  column-gap: 16px;
   row-gap: 8px;
   align-items: start;
 }

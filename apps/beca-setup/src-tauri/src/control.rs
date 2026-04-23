@@ -147,70 +147,15 @@ pub async fn control_snapshot(state: State<'_, RuntimeState>) -> Result<ControlS
     let target = active_target(&state)
         .await
         .ok_or_else(|| "No BECA target selected. Refresh devices first.".to_string())?;
-    let preferred = preferred_transport(&target);
 
     let (state_res, plant_res, notes_res, drum_res): (
         ControlResponse,
         ControlResponse,
         ControlResponse,
         ControlResponse,
-    ) = if preferred == Some("network") {
-        if let Some(url) = target.network_url.as_deref() {
-            let client = Client::builder()
-                .timeout(Duration::from_millis(CONTROL_HTTP_TIMEOUT_MS))
-                .build()
-                .context("failed to create HTTP client")
-                .map_err(|err| err.to_string())?;
-            let empty_query = BTreeMap::new();
-            let empty_form = BTreeMap::new();
-
-            tokio::try_join!(
-                network_request_with_client(
-                    &client,
-                    url,
-                    "GET",
-                    "/api/state",
-                    &empty_query,
-                    &empty_form
-                ),
-                network_request_with_client(
-                    &client,
-                    url,
-                    "GET",
-                    "/api/plant",
-                    &empty_query,
-                    &empty_form
-                ),
-                network_request_with_client(
-                    &client,
-                    url,
-                    "GET",
-                    "/api/notes",
-                    &empty_query,
-                    &empty_form
-                ),
-                network_request_with_client(
-                    &client,
-                    url,
-                    "GET",
-                    "/api/drum",
-                    &empty_query,
-                    &empty_form
-                )
-            )
-            .map_err(|err| err.to_string())?
-        } else {
-            return Err(target
-                .issue
-                .clone()
-                .unwrap_or_else(|| network_only_control_issue(&target)));
-        }
-    } else {
-        return Err(target
-            .issue
-            .clone()
-            .unwrap_or_else(|| network_only_control_issue(&target)));
-    };
+    ) = execute_snapshot_request(&state, &target)
+        .await
+        .map_err(|err| err.to_string())?;
 
     Ok(ControlSnapshot {
         state: parse_json_body(&state_res.body),
@@ -246,6 +191,19 @@ async fn build_selection_status(
                         " USB on {serial_port} stays free for smoother serial MIDI."
                     ));
                 }
+                detail
+            }
+            Some("serial") => {
+                let mut detail = format!(
+                    "Live control is running over USB serial on {}.",
+                    target.serial_port.clone().unwrap_or_default()
+                );
+                if let Some(url) = target.network_url.as_deref() {
+                    detail.push_str(&format!(
+                        " Wi-Fi control at {url} can take over automatically when available."
+                    ));
+                }
+                detail.push_str(" Stop Bridge first if you need direct serial control.");
                 detail
             }
             _ => target
@@ -293,19 +251,117 @@ async fn execute_control_request(
     let target = active_target(state)
         .await
         .ok_or_else(|| anyhow!("No BECA target selected. Refresh devices first."))?;
-    let preferred = preferred_transport(&target);
 
-    if preferred == Some("network") {
-        if let Some(url) = target.network_url.as_deref() {
-            return network_request(url, method, path, &query, &form).await;
+    let primary = preferred_transport(&target);
+    if let Some(transport) = primary {
+        let primary_result = match transport {
+            "serial" => request_over_serial(state, &target, method, path, &query, &form).await,
+            "network" => request_over_network(&target, method, path, &query, &form).await,
+            _ => Err(anyhow!("Unsupported BECA control transport: {transport}")),
+        };
+        match primary_result {
+            Ok(response) => return Ok(response),
+            Err(err) => {
+            if let Some(fallback) = fallback_transport(&target, transport) {
+                return match fallback {
+                    "serial" => request_over_serial(state, &target, method, path, &query, &form)
+                        .await
+                        .map_err(|_| err),
+                    "network" => request_over_network(&target, method, path, &query, &form)
+                        .await
+                        .map_err(|_| err),
+                    _ => Err(err),
+                };
+            }
+            return Err(err);
+        }
+        };
+    }
+
+    Err(anyhow!(
+        target
+            .issue
+            .clone()
+            .unwrap_or_else(|| network_only_control_issue(&target))
+    ))
+}
+
+async fn execute_snapshot_request(
+    state: &State<'_, RuntimeState>,
+    target: &ControlTarget,
+) -> anyhow::Result<(
+    ControlResponse,
+    ControlResponse,
+    ControlResponse,
+    ControlResponse,
+)> {
+    let primary = preferred_transport(target)
+        .ok_or_else(|| anyhow!(target.issue.clone().unwrap_or_else(|| network_only_control_issue(target))))?;
+
+    let primary_result = match primary {
+        "serial" => snapshot_over_serial(state, target).await,
+        "network" => snapshot_over_network_target(target).await,
+        _ => Err(anyhow!("Unsupported BECA snapshot transport: {primary}")),
+    };
+
+    match primary_result {
+        Ok(snapshot) => Ok(snapshot),
+        Err(primary_err) => {
+            if let Some(fallback) = fallback_transport(target, primary) {
+                let fallback_result = match fallback {
+                    "serial" => snapshot_over_serial(state, target).await,
+                    "network" => snapshot_over_network_target(target).await,
+                    _ => Err(anyhow!("Unsupported BECA snapshot transport: {fallback}")),
+                };
+                return fallback_result.map_err(|_| primary_err);
+            }
+            Err(primary_err)
         }
     }
+}
 
-    if let Some(issue) = target.issue.clone() {
-        return Err(anyhow!(issue));
-    }
+async fn request_over_network(
+    target: &ControlTarget,
+    method: &str,
+    path: &str,
+    query: &BTreeMap<String, String>,
+    form: &BTreeMap<String, String>,
+) -> anyhow::Result<ControlResponse> {
+    let url = target
+        .network_url
+        .as_deref()
+        .ok_or_else(|| anyhow!(network_only_control_issue(target)))?;
+    network_request(url, method, path, query, form).await
+}
 
-    Err(anyhow!(network_only_control_issue(&target)))
+async fn request_over_serial(
+    state: &State<'_, RuntimeState>,
+    target: &ControlTarget,
+    method: &str,
+    path: &str,
+    query: &BTreeMap<String, String>,
+    form: &BTreeMap<String, String>,
+) -> anyhow::Result<ControlResponse> {
+    let port = target
+        .serial_port
+        .as_deref()
+        .ok_or_else(|| anyhow!("No BECA serial port is available for live control."))?;
+    serial_request(state, port, method, path, query, form).await
+}
+
+async fn snapshot_over_network_target(
+    target: &ControlTarget,
+) -> anyhow::Result<(
+    ControlResponse,
+    ControlResponse,
+    ControlResponse,
+    ControlResponse,
+)> {
+    let url = target
+        .network_url
+        .as_deref()
+        .ok_or_else(|| anyhow!(network_only_control_issue(target)))?;
+    snapshot_over_network(url).await
 }
 
 async fn network_request(
@@ -370,15 +426,105 @@ async fn network_request_with_client(
     })
 }
 
+async fn snapshot_over_network(
+    base_url: &str,
+) -> anyhow::Result<(
+    ControlResponse,
+    ControlResponse,
+    ControlResponse,
+    ControlResponse,
+)> {
+    let client = Client::builder()
+        .timeout(Duration::from_millis(CONTROL_HTTP_TIMEOUT_MS))
+        .build()
+        .context("failed to create HTTP client")?;
+    let empty_query = BTreeMap::new();
+    let empty_form = BTreeMap::new();
+    let live = network_request_with_client(&client, base_url, "GET", "/api/live", &empty_query, &empty_form).await?;
+    split_live_snapshot_response(live)
+}
+
+async fn snapshot_over_serial(
+    state: &State<'_, RuntimeState>,
+    target: &ControlTarget,
+) -> anyhow::Result<(
+    ControlResponse,
+    ControlResponse,
+    ControlResponse,
+    ControlResponse,
+)> {
+    let serial_port = target
+        .serial_port
+        .as_deref()
+        .ok_or_else(|| anyhow!("No BECA serial port is available for live control."))?;
+    let empty_query = BTreeMap::new();
+    let empty_form = BTreeMap::new();
+    let live = serial_request(state, serial_port, "GET", "/api/live", &empty_query, &empty_form).await?;
+    split_live_snapshot_response(live)
+}
+
 fn parse_json_body(body: &str) -> Value {
     serde_json::from_str(body).unwrap_or_else(|_| json!({ "ok": 0, "raw": body }))
 }
 
+fn split_live_snapshot_response(
+    response: ControlResponse,
+) -> anyhow::Result<(
+    ControlResponse,
+    ControlResponse,
+    ControlResponse,
+    ControlResponse,
+)> {
+    let live = parse_json_body(&response.body);
+    let transport = response.transport.clone();
+    let content_type = "application/json".to_string();
+
+    let section_response = |key: &str| ControlResponse {
+        status: response.status,
+        body: live.get(key).cloned().unwrap_or_else(|| json!({})).to_string(),
+        content_type: content_type.clone(),
+        transport: transport.clone(),
+    };
+
+    Ok((
+        section_response("state"),
+        section_response("plant"),
+        section_response("notes"),
+        section_response("drum"),
+    ))
+}
+
 fn preferred_transport(target: &ControlTarget) -> Option<&'static str> {
+    if target.network_ready {
+        return Some("network");
+    }
+    if target.serial_ready {
+        return Some("serial");
+    }
     if target.network_url.is_some() {
         return Some("network");
     }
     None
+}
+
+fn fallback_transport(target: &ControlTarget, primary: &str) -> Option<&'static str> {
+    match primary {
+        "serial" => {
+            if target.network_ready || target.network_url.is_some() {
+                Some("network")
+            } else {
+                None
+            }
+        }
+        "network" => {
+            if target.serial_ready {
+                Some("serial")
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
 }
 
 fn network_only_control_issue(target: &ControlTarget) -> String {
@@ -434,6 +580,19 @@ async fn discover_serial_targets(
                 apply_wifi_info(&mut target, &info);
             }
 
+            let state_port = port.port_name.clone();
+            if tokio::task::spawn_blocking(move || {
+                run_serial_command_json(&state_port, "@C STATE", "STATE", 2_500, 1)
+            })
+            .await
+            .unwrap_or_else(|_| Err(anyhow!("serial state probe task failed")))
+            .is_ok()
+            {
+                target.serial_ready = true;
+                target.control_ready = true;
+                target.issue = None;
+            }
+
             if let Some(url) = target.network_url.clone() {
                 match probe_network_control(&url).await {
                     Ok(()) => {
@@ -442,7 +601,9 @@ async fn discover_serial_targets(
                         target.issue = None;
                     }
                     Err(err) => {
-                        target.issue = Some(describe_control_probe_error("Wi-Fi", &err));
+                        if !target.serial_ready {
+                            target.issue = Some(describe_control_probe_error("Wi-Fi", &err));
+                        }
                     }
                 }
             }
@@ -557,7 +718,9 @@ fn merge_targets(
             existing.control_ready |= network.control_ready;
             existing.serial_ready |= network.serial_ready;
             existing.network_ready |= network.network_ready;
-            if existing.issue.is_none() && network.issue.is_some() {
+            if existing.control_ready {
+                existing.issue = None;
+            } else if existing.issue.is_none() && network.issue.is_some() {
                 existing.issue = network.issue.clone();
             }
             existing.source = "serial+network".to_string();
@@ -711,6 +874,88 @@ fn local_scan_urls() -> anyhow::Result<Vec<String>> {
     }
 
     Ok(urls.into_iter().collect())
+}
+
+async fn serial_request(
+    state: &State<'_, RuntimeState>,
+    serial_port: &str,
+    method: &str,
+    path: &str,
+    _query: &BTreeMap<String, String>,
+    form: &BTreeMap<String, String>,
+) -> anyhow::Result<ControlResponse> {
+    let upper = method.to_ascii_uppercase();
+
+    let (command, expected_tag, timeout_ms) = match (upper.as_str(), path) {
+        ("GET", "/api/live") => ("@C LIVE".to_string(), "LIVE", 2_500),
+        ("GET", "/api/state") => ("@C STATE".to_string(), "STATE", 2_500),
+        ("GET", "/api/plant") => ("@C PLANT".to_string(), "PLANT", 2_500),
+        ("GET", "/api/notes") => ("@C NOTES".to_string(), "NOTES", 2_500),
+        ("GET", "/api/drum") => ("@C DRUM".to_string(), "DRUM", 2_500),
+        ("GET", "/api/params") => ("@C PARAMS".to_string(), "PARAMS", 2_500),
+        ("GET", "/api/synth") => ("@C SYNTH".to_string(), "SYNTH", 2_500),
+        ("GET", "/api/synth/test") => ("@C SYNTH_TEST".to_string(), "SYNTH_TEST", 4_000),
+        ("POST", "/api/set") => {
+            let key = form
+                .get("key")
+                .ok_or_else(|| anyhow!("key and value required"))?;
+            let value = form
+                .get("value")
+                .ok_or_else(|| anyhow!("key and value required"))?;
+            (format!("@C SET {key} {value}"), "SET", 2_500)
+        }
+        ("POST", "/api/sync") => {
+            let value = form
+                .get("value")
+                .or_else(|| form.get("sync"))
+                .ok_or_else(|| anyhow!("sync value required"))?;
+            (format!("@C SET sync {value}"), "SET", 2_500)
+        }
+        _ => {
+            return Err(anyhow!(
+                "serial control route is not implemented for {} {}",
+                upper,
+                path
+            ))
+        }
+    };
+
+    let body = serial_json_command(state, serial_port, &command, expected_tag, timeout_ms)
+        .await?
+        .to_string();
+
+    Ok(ControlResponse {
+        status: 200,
+        body,
+        content_type: "application/json".to_string(),
+        transport: "serial".to_string(),
+    })
+}
+
+async fn serial_json_command(
+    state: &State<'_, RuntimeState>,
+    serial_port: &str,
+    command: &str,
+    expected_tag: &str,
+    timeout_ms: u64,
+) -> anyhow::Result<Value> {
+    if state.bridge_child.lock().await.is_some() {
+        return Err(anyhow!(
+            "Bridge is running and owns the serial port. Stop Bridge or use Wi-Fi live control."
+        ));
+    }
+
+    let _serial_guard = state.serial_op_lock.lock().await;
+
+    let port = serial_port.to_string();
+    let command = command.to_string();
+    let expected = expected_tag.to_string();
+
+    tokio::task::spawn_blocking(move || {
+        run_serial_command_json(&port, &command, &expected, timeout_ms, 1)
+    })
+    .await
+    .context("serial control task failed")?
 }
 
 #[cfg(test)]

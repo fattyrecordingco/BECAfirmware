@@ -28,17 +28,19 @@
               </svg>
             </div>
 
-            <button id="btn-open-control" class="setup-top-icon setup-top-icon-active" type="button" aria-label="Open control">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M2 12h5l2.2-6 4.2 13 2.3-7H22" />
-              </svg>
-            </button>
+            <div class="setup-top-actions">
+              <button id="btn-open-control" class="setup-top-icon setup-top-icon-muted" type="button" aria-label="Open control">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M2 12h5l2.2-6 4.2 13 2.3-7H22" />
+                </svg>
+              </button>
 
-            <div class="setup-top-icon setup-top-icon-muted" aria-hidden="true">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="12" cy="12" r="3.2" />
-                <path d="M19.4 15a1 1 0 0 0 .2 1.1l.1.1a1 1 0 0 1 0 1.4l-1.2 1.2a1 1 0 0 1-1.4 0l-.1-.1a1 1 0 0 0-1.1-.2 1 1 0 0 0-.6.9V20a1 1 0 0 1-1 1h-1.7a1 1 0 0 1-1-1v-.2a1 1 0 0 0-.6-.9 1 1 0 0 0-1.1.2l-.1.1a1 1 0 0 1-1.4 0l-1.2-1.2a1 1 0 0 1 0-1.4l.1-.1a1 1 0 0 0 .2-1.1 1 1 0 0 0-.9-.6H4a1 1 0 0 1-1-1v-1.7a1 1 0 0 1 1-1h.2a1 1 0 0 0 .9-.6 1 1 0 0 0-.2-1.1l-.1-.1a1 1 0 0 1 0-1.4l1.2-1.2a1 1 0 0 1 1.4 0l.1.1a1 1 0 0 0 1.1.2 1 1 0 0 0 .6-.9V4a1 1 0 0 1 1-1h1.7a1 1 0 0 1 1 1v.2a1 1 0 0 0 .6.9 1 1 0 0 0 1.1-.2l.1-.1a1 1 0 0 1 1.4 0l1.2 1.2a1 1 0 0 1 0 1.4l-.1.1a1 1 0 0 0-.2 1.1 1 1 0 0 0 .9.6h.2a1 1 0 0 1 1 1v1.7a1 1 0 0 1-1 1h-.2a1 1 0 0 0-.9.6Z" />
-              </svg>
+              <button id="btn-open-setup" class="setup-top-icon setup-top-icon-active" type="button" aria-label="Open setup" aria-current="page">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="3.2" />
+                  <path d="M19.4 15a1 1 0 0 0 .2 1.1l.1.1a1 1 0 0 1 0 1.4l-1.2 1.2a1 1 0 0 1-1.4 0l-.1-.1a1 1 0 0 0-1.1-.2 1 1 0 0 0-.6.9V20a1 1 0 0 1-1 1h-1.7a1 1 0 0 1-1-1v-.2a1 1 0 0 0-.6-.9 1 1 0 0 0-1.1.2l-.1.1a1 1 0 0 1-1.4 0l-1.2-1.2a1 1 0 0 1 0-1.4l.1-.1a1 1 0 0 0 .2-1.1 1 1 0 0 0-.9-.6H4a1 1 0 0 1-1-1v-1.7a1 1 0 0 1 1-1h.2a1 1 0 0 0 .9-.6 1 1 0 0 0-.2-1.1l-.1-.1a1 1 0 0 1 0-1.4l1.2-1.2a1 1 0 0 1 1.4 0l.1.1a1 1 0 0 0 1.1.2 1 1 0 0 0 .6-.9V4a1 1 0 0 1 1-1h1.7a1 1 0 0 1 1 1v.2a1 1 0 0 0 .6.9 1 1 0 0 0 1.1-.2l.1-.1a1 1 0 0 1 1.4 0l1.2 1.2a1 1 0 0 1 0 1.4l-.1.1a1 1 0 0 0-.2 1.1 1 1 0 0 0 .9.6h.2a1 1 0 0 1 1 1v1.7a1 1 0 0 1-1 1h-.2a1 1 0 0 0-.9.6Z" />
+                </svg>
+              </button>
             </div>
 
             <div class="setup-row setup-row-connect">
@@ -109,7 +111,7 @@
               <select id="midi-mirror-select" class="setup-select">
                 <option value="">output2</option>
               </select>
-              <button id="btn-test-note" class="setup-button setup-button-solid" type="button">connect bridge</button>
+              <button id="btn-test-note" class="setup-button" type="button">send test note</button>
               <label class="setup-toggle support-hidden" for="microfreak-mode">
                 <input id="microfreak-mode" type="checkbox" />
                 <span>microfreak primary</span>
@@ -118,7 +120,6 @@
                 <input id="midi-mirror-microfreak-mode" type="checkbox" checked />
                 <span>microfreak mirror</span>
               </label>
-              <button id="btn-stop-bridge" class="support-hidden" type="button">stop bridge</button>
               <div class="setup-bridge-status">
                 <p id="bridge-status" class="setup-microcopy">bridge not running</p>
                 <span id="activity" class="activity-dot" aria-hidden="true"></span>

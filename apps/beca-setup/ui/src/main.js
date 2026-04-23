@@ -30,12 +30,12 @@ const el = {
   btnWifiSave: document.querySelector("#btn-wifi-save"),
   btnWifiForget: document.querySelector("#btn-wifi-forget"),
   btnStartBridge: document.querySelector("#btn-start-bridge"),
-  btnStopBridge: document.querySelector("#btn-stop-bridge"),
   btnTestNote: document.querySelector("#btn-test-note"),
   btnCopy: document.querySelector("#btn-copy"),
   btnExport: document.querySelector("#btn-export"),
   btnDiscover: document.querySelector("#btn-discover"),
   btnOpenControl: document.querySelector("#btn-open-control"),
+  btnOpenSetup: document.querySelector("#btn-open-setup"),
   btnRefreshControl: document.querySelector("#btn-refresh-control"),
   deviceSelect: document.querySelector("#device-select"),
   selectedTargetStatus: document.querySelector("#selected-target-status"),
@@ -58,7 +58,8 @@ const state = {
   selectedTargetId: null,
   controlMounted: false,
   controlReady: false,
-  controlIssue: ""
+  controlIssue: "",
+  bridgeConnected: false
 };
 
 const VIEW_STORAGE_KEY = "beca-active-screen";
@@ -74,6 +75,49 @@ function addLog(line) {
 
 function setActivity(active) {
   el.activity.classList.toggle("active", active);
+}
+
+function setConnectStatus(message, hasDevice) {
+  el.connectStatus.textContent = message;
+  el.connectStatus.classList.toggle("is-error", !hasDevice);
+}
+
+function setBridgeUi(connected, detail = "") {
+  state.bridgeConnected = Boolean(connected);
+  el.btnStartBridge.textContent = connected ? "disconnect bridge" : "connect bridge";
+  el.btnStartBridge.classList.toggle("setup-button-danger", connected);
+  el.btnStartBridge.classList.toggle("setup-button-solid", !connected);
+  el.btnStartBridge.setAttribute("aria-pressed", connected ? "true" : "false");
+  el.midiSelect.disabled = connected;
+  el.midiMirrorSelect.disabled = connected;
+  if (detail) {
+    el.bridgeStatus.textContent = detail;
+  } else {
+    el.bridgeStatus.textContent = connected ? "bridge connected" : "bridge not running";
+  }
+}
+
+async function refreshBridgeState() {
+  try {
+    const status = await invoke("bridge_status");
+    setBridgeUi(Boolean(status?.running), status?.running ? "bridge connected" : "bridge not running");
+  } catch (err) {
+    addLog(`Bridge status check failed: ${err}`);
+  }
+}
+
+function syncSetupTopIcons(screenName) {
+  if (!el.btnOpenControl || !el.btnOpenSetup) return;
+  const setupActive = screenName === "setup";
+  el.btnOpenControl.classList.toggle("setup-top-icon-active", !setupActive);
+  el.btnOpenControl.classList.toggle("setup-top-icon-muted", setupActive);
+  el.btnOpenControl.disabled = !setupActive;
+  el.btnOpenControl.setAttribute("aria-current", setupActive ? "false" : "page");
+
+  el.btnOpenSetup.classList.toggle("setup-top-icon-active", setupActive);
+  el.btnOpenSetup.classList.toggle("setup-top-icon-muted", !setupActive);
+  el.btnOpenSetup.disabled = setupActive;
+  el.btnOpenSetup.setAttribute("aria-current", setupActive ? "page" : "false");
 }
 
 function currentMirrorMidiPort() {
@@ -120,6 +164,7 @@ function renderControlPlaceholder(message) {
 
 function switchScreen(screenName) {
   window.localStorage.setItem(VIEW_STORAGE_KEY, screenName);
+  syncSetupTopIcons(screenName);
   el.viewTabs.forEach((button) => {
     button.classList.toggle("active", button.dataset.screen === screenName);
   });
@@ -263,7 +308,7 @@ function describeTarget(target) {
 function updateTargetSummary(status) {
   const target = status?.target;
   state.selectedTargetId = status?.selected_id || null;
-  state.controlReady = Boolean(status?.transport === "network" && target?.network_url);
+  state.controlReady = Boolean(target?.control_ready && status?.transport);
   state.controlIssue = target?.issue || status?.detail || "";
 
   if (!target) {
@@ -511,13 +556,13 @@ async function refreshDevice() {
     state.selectedPort = result?.port_name ?? null;
 
     if (state.selectedPort) {
-      el.connectStatus.textContent = `Detected BECA on ${state.selectedPort}`;
+      setConnectStatus(`Detected BECA on ${state.selectedPort}`, true);
       el.portChip.textContent = result.description
         ? `Detected USB bridge: ${result.description}`
         : "USB serial bridge detected";
       el.portFixes.innerHTML = "";
     } else {
-      el.connectStatus.textContent = "BECA not detected yet.";
+      setConnectStatus("BECA not detected yet.", false);
       el.portChip.textContent = "";
       el.portFixes.innerHTML = "";
       result.fixes.forEach((fix) => {
@@ -532,7 +577,7 @@ async function refreshDevice() {
     await refreshWifiSection();
   } catch (err) {
     addLog(`USB scan failed: ${err}`);
-    el.connectStatus.textContent = "Could not scan serial ports.";
+    setConnectStatus("Could not scan serial ports.", false);
     resetWifiSection();
   }
 }
@@ -589,10 +634,14 @@ async function refreshMidiOutputs() {
     if (currentMirror && !Array.from(el.midiMirrorSelect.options).some((opt) => opt.value === currentMirror)) {
       el.midiMirrorSelect.value = "";
     }
+    el.midiSelect.disabled = state.bridgeConnected;
+    el.midiMirrorSelect.disabled = state.bridgeConnected;
     addLog(`Loaded ${outputs.length} MIDI outputs.`);
   } catch (err) {
     addLog(`MIDI list failed: ${err}`);
-    el.bridgeStatus.textContent = "No MIDI outputs found.";
+    if (!state.bridgeConnected) {
+      setBridgeUi(false, "no MIDI outputs found");
+    }
   }
 }
 
@@ -741,17 +790,21 @@ async function forgetWifi() {
 }
 
 async function startBridge() {
+  if (state.bridgeConnected) {
+    await stopBridge();
+    return;
+  }
   if (!state.selectedPort) {
-    el.bridgeStatus.textContent = "Connect BECA first.";
+    setBridgeUi(false, "connect BECA first");
     return;
   }
   if (state.flashInProgress || state.wifiOpInFlight) {
-    el.bridgeStatus.textContent = "Wait for flash/Wi-Fi setup to finish before starting bridge.";
+    setBridgeUi(false, "wait for flash or wi-fi setup to finish first");
     return;
   }
   const mirrorPort = currentMirrorMidiPort();
   if (mirrorPort && mirrorPort === el.midiSelect.value) {
-    el.bridgeStatus.textContent = "Choose a different mirrored MIDI output, or turn mirroring off.";
+    setBridgeUi(false, "choose a different mirrored MIDI output");
     return;
   }
   try {
@@ -762,17 +815,17 @@ async function startBridge() {
       secondaryMidiPort: mirrorPort,
       secondaryMicrofreakMode: Boolean(mirrorPort && el.midiMirrorMicrofreakMode.checked)
     });
-    el.bridgeStatus.textContent = "Connected";
     const detail = [
       el.microfreakMode.checked ? "primary MicroFreak mode" : null,
       mirrorPort ? `mirroring to ${mirrorPort}${el.midiMirrorMicrofreakMode.checked ? " (MicroFreak mode)" : ""}` : null
     ]
-      .filter(Boolean)
+        .filter(Boolean)
       .join(" | ");
     addLog(`Bridge started${detail ? `: ${detail}` : "."}`);
+    setBridgeUi(true, detail ? `bridge connected: ${detail}` : "bridge connected");
     await refreshControlStatus();
   } catch (err) {
-    el.bridgeStatus.textContent = `Bridge error: ${err}`;
+    setBridgeUi(false, `bridge error: ${err}`);
     addLog(`Bridge start failed: ${err}`);
   }
 }
@@ -780,7 +833,7 @@ async function startBridge() {
 async function stopBridge() {
   try {
     await invoke("stop_bridge");
-    el.bridgeStatus.textContent = "Stopped";
+    setBridgeUi(false, "bridge stopped");
     setActivity(false);
     addLog("Bridge stopped.");
     await refreshControlStatus();
@@ -834,12 +887,20 @@ async function bindEvents() {
   await listen("bridge-status", async (event) => {
     const payload = event.payload;
     if (!payload) return;
-    el.bridgeStatus.textContent = payload.detail || payload.state;
-    setActivity(payload.event === "activity");
-    addLog(`Bridge event: ${JSON.stringify(payload)}`);
     if (payload.event === "status") {
+      const nextConnected = payload.state === "connected" || payload.state === "running";
+      setBridgeUi(nextConnected, payload.detail || (nextConnected ? "bridge connected" : "bridge stopped"));
+      if (!nextConnected) {
+        setActivity(false);
+      }
       await refreshControlStatus();
+    } else if (payload.event === "activity") {
+      if (!state.bridgeConnected) {
+        setBridgeUi(true, "bridge connected");
+      }
+      setActivity(true);
     }
+    addLog(`Bridge event: ${JSON.stringify(payload)}`);
   });
 }
 
@@ -856,6 +917,9 @@ el.btnDiscover.addEventListener("click", () => refreshTargets({ forceReload: tru
 el.btnOpenControl.addEventListener("click", () => {
   switchScreen("control");
   ensureControlSurfaceLoaded().catch((err) => addLog(`Control surface failed to open: ${err}`));
+});
+el.btnOpenSetup?.addEventListener("click", () => {
+  switchScreen("setup");
 });
 el.btnRefreshControl.addEventListener("click", refreshControlSurfacePage);
 el.deviceSelect.addEventListener("change", (event) => {
@@ -875,15 +939,16 @@ el.btnWifiScan.addEventListener("click", scanWifi);
 el.btnWifiSave.addEventListener("click", saveWifi);
 el.btnWifiForget.addEventListener("click", forgetWifi);
 el.btnStartBridge.addEventListener("click", startBridge);
-el.btnStopBridge.addEventListener("click", stopBridge);
-el.btnTestNote.addEventListener("click", startBridge);
+el.btnTestNote.addEventListener("click", testNote);
 el.btnCopy.addEventListener("click", copyLogs);
 el.btnExport.addEventListener("click", exportDiagnostics);
 
 async function init() {
   restoreScreen();
+  setBridgeUi(false);
   resetWifiSection();
   await bindEvents();
+  await refreshBridgeState();
   await refreshDevice();
   await refreshTargets({ forceReload: false });
   if (state.selectedTargetId) {
