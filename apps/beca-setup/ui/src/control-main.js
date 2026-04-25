@@ -1,12 +1,17 @@
 import { invoke } from "@tauri-apps/api/core";
 
 const POLL_INTERVAL_MS = {
-  network: 90,
-  serial: 160,
-  fallback: 140,
-  error: 450
+  network: 72,
+  serial: 118,
+  fallback: 96,
+  stale: 54,
+  render: 32,
+  error: 220
 };
-const SCOPE_DELTA_EPSILON = 0.0025;
+const SCOPE_DELTA_EPSILON = 0.0012;
+const SCOPE_FRAME_HEARTBEAT_MS = 140;
+const SCOPE_BLEND_LIVE = 0.34;
+const SCOPE_BLEND_STALE = 0.18;
 
 function splitPathAndQuery(rawUrl) {
   const [path, search = ""] = rawUrl.split("?");
@@ -32,11 +37,6 @@ function bodyToFormMap(body) {
 
 function snapshotStatePayload(snapshot) {
   return JSON.stringify(snapshot.state || {});
-}
-
-function snapshotScopePayload(snapshot) {
-  const plantValue = Number(snapshot?.plant?.value || 0);
-  return Number.isFinite(plantValue) ? plantValue.toFixed(3) : "0.000";
 }
 
 function snapshotNotePayload(snapshot) {
@@ -90,14 +90,21 @@ function createAppEventSource(targetWindow) {
       this.listeners = new Map();
       this.closed = false;
       this.lastError = false;
+      this.scopeTimer = null;
       this.previous = {
         state: "",
         note: "",
         drum: "",
-        scope: Number.NaN
+        scope: Number.NaN,
+        issue: ""
       };
+      this.latestSnapshot = null;
+      this.targetScope = 0;
+      this.animatedScope = 0;
+      this.lastScopeEmitAt = 0;
 
       queueMicrotask(() => this.emitMessage("hello", "{}"));
+      this.startScopeLoop();
       this.poll();
     }
 
@@ -114,6 +121,10 @@ function createAppEventSource(targetWindow) {
 
     close() {
       this.closed = true;
+      if (this.scopeTimer != null) {
+        targetWindow.clearTimeout(this.scopeTimer);
+        this.scopeTimer = null;
+      }
     }
 
     emitMessage(type, data) {
@@ -127,27 +138,62 @@ function createAppEventSource(targetWindow) {
       }
     }
 
+    startScopeLoop() {
+      const tick = () => {
+        if (this.closed) return;
+        this.emitScopeFrame();
+        this.scopeTimer = targetWindow.setTimeout(tick, POLL_INTERVAL_MS.render);
+      };
+      tick();
+    }
+
+    emitScopeFrame() {
+      if (!this.latestSnapshot) return;
+
+      const blend = this.latestSnapshot?.stale ? SCOPE_BLEND_STALE : SCOPE_BLEND_LIVE;
+      this.animatedScope += (this.targetScope - this.animatedScope) * blend;
+      if (!Number.isFinite(this.animatedScope)) {
+        this.animatedScope = this.targetScope;
+      }
+
+      const now = targetWindow.performance?.now?.() || Date.now();
+      const shouldEmit =
+        !Number.isFinite(this.previous.scope) ||
+        Math.abs(this.animatedScope - this.previous.scope) >= SCOPE_DELTA_EPSILON ||
+        (now - this.lastScopeEmitAt) >= SCOPE_FRAME_HEARTBEAT_MS;
+
+      if (!shouldEmit) return;
+
+      this.previous.scope = this.animatedScope;
+      this.lastScopeEmitAt = now;
+      this.emitMessage("scope", this.animatedScope.toFixed(3));
+    }
+
     async poll() {
       while (!this.closed) {
         let nextDelay = POLL_INTERVAL_MS.fallback;
         try {
           const snapshot = await invoke("control_snapshot");
+          const isStale = Boolean(snapshot?.stale);
+          const issue = String(snapshot?.issue || "").trim();
           this.lastError = false;
-          nextDelay = POLL_INTERVAL_MS[snapshot.transport] || POLL_INTERVAL_MS.fallback;
+          this.latestSnapshot = snapshot;
+          this.targetScope = Math.max(0, Math.min(1, Number(snapshot?.plant?.value || 0)));
+          if (!Number.isFinite(this.animatedScope)) {
+            this.animatedScope = this.targetScope;
+          }
+          if (!Number.isFinite(this.previous.scope)) {
+            this.previous.scope = this.targetScope;
+            this.animatedScope = this.targetScope;
+          }
+          nextDelay = isStale
+            ? POLL_INTERVAL_MS.stale
+            : (POLL_INTERVAL_MS[snapshot.transport] || POLL_INTERVAL_MS.fallback);
 
           const statePayload = snapshotStatePayload(snapshot);
           if (statePayload !== this.previous.state) {
             this.previous.state = statePayload;
             this.emitMessage("state", statePayload);
-          }
-
-          const scopeValue = Number(snapshot?.plant?.value || 0);
-          if (
-            !Number.isFinite(this.previous.scope) ||
-            Math.abs(scopeValue - this.previous.scope) >= SCOPE_DELTA_EPSILON
-          ) {
-            this.previous.scope = scopeValue;
-            this.emitMessage("scope", snapshotScopePayload(snapshot));
           }
 
           const notePayload = snapshotNotePayload(snapshot);
@@ -160,6 +206,15 @@ function createAppEventSource(targetWindow) {
           if (drumPayload !== this.previous.drum) {
             this.previous.drum = drumPayload;
             this.emitMessage("drum", drumPayload);
+          }
+
+          if (issue && issue !== this.previous.issue) {
+            this.previous.issue = issue;
+            if (isStale) {
+              this.emitError(new Error(issue));
+            }
+          } else if (!issue) {
+            this.previous.issue = "";
           }
         } catch (err) {
           if (!this.lastError) {

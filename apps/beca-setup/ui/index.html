@@ -8,13 +8,13 @@
   </head>
   <body>
     <main class="app-root">
-      <section class="surface-screen active" data-screen-view="control">
+      <section class="surface-screen" data-screen-view="control">
         <div id="control-host" class="control-host"></div>
         <p id="control-status" class="support-hidden" aria-hidden="true">Loading control surface.</p>
         <button id="btn-refresh-control" class="support-hidden" type="button">refresh control</button>
       </section>
 
-      <section class="surface-screen" data-screen-view="setup">
+      <section class="surface-screen active" data-screen-view="setup">
         <div class="setup-viewport">
           <section class="setup-frame">
             <div class="setup-logo" aria-hidden="true">
@@ -45,19 +45,19 @@
 
             <div class="setup-row setup-row-connect">
               <div class="setup-copy">
-                <h2>connect BECA:</h2>
-                <p>use a usb c data cable while uploading firmware or using the serial midi connection</p>
+                <h2>connect BECA</h2>
+                <p>use a usb c data cable for flashing firmware or running serial MIDI</p>
               </div>
               <div id="connect-status" class="setup-status-box">not connected</div>
-              <button id="btn-scan" class="setup-button setup-button-solid" type="button">rescan device</button>
+              <button id="btn-scan" class="setup-button setup-button-solid" type="button">scan device</button>
               <div id="port-chip" class="setup-microcopy"></div>
               <ul id="port-fixes" class="setup-fixes"></ul>
             </div>
 
             <div class="setup-row setup-row-firmware">
               <div class="setup-copy">
-                <h2>upload firmware:</h2>
-                <p>this is the code that BECA runs, upload the latest firmware as we update the codebase</p>
+                <h2>upload firmware</h2>
+                <p>upload the latest firmware before first use or when the codebase updates</p>
               </div>
               <label class="sr-only" for="firmware-select">firmware version</label>
               <select id="firmware-select" class="setup-select"></select>
@@ -69,7 +69,7 @@
             <div class="setup-row setup-row-name">
               <div class="setup-copy">
                 <h2>name the device</h2>
-                <p>access the control page on any browser using www.&lt;beca-name&gt;.local</p>
+                <p>open the control page in any browser at www.&lt;beca-name&gt;.local</p>
               </div>
               <label class="sr-only" for="wifi-name">device name</label>
               <input id="wifi-name" class="setup-input setup-input-wide" type="text" placeholder="beca-name" />
@@ -77,8 +77,8 @@
 
             <div class="setup-row setup-row-wifi">
               <div class="setup-copy">
-                <h2>select wifi network</h2>
-                <p>make sure the network has 2.4GHz, flash + save wifi if it fails to connect</p>
+                <h2>select wifi</h2>
+                <p>use a 2.4GHz network. if it fails, run flash + save wifi again</p>
               </div>
               <label class="sr-only" for="wifi-ssid">wifi name</label>
               <select id="wifi-ssid" class="setup-select">
@@ -88,7 +88,7 @@
               <input id="wifi-pass" class="setup-input" type="password" placeholder="password" />
               <input id="wifi-ssid-manual" class="support-hidden" type="text" placeholder="manual ssid" />
               <p id="selected-target-status" class="setup-inline-note">connect BECA first to configure Wi-Fi</p>
-              <button id="btn-wifi-scan" class="setup-button setup-button-solid setup-button-wide" type="button">rescan networks</button>
+              <button id="btn-wifi-scan" class="setup-button setup-button-wide" type="button">scan networks</button>
               <div class="setup-action-row">
                 <button id="btn-flash-wifi" class="setup-button" type="button">flash + save wifi</button>
                 <button id="btn-wifi-save" class="setup-button setup-button-solid" type="button">save &amp; reboot</button>
@@ -100,13 +100,13 @@
             <div class="setup-row setup-row-bridge">
               <div class="setup-copy">
                 <h2>MIDI bridge</h2>
-                <p>use this to convert serial to midi and split the serial channels so multiple devices can connect to one BECA</p>
+                <p>convert serial to MIDI and mirror it to a second output when needed</p>
               </div>
               <label class="sr-only" for="midi-select">primary output</label>
               <select id="midi-select" class="setup-select">
                 <option value="">output1</option>
               </select>
-              <button id="btn-start-bridge" class="setup-button setup-button-solid" type="button">connect bridge</button>
+              <button id="btn-start-bridge" class="setup-button setup-button-solid" type="button">start bridge</button>
               <label class="sr-only" for="midi-mirror-select">mirror output</label>
               <select id="midi-mirror-select" class="setup-select">
                 <option value="">output2</option>
@@ -128,7 +128,7 @@
 
             <div class="setup-row setup-row-help">
               <h2>how does BECA work?</h2>
-              <p>setup stays guided and minimal while the control page mirrors the hardware LED language so users can learn the instrument and gradually move away from software.</p>
+              <p>setup stays guided and minimal while the control page mirrors the hardware LED language, so the instrument can gradually pull focus away from software.</p>
             </div>
           </section>
         </div>

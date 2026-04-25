@@ -1,4 +1,4 @@
-use crate::{run_serial_command_json, RuntimeState};
+use crate::{run_serial_command_json, CachedControlError, CachedControlSnapshot, RuntimeState};
 use anyhow::{anyhow, Context};
 use beca_flasher::detect_beca_ports;
 use if_addrs::{get_if_addrs, IfAddr};
@@ -8,12 +8,17 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tauri::State;
 use tokio::sync::Semaphore;
 
 const NETWORK_SCAN_TIMEOUT_MS: u64 = 450;
 const CONTROL_HTTP_TIMEOUT_MS: u64 = 1400;
+const SNAPSHOT_REFRESH_MS_NETWORK: u64 = 72;
+const SNAPSHOT_REFRESH_MS_SERIAL: u64 = 118;
+const SNAPSHOT_REFRESH_MS_FALLBACK: u64 = 96;
+const SNAPSHOT_STALE_GRACE_MS: u64 = 1800;
+const SNAPSHOT_ERROR_BACKOFF_MS: u64 = 260;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ControlTarget {
@@ -45,7 +50,7 @@ pub struct ControlSelectionStatus {
     pub detail: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ControlResponse {
     pub status: u16,
     pub body: String,
@@ -53,7 +58,7 @@ pub struct ControlResponse {
     pub transport: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ControlSnapshot {
     pub state: Value,
     pub plant: Value,
@@ -61,6 +66,9 @@ pub struct ControlSnapshot {
     pub drum: Value,
     pub transport: String,
     pub target: Option<ControlTarget>,
+    pub stale: bool,
+    pub age_ms: u64,
+    pub issue: Option<String>,
 }
 
 #[tauri::command]
@@ -69,7 +77,8 @@ pub async fn discover_beca_targets(
 ) -> Result<ControlDiscoveryResult, String> {
     let bridge_running = state.bridge_child.lock().await.is_some();
     let serial_probe_guard = state.serial_op_lock.try_lock().ok();
-    let serial_targets = discover_serial_targets(bridge_running, serial_probe_guard.is_some()).await;
+    let serial_targets =
+        discover_serial_targets(bridge_running, serial_probe_guard.is_some()).await;
     drop(serial_probe_guard);
     let network_targets = discover_network_targets().await;
     let targets = merge_targets(serial_targets, network_targets);
@@ -90,6 +99,7 @@ pub async fn discover_beca_targets(
         *selected = next.clone();
         next
     };
+    invalidate_control_snapshot_cache(&state).await;
 
     Ok(ControlDiscoveryResult {
         targets,
@@ -112,6 +122,7 @@ pub async fn select_control_target(
         })?;
 
     *state.selected_control_target.lock().await = Some(selected.id.clone());
+    invalidate_control_snapshot_cache(&state).await;
     build_selection_status(&state, Some(selected)).await
 }
 
@@ -131,7 +142,7 @@ pub async fn control_request(
     query: Option<BTreeMap<String, String>>,
     form: Option<BTreeMap<String, String>>,
 ) -> Result<ControlResponse, String> {
-    execute_control_request(
+    let response = execute_control_request(
         &state,
         &method,
         &path,
@@ -139,7 +150,13 @@ pub async fn control_request(
         form.unwrap_or_default(),
     )
     .await
-    .map_err(|err| err.to_string())
+    .map_err(|err| err.to_string())?;
+
+    if method.eq_ignore_ascii_case("POST") {
+        invalidate_control_snapshot_cache(&state).await;
+    }
+
+    Ok(response)
 }
 
 #[tauri::command]
@@ -147,24 +164,46 @@ pub async fn control_snapshot(state: State<'_, RuntimeState>) -> Result<ControlS
     let target = active_target(&state)
         .await
         .ok_or_else(|| "No BECA target selected. Refresh devices first.".to_string())?;
+    let now = Instant::now();
 
-    let (state_res, plant_res, notes_res, drum_res): (
-        ControlResponse,
-        ControlResponse,
-        ControlResponse,
-        ControlResponse,
-    ) = execute_snapshot_request(&state, &target)
-        .await
-        .map_err(|err| err.to_string())?;
+    if let Some(snapshot) = maybe_cached_snapshot(&state, &target, now).await {
+        return Ok(snapshot);
+    }
 
-    Ok(ControlSnapshot {
-        state: parse_json_body(&state_res.body),
-        plant: parse_json_body(&plant_res.body),
-        notes: parse_json_body(&notes_res.body),
-        drum: parse_json_body(&drum_res.body),
-        transport: state_res.transport,
-        target: active_target(&state).await,
-    })
+    let _refresh_guard = state.control_snapshot_refresh.lock().await;
+    if let Some(cached) = state.cached_control_snapshot.lock().await.clone() {
+        let cached_target_id = cached.snapshot.target.as_ref().map(|item| item.id.as_str());
+        if cached_target_id == Some(target.id.as_str()) {
+            let age = Instant::now().saturating_duration_since(cached.captured_at);
+            if age <= cached.refresh_after {
+                return Ok(decorate_snapshot(&cached.snapshot, age, false, None));
+            }
+        }
+    }
+
+    match fetch_live_snapshot(&state, &target).await {
+        Ok(snapshot) => {
+            *state.last_control_error.lock().await = None;
+            let cached = CachedControlSnapshot {
+                refresh_after: snapshot_refresh_window(&snapshot.transport),
+                captured_at: Instant::now(),
+                snapshot: snapshot.clone(),
+            };
+            *state.cached_control_snapshot.lock().await = Some(cached);
+            Ok(snapshot)
+        }
+        Err(err) => {
+            let issue = compact_snapshot_issue(err.to_string());
+            *state.last_control_error.lock().await = Some(CachedControlError {
+                message: issue.clone(),
+                happened_at: Instant::now(),
+            });
+            if let Some(snapshot) = stale_snapshot_after_error(&state, &target, &issue).await {
+                return Ok(snapshot);
+            }
+            Err(issue)
+        }
+    }
 }
 
 async fn build_selection_status(
@@ -241,6 +280,118 @@ async fn active_target(state: &State<'_, RuntimeState>) -> Option<ControlTarget>
     targets.into_iter().next()
 }
 
+async fn invalidate_control_snapshot_cache(state: &State<'_, RuntimeState>) {
+    *state.cached_control_snapshot.lock().await = None;
+    *state.last_control_error.lock().await = None;
+}
+
+fn snapshot_refresh_window(transport: &str) -> Duration {
+    match transport {
+        "network" => Duration::from_millis(SNAPSHOT_REFRESH_MS_NETWORK),
+        "serial" => Duration::from_millis(SNAPSHOT_REFRESH_MS_SERIAL),
+        _ => Duration::from_millis(SNAPSHOT_REFRESH_MS_FALLBACK),
+    }
+}
+
+fn decorate_snapshot(
+    snapshot: &ControlSnapshot,
+    age: Duration,
+    stale: bool,
+    issue: Option<String>,
+) -> ControlSnapshot {
+    let mut next = snapshot.clone();
+    next.age_ms = age.as_millis().min(u128::from(u64::MAX)) as u64;
+    next.stale = stale;
+    next.issue = issue;
+    next
+}
+
+fn compact_snapshot_issue(issue: String) -> String {
+    let trimmed = issue.trim();
+    if trimmed.is_empty() {
+        return "Live control stalled briefly. Retrying.".to_string();
+    }
+    if trimmed.len() > 180 {
+        format!("{}...", &trimmed[..177])
+    } else {
+        trimmed.to_string()
+    }
+}
+
+async fn maybe_cached_snapshot(
+    state: &State<'_, RuntimeState>,
+    target: &ControlTarget,
+    now: Instant,
+) -> Option<ControlSnapshot> {
+    let cached = state.cached_control_snapshot.lock().await.clone()?;
+    let cached_target_id = cached.snapshot.target.as_ref().map(|item| item.id.as_str());
+    if cached_target_id != Some(target.id.as_str()) {
+        return None;
+    }
+
+    let age = now.saturating_duration_since(cached.captured_at);
+    if age <= cached.refresh_after {
+        return Some(decorate_snapshot(&cached.snapshot, age, false, None));
+    }
+
+    if age > Duration::from_millis(SNAPSHOT_STALE_GRACE_MS) {
+        return None;
+    }
+
+    let refresh_in_flight = match state.control_snapshot_refresh.try_lock() {
+        Ok(guard) => {
+            drop(guard);
+            false
+        }
+        Err(_) => true,
+    };
+
+    let recent_error = state.last_control_error.lock().await.clone();
+    if refresh_in_flight {
+        let issue = recent_error.map(|err| err.message);
+        return Some(decorate_snapshot(&cached.snapshot, age, true, issue));
+    }
+
+    if let Some(error_state) = recent_error {
+        if now.saturating_duration_since(error_state.happened_at)
+            <= Duration::from_millis(SNAPSHOT_ERROR_BACKOFF_MS)
+        {
+            return Some(decorate_snapshot(
+                &cached.snapshot,
+                age,
+                true,
+                Some(error_state.message),
+            ));
+        }
+    }
+
+    None
+}
+
+async fn stale_snapshot_after_error(
+    state: &State<'_, RuntimeState>,
+    target: &ControlTarget,
+    issue: &str,
+) -> Option<ControlSnapshot> {
+    let cached = state.cached_control_snapshot.lock().await.clone()?;
+    let cached_target_id = cached.snapshot.target.as_ref().map(|item| item.id.as_str());
+    if cached_target_id != Some(target.id.as_str()) {
+        return None;
+    }
+    let age = Instant::now().saturating_duration_since(cached.captured_at);
+    if age > Duration::from_millis(SNAPSHOT_STALE_GRACE_MS) {
+        return None;
+    }
+    Some(decorate_snapshot(
+        &cached.snapshot,
+        age,
+        true,
+        Some(format!(
+            "Using the last live data while reconnecting. {issue}"
+        )),
+    ))
+}
+
 async fn execute_control_request(
     state: &State<'_, RuntimeState>,
     method: &str,
@@ -256,34 +407,36 @@ async fn execute_control_request(
     if let Some(transport) = primary {
         let primary_result = match transport {
             "serial" => request_over_serial(state, &target, method, path, &query, &form).await,
-            "network" => request_over_network(&target, method, path, &query, &form).await,
+            "network" => request_over_network(state, &target, method, path, &query, &form).await,
             _ => Err(anyhow!("Unsupported BECA control transport: {transport}")),
         };
         match primary_result {
             Ok(response) => return Ok(response),
             Err(err) => {
-            if let Some(fallback) = fallback_transport(&target, transport) {
-                return match fallback {
-                    "serial" => request_over_serial(state, &target, method, path, &query, &form)
-                        .await
-                        .map_err(|_| err),
-                    "network" => request_over_network(&target, method, path, &query, &form)
-                        .await
-                        .map_err(|_| err),
-                    _ => Err(err),
-                };
+                if let Some(fallback) = fallback_transport(&target, transport) {
+                    return match fallback {
+                        "serial" => {
+                            request_over_serial(state, &target, method, path, &query, &form)
+                                .await
+                                .map_err(|_| err)
+                        }
+                        "network" => {
+                            request_over_network(state, &target, method, path, &query, &form)
+                                .await
+                                .map_err(|_| err)
+                        }
+                        _ => Err(err),
+                    };
+                }
+                return Err(err);
             }
-            return Err(err);
-        }
         };
     }
 
-    Err(anyhow!(
-        target
-            .issue
-            .clone()
-            .unwrap_or_else(|| network_only_control_issue(&target))
-    ))
+    Err(anyhow!(target
+        .issue
+        .clone()
+        .unwrap_or_else(|| network_only_control_issue(&target))))
 }
 
 async fn execute_snapshot_request(
@@ -295,12 +448,16 @@ async fn execute_snapshot_request(
     ControlResponse,
     ControlResponse,
 )> {
-    let primary = preferred_transport(target)
-        .ok_or_else(|| anyhow!(target.issue.clone().unwrap_or_else(|| network_only_control_issue(target))))?;
+    let primary = preferred_transport(target).ok_or_else(|| {
+        anyhow!(target
+            .issue
+            .clone()
+            .unwrap_or_else(|| network_only_control_issue(target)))
+    })?;
 
     let primary_result = match primary {
         "serial" => snapshot_over_serial(state, target).await,
-        "network" => snapshot_over_network_target(target).await,
+        "network" => snapshot_over_network_target(state, target).await,
         _ => Err(anyhow!("Unsupported BECA snapshot transport: {primary}")),
     };
 
@@ -310,7 +467,7 @@ async fn execute_snapshot_request(
             if let Some(fallback) = fallback_transport(target, primary) {
                 let fallback_result = match fallback {
                     "serial" => snapshot_over_serial(state, target).await,
-                    "network" => snapshot_over_network_target(target).await,
+                    "network" => snapshot_over_network_target(state, target).await,
                     _ => Err(anyhow!("Unsupported BECA snapshot transport: {fallback}")),
                 };
                 return fallback_result.map_err(|_| primary_err);
@@ -320,7 +477,28 @@ async fn execute_snapshot_request(
     }
 }
 
+async fn fetch_live_snapshot(
+    state: &State<'_, RuntimeState>,
+    target: &ControlTarget,
+) -> anyhow::Result<ControlSnapshot> {
+    let (state_res, plant_res, notes_res, drum_res) =
+        execute_snapshot_request(state, target).await?;
+
+    Ok(ControlSnapshot {
+        state: parse_json_body(&state_res.body),
+        plant: parse_json_body(&plant_res.body),
+        notes: parse_json_body(&notes_res.body),
+        drum: parse_json_body(&drum_res.body),
+        transport: state_res.transport,
+        target: Some(target.clone()),
+        stale: false,
+        age_ms: 0,
+        issue: None,
+    })
+}
+
 async fn request_over_network(
+    state: &State<'_, RuntimeState>,
     target: &ControlTarget,
     method: &str,
     path: &str,
@@ -331,7 +509,7 @@ async fn request_over_network(
         .network_url
         .as_deref()
         .ok_or_else(|| anyhow!(network_only_control_issue(target)))?;
-    network_request(url, method, path, query, form).await
+    network_request_with_client(&state.control_http_client, url, method, path, query, form).await
 }
 
 async fn request_over_serial(
@@ -350,6 +528,7 @@ async fn request_over_serial(
 }
 
 async fn snapshot_over_network_target(
+    state: &State<'_, RuntimeState>,
     target: &ControlTarget,
 ) -> anyhow::Result<(
     ControlResponse,
@@ -361,9 +540,10 @@ async fn snapshot_over_network_target(
         .network_url
         .as_deref()
         .ok_or_else(|| anyhow!(network_only_control_issue(target)))?;
-    snapshot_over_network(url).await
+    snapshot_over_network_with_client(&state.control_http_client, url).await
 }
 
+#[cfg(test)]
 async fn network_request(
     base_url: &str,
     method: &str,
@@ -426,7 +606,8 @@ async fn network_request_with_client(
     })
 }
 
-async fn snapshot_over_network(
+async fn snapshot_over_network_with_client(
+    client: &Client,
     base_url: &str,
 ) -> anyhow::Result<(
     ControlResponse,
@@ -434,13 +615,17 @@ async fn snapshot_over_network(
     ControlResponse,
     ControlResponse,
 )> {
-    let client = Client::builder()
-        .timeout(Duration::from_millis(CONTROL_HTTP_TIMEOUT_MS))
-        .build()
-        .context("failed to create HTTP client")?;
     let empty_query = BTreeMap::new();
     let empty_form = BTreeMap::new();
-    let live = network_request_with_client(&client, base_url, "GET", "/api/live", &empty_query, &empty_form).await?;
+    let live = network_request_with_client(
+        client,
+        base_url,
+        "GET",
+        "/api/live",
+        &empty_query,
+        &empty_form,
+    )
+    .await?;
     split_live_snapshot_response(live)
 }
 
@@ -459,7 +644,15 @@ async fn snapshot_over_serial(
         .ok_or_else(|| anyhow!("No BECA serial port is available for live control."))?;
     let empty_query = BTreeMap::new();
     let empty_form = BTreeMap::new();
-    let live = serial_request(state, serial_port, "GET", "/api/live", &empty_query, &empty_form).await?;
+    let live = serial_request(
+        state,
+        serial_port,
+        "GET",
+        "/api/live",
+        &empty_query,
+        &empty_form,
+    )
+    .await?;
     split_live_snapshot_response(live)
 }
 
@@ -481,7 +674,11 @@ fn split_live_snapshot_response(
 
     let section_response = |key: &str| ControlResponse {
         status: response.status,
-        body: live.get(key).cloned().unwrap_or_else(|| json!({})).to_string(),
+        body: live
+            .get(key)
+            .cloned()
+            .unwrap_or_else(|| json!({}))
+            .to_string(),
         content_type: content_type.clone(),
         transport: transport.clone(),
     };

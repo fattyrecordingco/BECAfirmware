@@ -59,10 +59,12 @@ const state = {
   controlMounted: false,
   controlReady: false,
   controlIssue: "",
-  bridgeConnected: false
+  bridgeConnected: false,
+  activeScreen: "setup"
 };
 
 const VIEW_STORAGE_KEY = "beca-active-screen";
+const BRIDGE_PREFS_STORAGE_KEY = "beca-bridge-prefs-v1";
 
 function addLog(line) {
   const stamped = `[${new Date().toISOString()}] ${line}`;
@@ -80,21 +82,21 @@ function setActivity(active) {
 function setConnectStatus(message, hasDevice) {
   el.connectStatus.textContent = message;
   el.connectStatus.classList.toggle("is-error", !hasDevice);
+  el.connectStatus.classList.toggle("is-ok", hasDevice);
 }
 
 function setBridgeUi(connected, detail = "") {
   state.bridgeConnected = Boolean(connected);
-  el.btnStartBridge.textContent = connected ? "disconnect bridge" : "connect bridge";
+  el.btnStartBridge.textContent = connected ? "disconnect bridge" : "start bridge";
   el.btnStartBridge.classList.toggle("setup-button-danger", connected);
   el.btnStartBridge.classList.toggle("setup-button-solid", !connected);
   el.btnStartBridge.setAttribute("aria-pressed", connected ? "true" : "false");
-  el.midiSelect.disabled = connected;
-  el.midiMirrorSelect.disabled = connected;
   if (detail) {
     el.bridgeStatus.textContent = detail;
   } else {
     el.bridgeStatus.textContent = connected ? "bridge connected" : "bridge not running";
   }
+  setWifiControlsEnabled(Boolean(state.selectedPort) && !state.flashInProgress && !state.wifiOpInFlight);
 }
 
 async function refreshBridgeState() {
@@ -123,6 +125,28 @@ function syncSetupTopIcons(screenName) {
 function currentMirrorMidiPort() {
   const value = (el.midiMirrorSelect?.value || "").trim();
   return value || null;
+}
+
+function readBridgePrefs() {
+  try {
+    const raw = window.localStorage.getItem(BRIDGE_PREFS_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeBridgePrefs() {
+  const payload = {
+    midiPort: (el.midiSelect?.value || "").trim(),
+    mirrorMidiPort: currentMirrorMidiPort() || "",
+    microfreakMode: Boolean(el.microfreakMode?.checked),
+    mirrorMicrofreakMode: Boolean(el.midiMirrorMicrofreakMode?.checked)
+  };
+  window.localStorage.setItem(BRIDGE_PREFS_STORAGE_KEY, JSON.stringify(payload));
+  return payload;
 }
 
 function renderControlPlaceholder(message) {
@@ -163,6 +187,7 @@ function renderControlPlaceholder(message) {
 }
 
 function switchScreen(screenName) {
+  state.activeScreen = screenName;
   window.localStorage.setItem(VIEW_STORAGE_KEY, screenName);
   syncSetupTopIcons(screenName);
   el.viewTabs.forEach((button) => {
@@ -176,9 +201,18 @@ function switchScreen(screenName) {
   }
 }
 
+function preferredScreen(saved = window.localStorage.getItem(VIEW_STORAGE_KEY)) {
+  if (!state.selectedTargetId || !state.controlReady) {
+    return "setup";
+  }
+  return saved === "setup" || saved === "control" ? saved : "control";
+}
+
 function restoreScreen() {
   const saved = window.localStorage.getItem(VIEW_STORAGE_KEY);
-  const active = el.screens.some((screen) => screen.dataset.screenView === saved) ? saved : "control";
+  const active = el.screens.some((screen) => screen.dataset.screenView === saved)
+    ? preferredScreen(saved)
+    : preferredScreen("setup");
   switchScreen(active);
 }
 
@@ -223,15 +257,27 @@ function setWifiStatus(message, tone = "") {
 }
 
 function setWifiControlsEnabled(enabled) {
+  const hasPort = Boolean(state.selectedPort);
   const ready = enabled && Date.now() >= state.wifiCooldownUntil;
+  const hasWifiTarget = Boolean(currentSsidSelection());
+  const hasMidiOutput = Boolean((el.midiSelect?.value || "").trim());
+  const canBridge = state.bridgeConnected || (hasPort && !state.flashInProgress && !state.wifiOpInFlight && hasMidiOutput);
+
+  el.btnScan.disabled = state.flashInProgress || state.wifiOpInFlight;
+  el.firmwareSelect.disabled = !hasPort || state.flashInProgress || state.wifiOpInFlight;
+  el.btnFlash.disabled = !hasPort || state.flashInProgress || state.wifiOpInFlight;
   el.btnWifiScan.disabled = !ready;
-  el.btnWifiSave.disabled = !ready;
+  el.btnWifiSave.disabled = !ready || !hasWifiTarget;
   el.btnWifiForget.disabled = !ready;
-  el.btnFlashWifi.disabled = !ready;
+  el.btnFlashWifi.disabled = !ready || !hasWifiTarget;
   el.wifiName.disabled = !ready;
   el.wifiSsid.disabled = !ready;
   el.wifiSsidManual.disabled = !ready;
   el.wifiPass.disabled = !ready;
+  el.midiSelect.disabled = state.bridgeConnected || !hasPort;
+  el.midiMirrorSelect.disabled = state.bridgeConnected || !hasPort;
+  el.btnStartBridge.disabled = !canBridge;
+  el.btnTestNote.disabled = !hasMidiOutput || state.flashInProgress || state.wifiOpInFlight;
 }
 
 function setWifiCooldown(ms, message = "") {
@@ -336,6 +382,9 @@ async function refreshControlStatus({ forceReload = false } = {}) {
   try {
     const status = await invoke("current_control_target");
     updateTargetSummary(status);
+    if (state.activeScreen !== "control") {
+      return;
+    }
     if (state.selectedTargetId && state.controlReady) {
       await ensureControlSurfaceLoaded();
       if (forceReload) {
@@ -548,6 +597,7 @@ async function refreshWifiSection() {
     el.wifiSsid.appendChild(option);
     el.wifiSsid.value = info.ssid;
   }
+  setWifiControlsEnabled(Boolean(state.selectedPort) && !state.flashInProgress && !state.wifiOpInFlight);
 }
 
 async function refreshDevice() {
@@ -604,8 +654,9 @@ async function refreshFirmwareOptions() {
 async function refreshMidiOutputs() {
   try {
     const outputs = await invoke("list_midi_outputs");
-    const currentPrimary = el.midiSelect.value;
-    const currentMirror = currentMirrorMidiPort();
+    const savedBridgePrefs = readBridgePrefs();
+    const currentPrimary = (el.midiSelect.value || savedBridgePrefs.midiPort || "").trim();
+    const currentMirror = (currentMirrorMidiPort() || savedBridgePrefs.mirrorMidiPort || "").trim();
     el.midiSelect.innerHTML = "";
     el.midiMirrorSelect.innerHTML = "";
 
@@ -634,8 +685,13 @@ async function refreshMidiOutputs() {
     if (currentMirror && !Array.from(el.midiMirrorSelect.options).some((opt) => opt.value === currentMirror)) {
       el.midiMirrorSelect.value = "";
     }
-    el.midiSelect.disabled = state.bridgeConnected;
-    el.midiMirrorSelect.disabled = state.bridgeConnected;
+    if (el.midiMirrorSelect.value && el.midiMirrorSelect.value === el.midiSelect.value) {
+      el.midiMirrorSelect.value = "";
+    }
+    el.microfreakMode.checked = Boolean(savedBridgePrefs.microfreakMode);
+    el.midiMirrorMicrofreakMode.checked = Boolean(savedBridgePrefs.mirrorMicrofreakMode);
+    writeBridgePrefs();
+    setWifiControlsEnabled(Boolean(state.selectedPort) && !state.flashInProgress && !state.wifiOpInFlight);
     addLog(`Loaded ${outputs.length} MIDI outputs.`);
   } catch (err) {
     addLog(`MIDI list failed: ${err}`);
@@ -927,6 +983,22 @@ el.deviceSelect.addEventListener("change", (event) => {
     addLog(`Device selection failed: ${err}`)
   );
 });
+el.midiSelect.addEventListener("change", () => {
+  writeBridgePrefs();
+  setWifiControlsEnabled(Boolean(state.selectedPort) && !state.flashInProgress && !state.wifiOpInFlight);
+});
+el.midiMirrorSelect.addEventListener("change", () => {
+  writeBridgePrefs();
+  setWifiControlsEnabled(Boolean(state.selectedPort) && !state.flashInProgress && !state.wifiOpInFlight);
+});
+el.microfreakMode.addEventListener("change", writeBridgePrefs);
+el.midiMirrorMicrofreakMode.addEventListener("change", writeBridgePrefs);
+el.wifiSsid.addEventListener("change", () => {
+  setWifiControlsEnabled(Boolean(state.selectedPort) && !state.flashInProgress && !state.wifiOpInFlight);
+});
+el.wifiSsidManual.addEventListener("input", () => {
+  setWifiControlsEnabled(Boolean(state.selectedPort) && !state.flashInProgress && !state.wifiOpInFlight);
+});
 el.btnScan.addEventListener("click", async () => {
   await refreshDevice();
   await refreshTargets({ forceReload: true });
@@ -942,16 +1014,20 @@ el.btnStartBridge.addEventListener("click", startBridge);
 el.btnTestNote.addEventListener("click", testNote);
 el.btnCopy.addEventListener("click", copyLogs);
 el.btnExport.addEventListener("click", exportDiagnostics);
+window.addEventListener("beforeunload", () => {
+  writeBridgePrefs();
+});
 
 async function init() {
-  restoreScreen();
+  switchScreen("setup");
   setBridgeUi(false);
   resetWifiSection();
   await bindEvents();
   await refreshBridgeState();
   await refreshDevice();
   await refreshTargets({ forceReload: false });
-  if (state.selectedTargetId) {
+  restoreScreen();
+  if (state.selectedTargetId && state.activeScreen === "control") {
     await ensureControlSurfaceLoaded();
   }
   await refreshFirmwareOptions();

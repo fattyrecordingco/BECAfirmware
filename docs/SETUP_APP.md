@@ -8,7 +8,7 @@ For complete user instructions (Windows/macOS/Linux install, DAW setup, and BECA
 - `README.md` sections `10` through `16`
 
 Current setup app version baseline in this branch:
-- `0.1.3`
+- `0.1.4`
 
 ## Final architecture choice
 
@@ -65,6 +65,7 @@ Named baseline for this cycle:
 - If bundled flash tooling is missing, app auto-repair downloads `espflash` (`v4.2.0`) and retries.
 - If `espflash` cannot connect to some CH340/CP210x boards, app auto-fallback retries with `esptool` (`v5.2.0` on Windows).
 - Flash now retries with safer baud rates when high-speed flashing fails (improves CH340/CP210x reliability on Windows/macOS/Linux).
+- Standard firmware flashes keep BECA's saved Wi-Fi and runtime session data in NVS.
 
 3. **Set Wi-Fi**
 - Scans nearby Wi-Fi SSIDs through a USB serial command channel.
@@ -79,6 +80,14 @@ Named baseline for this cycle:
 - Auto-reconnects on serial disconnect.
 - Supports `Test Note` to verify MIDI routing.
 - Includes an optional `MicroFreak mode` toggle for direct Arturia MicroFreak note routing over the serial bridge.
+- Restores the last selected bridge routing + MicroFreak toggles on next launch.
+- Stops the bridge automatically when the BECA desktop app exits.
+
+5. **Live Control**
+- Reuses one native HTTP client for desktop live control instead of rebuilding the transport for each poll.
+- Keeps a short-lived cached `/api/live` snapshot so UI refreshes stay smooth without hammering USB or Wi-Fi.
+- Holds the last good live frame briefly during reconnects so the plant monitor does not appear to freeze and reset on every transient delay.
+- Defaults back to `Setup` until a control-ready target exists, with one always-visible device/status strip above both views.
 
 ## UI cohesion with BECA control page
 

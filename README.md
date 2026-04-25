@@ -18,6 +18,10 @@ The old browser page on the device is now a fallback and recovery path, not the 
 - native Serial MIDI bridge in [tools/bridge](./tools/bridge)
 - flashing and backup helpers in [tools/flasher](./tools/flasher)
 
+Repo layout note:
+- keep [BECAfinalsv02.ino](./BECAfinalsv02.ino) as the Arduino sketch entrypoint
+- keep the thin `src/*` PlatformIO wrappers because they are the compatibility layer between Arduino IDE and PlatformIO
+
 ## Current Product Model
 
 BECA now works as one consistent system:
@@ -117,6 +121,8 @@ On the `Setup` screen:
 2. click `flash firmware`
 3. wait for flash completion before doing anything else
 
+Normal firmware flashes keep the saved Wi-Fi credentials and the last runtime session because the app image is updated without erasing the NVS settings partition.
+
 If flashing fails:
 - try another USB cable
 - close any serial monitors
@@ -147,6 +153,14 @@ Bridge rules:
 - the bridge owns the serial port while running
 - stop the bridge before Wi-Fi setup or any direct serial maintenance
 - the app now reflects bridge state on launch, so it should not come up lying about whether bridge is running
+- the app now stops the bridge automatically when the desktop window exits
+- the last bridge routing and MicroFreak toggle choices are restored on the next launch
+
+Live stability rules:
+- the desktop app now reuses its live control HTTP client instead of rebuilding it on every request
+- live snapshots are cached briefly and reused across UI polls so the plant monitor stays smoother
+- if Wi-Fi or serial control stalls for a moment, the app keeps the last good live frame while it reconnects instead of dropping immediately into a dead-looking monitor
+- the control page now defaults back to `Setup` until a live target is actually ready
 
 ## The Control View
 
@@ -242,6 +256,15 @@ The 8 device LEDs and the 8 leaves on the right side of the app are now informat
 - grey means off
 - the app mirrors the physical LED state
 - the first logical LED is the bottom leaf, not the top
+
+### Startup self-check
+
+On boot, the 8 device LEDs now run a short self-check before BECA announces Serial MIDI readiness. Green means the check passed, yellow means BECA is in a safe fallback state, and red means that check needs attention.
+
+Plant trigger stability:
+- firmware now uses a small hysteresis window and re-arm delay on plant triggers
+- this reduces rapid stop-start retriggers when the sensor energy hovers near the threshold
+- the live plant scope stream now updates faster at `15 fps`
 
 ### How each control reads
 
@@ -386,6 +409,7 @@ That workflow:
 - keep BLE MIDI stable
 - keep control transport diff-based and lightweight
 - do not reintroduce the old mock control surface behavior
+- keep repo cleanup conservative around Arduino/PlatformIO compatibility shims
 - if setup or control behavior changes, update this README in the same change
 - if you touch the device web fallback `index.html`, regenerate `index_html.h`
 

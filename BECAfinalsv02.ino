@@ -541,6 +541,35 @@ static const uint8_t RUNTIME_STATE_VER = 2;
 const uint32_t RUNTIME_SAVE_DEBOUNCE_MS = 1400;
 const uint32_t RUNTIME_SAVE_MIN_INTERVAL_MS = 7000;
 
+enum StartupCheckStatus : uint8_t {
+  STARTUP_CHECK_PENDING = 0,
+  STARTUP_CHECK_OK,
+  STARTUP_CHECK_WARN,
+  STARTUP_CHECK_FAIL
+};
+
+enum StartupCheckId : uint8_t {
+  STARTUP_CHECK_PREFS = 0,
+  STARTUP_CHECK_SESSION,
+  STARTUP_CHECK_PLANT,
+  STARTUP_CHECK_BLE,
+  STARTUP_CHECK_OUTPUT,
+  STARTUP_CHECK_WIFI_SAVED,
+  STARTUP_CHECK_NETWORK,
+  STARTUP_CHECK_SERVICES
+};
+
+static const char* STARTUP_CHECK_LABELS[LED_COUNT] = {
+  "prefs",
+  "session",
+  "plant",
+  "ble",
+  "output",
+  "wifi_saved",
+  "network",
+  "services"
+};
+
 struct RuntimeStateBlob {
   uint32_t magic;
   uint8_t version;
@@ -582,6 +611,7 @@ bool gRuntimeDirty = false;
 bool gSoftRestartPending = false;
 uint32_t gSoftRestartAtMs = 0;
 uint8_t gUnderrunHighStreak = 0;
+StartupCheckStatus gStartupChecks[LED_COUNT] = {};
 
 static inline uint32_t hashBytesFnv1a(uint32_t h, const void* data, size_t len);
 static inline uint32_t runtimeStateSignature();
@@ -592,6 +622,11 @@ static inline void applyRuntimeState(const RuntimeStateBlob& in, bool applyOutpu
 static inline void saveRuntimeStateNow();
 static inline void serviceRuntimeAutoSave(uint32_t nowMs);
 static inline void requestSoftRestart(const char* reason);
+static inline void resetStartupChecks();
+static inline void setStartupCheck(StartupCheckId id, StartupCheckStatus status);
+static inline void renderStartupCheckLeds(int8_t scanIndex = -1);
+static inline void playStartupCheckAnimation();
+static inline void logStartupCheckSummary();
 
 // -------------------- Music theory --------------------
 enum Mode { MODE_NOTE = 0, MODE_ARP = 1, MODE_CHORD = 2, MODE_DRUM = 3 };
@@ -971,16 +1006,24 @@ static inline uint32_t runtimeStateSignature() {
   captureRuntimeState(snap);
   uint32_t h = 2166136261u;
   h = hashBytesFnv1a(h, &snap, sizeof(snap));
+  h = (h ^ (uint8_t)gEncoderSetting) * 16777619u;
+  h = (h ^ (gEncoderVolumeMode ? 1u : 0u)) * 16777619u;
   return h;
 }
 
 static inline void saveRuntimeStateNow() {
   RuntimeStateBlob snap;
   captureRuntimeState(snap);
-  prefs.begin("beca", false);
+  if (!prefs.begin("beca", false)) {
+    gLastRuntimeSaveMs = millis();
+    gRuntimeDirty = false;
+    return;
+  }
   prefs.putBytes("rt_state", &snap, sizeof(snap));
   prefs.putUChar("outputmode", snap.outputmode);
   prefs.putUChar("midimode", snap.outputmode == OUTPUT_SERIAL ? 1 : 0);  // legacy compatibility
+  prefs.putUChar("encset", (uint8_t)gEncoderSetting);
+  prefs.putUChar("encvol", gEncoderVolumeMode ? 1u : 0u);
   prefs.end();
   gLastRuntimeSaveMs = millis();
   gRuntimeDirty = false;
@@ -1254,6 +1297,79 @@ static inline uint8_t encoderDisplayedLedCount() {
 static inline void copyLogicalLedsToPhysical() {
   for (uint8_t i = 0; i < LED_COUNT; ++i) {
     ledsPhysical[i] = leds[i];
+  }
+}
+
+static inline const char* startupCheckStatusName(StartupCheckStatus status) {
+  switch (status) {
+    case STARTUP_CHECK_OK:   return "ok";
+    case STARTUP_CHECK_WARN: return "warn";
+    case STARTUP_CHECK_FAIL: return "fail";
+    case STARTUP_CHECK_PENDING:
+    default:                 return "pending";
+  }
+}
+
+static inline CRGB startupCheckColor(StartupCheckStatus status) {
+  switch (status) {
+    case STARTUP_CHECK_OK:   return CRGB(36, 196, 92);
+    case STARTUP_CHECK_WARN: return CRGB(255, 184, 28);
+    case STARTUP_CHECK_FAIL: return CRGB(236, 52, 36);
+    case STARTUP_CHECK_PENDING:
+    default:                 return CRGB::Black;
+  }
+}
+
+static inline void resetStartupChecks() {
+  for (uint8_t i = 0; i < LED_COUNT; ++i) {
+    gStartupChecks[i] = STARTUP_CHECK_PENDING;
+  }
+}
+
+static inline void setStartupCheck(StartupCheckId id, StartupCheckStatus status) {
+  if ((uint8_t)id >= LED_COUNT) return;
+  gStartupChecks[(uint8_t)id] = status;
+}
+
+static inline void renderStartupCheckLeds(int8_t scanIndex) {
+  fill_solid(leds, LED_COUNT, CRGB::Black);
+  for (uint8_t i = 0; i < LED_COUNT; ++i) {
+    leds[i] = startupCheckColor(gStartupChecks[i]);
+  }
+
+  if (scanIndex >= 0 && scanIndex < LED_COUNT) {
+    uint8_t idx = (uint8_t)scanIndex;
+    if (gStartupChecks[idx] == STARTUP_CHECK_PENDING) {
+      leds[idx] = CRGB(40, 86, 160);
+    } else {
+      leds[idx] += CRGB(26, 26, 26);
+    }
+  }
+
+  FastLED.setBrightness(max<uint8_t>(gBrightness, 110));
+  copyLogicalLedsToPhysical();
+  FastLED.show();
+  delay(0);
+}
+
+static inline void playStartupCheckAnimation() {
+  for (uint8_t i = 0; i < LED_COUNT; ++i) {
+    renderStartupCheckLeds((int8_t)i);
+    delay(90);
+    delay(0);
+  }
+  renderStartupCheckLeds(-1);
+  delay(420);
+  delay(0);
+  FastLED.setBrightness(gBrightness);
+}
+
+static inline void logStartupCheckSummary() {
+  for (uint8_t i = 0; i < LED_COUNT; ++i) {
+    Serial.printf("@I STARTUP CHECK %u %s %s\n",
+                  (unsigned)(i + 1u),
+                  STARTUP_CHECK_LABELS[i],
+                  startupCheckStatusName(gStartupChecks[i]));
   }
 }
 
@@ -1808,9 +1924,15 @@ float lastDegBinF = 0.0f, lastOctBinF = 0.0f;
 int   heldDegIdx  = 0,     heldOctIdx  = 0;
 
 float lastEnergy = 0.0f;
-const float   TRIG_THRESH        = 0.12f;
+float triggerEnergy = 0.0f;
+bool  gPlantTriggerReady = true;
+uint32_t gPlantTriggerReleaseMs = 0;
+const float   TRIG_THRESH_ON     = 0.14f;
+const float   TRIG_THRESH_OFF    = 0.08f;
+const float   TRIG_SMOOTH_ALPHA  = 0.22f;
 uint32_t      lastNoteMs         = 0;
-const uint16_t MIN_INTER_NOTE_MS = 100;
+const uint16_t MIN_INTER_NOTE_MS = 130;
+const uint16_t TRIG_REARM_MS     = 55;
 
 float   restProb     = 0.12f;
 bool    avoidRepeats = false;
@@ -1952,16 +2074,30 @@ static inline void plantPerformerTick() {
   heldOctIdx = stickyBin(fOct, lastOctBinF, heldOctIdx, octSpan);
 
   uint32_t now = millis();
-  bool rising    = (energy > TRIG_THRESH) && (lastEnergy <= TRIG_THRESH);
+  triggerEnergy += TRIG_SMOOTH_ALPHA * (energy - triggerEnergy);
+  triggerEnergy = clampf(triggerEnergy, 0.0f, 1.0f);
   bool spacingOK = (now - lastNoteMs) >= MIN_INTER_NOTE_MS;
 
-  if (rising && spacingOK) {
-    gPlantArmed  = true;
-    gPlantVel    = vel;
-    gPlantEnergy = energy;
-    lastNoteMs   = now;
+  if (gPlantTriggerReady) {
+    if (triggerEnergy >= TRIG_THRESH_ON && spacingOK) {
+      gPlantArmed  = true;
+      gPlantVel    = vel;
+      gPlantEnergy = triggerEnergy;
+      lastNoteMs   = now;
+      gPlantTriggerReady = false;
+      gPlantTriggerReleaseMs = 0;
+    }
+  } else if (triggerEnergy <= TRIG_THRESH_OFF) {
+    if (gPlantTriggerReleaseMs == 0) {
+      gPlantTriggerReleaseMs = now;
+    } else if ((now - gPlantTriggerReleaseMs) >= TRIG_REARM_MS) {
+      gPlantTriggerReady = true;
+    }
+  } else {
+    gPlantTriggerReleaseMs = 0;
   }
-  lastEnergy = energy;
+
+  lastEnergy = triggerEnergy;
 }
 
 static inline uint16_t gateFromStep(float mult = 0.90f) {
@@ -4444,7 +4580,7 @@ static inline void startAPPortal() {
 // -------------------- Loop timing --------------------
 const uint32_t PLANT_INTERVAL_MS = 8;    // ~125 Hz
 const uint32_t LED_INTERVAL_MS   = 34;   // ~29 FPS
-const uint32_t SSE_SCOPE_MS      = 100;  // 10 fps scope (plant only)
+const uint32_t SSE_SCOPE_MS      = 66;   // 15 fps scope (plant only)
 const uint32_t SSE_NOTE_MS       = 72;   // ~14 fps note grid
 const uint32_t SSE_DRUM_MS       = 66;   // ~15 fps drum UI
 bool     gWarmupDone = false;
@@ -4457,6 +4593,7 @@ void setup() {
   Serial.println();
   Serial.println("=== BECA booting ===");
   randomSeed(esp_random());
+  resetStartupChecks();
 
   WiFi.onEvent(WiFiEvent);
 
@@ -4468,6 +4605,7 @@ void setup() {
   MIDI.setHandleStart(onMidiStart);
   MIDI.setHandleStop(onMidiStop);
   MIDI.setHandleContinue(onMidiContinue);
+  setStartupCheck(STARTUP_CHECK_BLE, STARTUP_CHECK_OK);
 
   // LEDs
   FastLED.addLeds<LED_TYPE, LED_PIN, LED_COLOR_ORDER>(ledsPhysical, LED_COUNT);
@@ -4484,38 +4622,56 @@ void setup() {
   warmupPlant(60);
   gWarmupDone = false;
   gWarmupEndMs = millis() + 1600;
+  setStartupCheck(STARTUP_CHECK_PLANT, STARTUP_CHECK_OK);
 
   // Wi-Fi provisioning + runtime recovery boot
-  prefs.begin("beca", false);
   const esp_reset_reason_t resetReason = esp_reset_reason();
   gLastResetReasonCode = (uint8_t)resetReason;
   gRecoveringFromCrash = resetReasonIsCrash(resetReason);
-  const uint8_t prevCrashCount = prefs.getUChar("crashcnt", 0);
-  gCrashCount = gRecoveringFromCrash
-                  ? (uint8_t)constrain((int)prevCrashCount + 1, 0, 250)
-                  : 0;
-  prefs.putUChar("lastrst", gLastResetReasonCode);
-  prefs.putUChar("crashcnt", gCrashCount);
+  const bool prefsReady = prefs.begin("beca", false);
+  setStartupCheck(STARTUP_CHECK_PREFS, prefsReady ? STARTUP_CHECK_OK : STARTUP_CHECK_FAIL);
 
-  gDeviceName = prefs.getString("name", "");
-  gStaSsid    = prefs.getString("ssid", "");
-  gStaPass    = prefs.getString("pass", "");
-  const uint8_t legacyMidiMode = (uint8_t)constrain((int)prefs.getUChar("midimode", 0), 0, 1);
-  uint8_t storedOutput = prefs.getUChar("outputmode", 255);
+  uint8_t legacyMidiMode = 0;
+  uint8_t storedOutput = 255;
   bool bootMute = false;
+  uint8_t storedEncoderSetting = (uint8_t)gEncoderSetting;
+  bool storedEncoderVolumeMode = gEncoderVolumeMode;
+  bool hasBootState = false;
 
-  RuntimeStateBlob bootState;
-  const bool hasBootState = loadRuntimeStateFromOpenPrefs(bootState);
-  if (hasBootState) {
-    applyRuntimeState(bootState, false, false);
-    storedOutput = bootState.outputmode;
-    bootMute = (bootState.io_muted != 0);
-    Serial.println("@I RUNTIME STATE RESTORED");
+  if (prefsReady) {
+    const uint8_t prevCrashCount = prefs.getUChar("crashcnt", 0);
+    gCrashCount = gRecoveringFromCrash
+                    ? (uint8_t)constrain((int)prevCrashCount + 1, 0, 250)
+                    : 0;
+    prefs.putUChar("lastrst", gLastResetReasonCode);
+    prefs.putUChar("crashcnt", gCrashCount);
+
+    gDeviceName = prefs.getString("name", "");
+    gStaSsid    = prefs.getString("ssid", "");
+    gStaPass    = prefs.getString("pass", "");
+    legacyMidiMode = (uint8_t)constrain((int)prefs.getUChar("midimode", 0), 0, 1);
+    storedOutput = prefs.getUChar("outputmode", 255);
+    storedEncoderSetting = (uint8_t)constrain((int)prefs.getUChar("encset", (uint8_t)gEncoderSetting), 0, (int)ENC_SET_COUNT - 1);
+    storedEncoderVolumeMode = prefs.getUChar("encvol", gEncoderVolumeMode ? 1u : 0u) != 0;
+
+    RuntimeStateBlob bootState;
+    hasBootState = loadRuntimeStateFromOpenPrefs(bootState);
+    if (hasBootState) {
+      applyRuntimeState(bootState, false, false);
+      storedOutput = bootState.outputmode;
+      bootMute = (bootState.io_muted != 0);
+      Serial.println("@I RUNTIME STATE RESTORED");
+    }
+    prefs.end();
+  } else {
+    gCrashCount = 0;
   }
+  setStartupCheck(STARTUP_CHECK_SESSION, hasBootState ? STARTUP_CHECK_OK : STARTUP_CHECK_WARN);
 
   if (storedOutput > 2) {
     storedOutput = legacyMidiMode;
   }
+  const bool bootOutputStabilized = (storedOutput == OUTPUT_AUX);
   uint8_t bootOutput = (uint8_t)constrain((int)storedOutput, 0, 2);
   if (bootOutput == OUTPUT_AUX) {
     bootOutput = (legacyMidiMode == 1) ? OUTPUT_SERIAL : OUTPUT_BLE;
@@ -4524,16 +4680,28 @@ void setup() {
   }
   gOutputMode = bootOutput;
   gIoMuted = bootMute ? 1 : 0;
+  gEncoderSetting = (EncoderSettingId)storedEncoderSetting;
+  normalizeEncoderSetting();
+  gEncoderVolumeMode = storedEncoderVolumeMode;
+  StartupCheckStatus outputCheck = STARTUP_CHECK_WARN;
+  if (prefsReady && storedOutput <= OUTPUT_AUX && !bootOutputStabilized) {
+    outputCheck = STARTUP_CHECK_OK;
+  }
+  setStartupCheck(STARTUP_CHECK_OUTPUT, outputCheck);
 
   Serial.printf("@I RESET %s crash_count=%u\n", resetReasonName(resetReason), (unsigned)gCrashCount);
-
-  prefs.end();
   if (gDeviceName.length() == 0) gDeviceName = "beca-" + shortChipId();
   normalizeDeviceName();
+  setStartupCheck(STARTUP_CHECK_WIFI_SAVED, gStaSsid.length() ? STARTUP_CHECK_OK : STARTUP_CHECK_WARN);
 
+  const bool hadSavedWifi = gStaSsid.length() > 0;
   bool staOK = false;
   if (gStaSsid.length()) staOK = tryConnectSTA(gStaSsid, gStaPass);
   if (!staOK) startAPPortal();
+  setStartupCheck(
+    STARTUP_CHECK_NETWORK,
+    staOK ? STARTUP_CHECK_OK : (hadSavedWifi ? STARTUP_CHECK_FAIL : STARTUP_CHECK_WARN)
+  );
 
   WiFi.setAutoReconnect(true);
   WiFi.persistent(false);
@@ -4640,11 +4808,20 @@ void setup() {
   Serial.println("  /api/plant");
   Serial.println("  /api/notes");
   Serial.println("  /api/params");
+  startMDNS();
+  setStartupCheck(
+    STARTUP_CHECK_SERVICES,
+    (gIsSta && gMdnsStarted) ? STARTUP_CHECK_OK : STARTUP_CHECK_WARN
+  );
+  logStartupCheckSummary();
+  playStartupCheckAnimation();
   Serial.print("Output mode: ");
   Serial.println(outputModeName(gOutputMode));
-  if (midiOutIsSerial()) Serial.println("@I MIDIMODE SERIAL READY");
+  if (midiOutIsSerial()) {
+    gLastSerialBeaconMs = millis();
+    Serial.println("@I MIDIMODE SERIAL READY");
+  }
   if (outputModeIsAux()) Serial.println("@I AUX OUT ACTIVE");
-  startMDNS();
 
   for (auto &q : offQ) q.on = false;
 

@@ -15,7 +15,7 @@ use beca_flasher::{
 use chrono::Utc;
 use control::{
     control_request, control_snapshot, current_control_target, discover_beca_targets,
-    select_control_target, ControlTarget,
+    select_control_target, ControlSnapshot, ControlTarget,
 };
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -39,10 +39,23 @@ const LOCAL_FIRMWARE_VERSION: &str = "local-current";
 const SERIAL_CTRL_BAUD: u32 = 115200;
 const ESPFLASH_SIDECAR_VERSION: &str = "4.2.0";
 const ESPTOOL_SIDECAR_VERSION: &str = "5.2.0";
+const CONTROL_HTTP_CLIENT_TIMEOUT_MS: u64 = 1_400;
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
-#[derive(Default)]
+#[derive(Clone)]
+pub(crate) struct CachedControlSnapshot {
+    pub snapshot: ControlSnapshot,
+    pub captured_at: Instant,
+    pub refresh_after: Duration,
+}
+
+#[derive(Clone)]
+pub(crate) struct CachedControlError {
+    pub message: String,
+    pub happened_at: Instant,
+}
+
 struct RuntimeState {
     bridge_child: Mutex<Option<Child>>,
     serial_op_lock: Mutex<()>,
@@ -52,6 +65,34 @@ struct RuntimeState {
     log_guard: Mutex<Option<tracing_appender::non_blocking::WorkerGuard>>,
     control_targets: Mutex<Vec<ControlTarget>>,
     selected_control_target: Mutex<Option<String>>,
+    control_http_client: Client,
+    cached_control_snapshot: Mutex<Option<CachedControlSnapshot>>,
+    last_control_error: Mutex<Option<CachedControlError>>,
+    control_snapshot_refresh: Mutex<()>,
+}
+
+impl Default for RuntimeState {
+    fn default() -> Self {
+        let control_http_client = Client::builder()
+            .timeout(Duration::from_millis(CONTROL_HTTP_CLIENT_TIMEOUT_MS))
+            .build()
+            .unwrap_or_else(|_| Client::new());
+
+        Self {
+            bridge_child: Mutex::new(None),
+            serial_op_lock: Mutex::new(()),
+            manifest_cache: Mutex::new(None),
+            latest_backup: Mutex::new(None),
+            log_file: Mutex::new(None),
+            log_guard: Mutex::new(None),
+            control_targets: Mutex::new(Vec::new()),
+            selected_control_target: Mutex::new(None),
+            control_http_client,
+            cached_control_snapshot: Mutex::new(None),
+            last_control_error: Mutex::new(None),
+            control_snapshot_refresh: Mutex::new(()),
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -127,6 +168,28 @@ async fn ensure_bridge_not_running(state: &State<'_, RuntimeState>) -> Result<()
         );
     }
     Ok(())
+}
+
+async fn stop_bridge_child(state: &RuntimeState) -> Result<bool, String> {
+    let mut lock = state.bridge_child.lock().await;
+    let Some(mut child) = lock.take() else {
+        return Ok(false);
+    };
+
+    match child.try_wait().map_err(err_to_string)? {
+        Some(_) => return Ok(true),
+        None => {}
+    }
+
+    if let Err(err) = child.kill().await {
+        match child.try_wait().map_err(err_to_string)? {
+            Some(_) => return Ok(true),
+            None => return Err(err_to_string(err)),
+        }
+    }
+
+    let _ = child.wait().await;
+    Ok(true)
 }
 
 #[tauri::command]
@@ -582,12 +645,7 @@ async fn start_bridge(
         return Err(decision.reason);
     }
 
-    {
-        let mut lock = state.bridge_child.lock().await;
-        if let Some(mut child) = lock.take() {
-            let _ = child.kill().await;
-        }
-    }
+    stop_bridge_child(state.inner()).await?;
 
     let mut cmd = Command::new(&bridge_path);
     cmd.arg("run")
@@ -610,6 +668,7 @@ async fn start_bridge(
         .arg("115200")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    cmd.kill_on_drop(true);
     apply_background_process_flags(&mut cmd);
 
     let mut child = cmd
@@ -639,9 +698,7 @@ async fn bridge_status(state: State<'_, RuntimeState>) -> Result<BridgeStatus, S
 
 #[tauri::command]
 async fn stop_bridge(app: AppHandle, state: State<'_, RuntimeState>) -> Result<(), String> {
-    let mut lock = state.bridge_child.lock().await;
-    if let Some(mut child) = lock.take() {
-        child.kill().await.map_err(err_to_string)?;
+    if stop_bridge_child(state.inner()).await? {
         emit_bridge_event(&app, "status", "stopped", "Bridge stopped");
     }
     Ok(())
@@ -901,7 +958,11 @@ pub(crate) fn run_serial_command_json(
         per_attempt_timeout_ms = per_attempt_timeout_ms.max(7_000);
     }
     let port_settle_ms = if is_runtime_control_command {
-        if cfg!(target_os = "macos") { 320 } else { 160 }
+        if cfg!(target_os = "macos") {
+            320
+        } else {
+            160
+        }
     } else if cfg!(target_os = "macos") {
         2_200
     } else {
@@ -1176,7 +1237,12 @@ fn resolve_local_firmware_binary_for_app(app: &AppHandle) -> Option<PathBuf> {
         candidates.push(dir.join("firmware.bin"));
     }
 
-    candidates.push(PathBuf::from(".pio").join("build").join("esp32dev").join("firmware.bin"));
+    candidates.push(
+        PathBuf::from(".pio")
+            .join("build")
+            .join("esp32dev")
+            .join("firmware.bin"),
+    );
     candidates.push(
         PathBuf::from("C:\\Users\\AJ\\OneDrive\\Documents\\Fatty Recording Co\\BECA\\BECAv1.0.1\\Codes\\BECAfinalsv02")
             .join(".pio")
@@ -1555,7 +1621,7 @@ fn err_to_string<E: std::fmt::Display>(err: E) -> String {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .manage(RuntimeState::default())
         .setup(|app| {
             let state: State<'_, RuntimeState> = app.state();
@@ -1589,11 +1655,20 @@ pub fn run() {
             send_test_note,
             export_diagnostics
         ])
-        .run(tauri::generate_context!())
+        .build(tauri::generate_context!())
         .unwrap_or_else(|error| {
             error!("app runtime error: {}", error);
             panic!("tauri runtime error: {error}");
         });
+
+    app.run(|app_handle, event| {
+        if let tauri::RunEvent::Exit = event {
+            let state = app_handle.state::<RuntimeState>();
+            if let Err(err) = tauri::async_runtime::block_on(stop_bridge_child(state.inner())) {
+                error!("failed to stop bridge on exit: {}", err);
+            }
+        }
+    });
 }
 
 fn main() {

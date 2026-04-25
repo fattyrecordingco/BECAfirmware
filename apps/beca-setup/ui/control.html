@@ -9,11 +9,18 @@
         color-scheme: light;
         --bg: #f6f4ef;
         --panel: #ffffff;
+        --panel-ghost: #faf8f3;
         --accent: #008351;
         --border: #bebebe;
         --off: #d4d4cf;
-        --off-text: #bebeb9;
-        --shadow: 0 22px 44px rgba(0, 131, 81, 0.08);
+        --off-text: #b3b2aa;
+        --frame-radius: 26px;
+        --card-radius: 14px;
+        --pill-radius: 999px;
+        --border-width: 2px;
+        --duration-fast: 140ms;
+        --duration-base: 240ms;
+        --ease-standard: cubic-bezier(0.2, 0.8, 0.2, 1);
         --mono: "Geist Mono", "SFMono-Regular", "JetBrains Mono", monospace;
       }
 
@@ -33,6 +40,7 @@
         background: var(--bg);
         color: var(--accent);
         font-family: var(--mono);
+        -webkit-font-smoothing: antialiased;
       }
 
       button,
@@ -40,6 +48,7 @@
       select,
       a {
         font: inherit;
+        color: inherit;
       }
 
       button,
@@ -72,17 +81,15 @@
         width: 575px;
         height: 842px;
         background: var(--panel);
-        border: 2px solid var(--accent);
-        border-radius: 24px;
-        box-shadow: var(--shadow);
+        border: var(--border-width) solid var(--accent);
+        border-radius: var(--frame-radius);
         overflow: hidden;
         transform: scale(var(--ui-scale, 1));
         transform-origin: top center;
       }
 
       .logo-lockup,
-      .mode-button,
-      .mode-link,
+      .mode-actions,
       .chart-caption,
       .chart-panel,
       .midi-head,
@@ -100,8 +107,8 @@
       .logo-lockup {
         left: 20px;
         top: 20px;
-        width: 98px;
-        height: 74px;
+        width: 96px;
+        height: 72px;
         color: var(--accent);
       }
 
@@ -116,35 +123,65 @@
         height: 100%;
       }
 
+      .mode-actions {
+        top: 20px;
+        right: 20px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+
       .mode-button,
       .mode-link {
         display: grid;
         place-items: center;
         text-decoration: none;
         background: transparent;
+        border: var(--border-width) solid transparent;
+        border-radius: var(--pill-radius);
+        transition:
+          color var(--duration-fast) var(--ease-standard),
+          border-color var(--duration-fast) var(--ease-standard),
+          background var(--duration-fast) var(--ease-standard),
+          filter var(--duration-fast) var(--ease-standard),
+          transform var(--duration-fast) var(--ease-standard);
       }
 
       .mode-button {
-        top: 24px;
-        left: 426px;
-        width: 64px;
-        height: 64px;
-        border-radius: 999px;
-        border: 2px solid var(--accent);
+        width: 60px;
+        height: 60px;
+        border-color: var(--accent);
+        background: var(--panel-ghost);
         color: var(--accent);
       }
 
       .mode-link {
-        top: 34px;
-        left: 501px;
-        width: 42px;
-        height: 42px;
-        color: #c9c9c5;
+        width: 40px;
+        height: 40px;
+        color: var(--off-text);
+      }
+
+      .mode-link:hover,
+      .mode-link:focus-visible {
+        color: var(--accent);
+        background: var(--panel-ghost);
+        transform: translateY(-1px);
+      }
+
+      .mode-button:active,
+      .mode-link:active,
+      .setting-button:active,
+      .volume-card:active,
+      .random-card:active,
+      .sync-card:active,
+      .output-option:active,
+      .flower-button:active {
+        transform: translateY(1px) scale(0.99);
       }
 
       .mode-icon {
-        width: 28px;
-        height: 28px;
+        width: 26px;
+        height: 26px;
       }
 
       .chart-caption,
@@ -154,7 +191,7 @@
       .sync-label,
       .volume-label {
         font-size: 11px;
-        line-height: 1.15;
+        line-height: 1.2;
       }
 
       .chart-caption {
@@ -168,14 +205,22 @@
         top: 111px;
         width: 350px;
         height: 150px;
-        border: 2px solid var(--border);
-        border-radius: 13px;
+        border: var(--border-width) solid var(--border);
+        border-radius: var(--card-radius);
+        background: var(--panel-ghost);
         overflow: hidden;
       }
 
       .chart-panel svg {
+        display: block;
         width: 100%;
         height: 100%;
+      }
+
+      #plant-chart polyline {
+        animation: chart-idle 3.2s var(--ease-standard) infinite;
+        transform-origin: 50% 50%;
+        vector-effect: non-scaling-stroke;
       }
 
       .midi-head {
@@ -193,7 +238,7 @@
 
       .midi-readout {
         font-size: 12px;
-        font-weight: 400;
+        font-weight: 700;
       }
 
       .midi-strip {
@@ -215,10 +260,15 @@
         width: 22px;
         height: 22px;
         color: var(--off);
+        transition:
+          color var(--duration-fast) var(--ease-standard),
+          opacity var(--duration-fast) var(--ease-standard),
+          transform var(--duration-fast) var(--ease-standard);
       }
 
       .midi-cell.is-on .leaf {
         color: var(--accent);
+        animation: leaf-breathe 1.8s var(--ease-standard) infinite;
       }
 
       .midi-note {
@@ -239,16 +289,16 @@
         display: grid;
         grid-template-columns: repeat(2, 165px);
         column-gap: 20px;
-        row-gap: 7px;
+        row-gap: 8px;
       }
 
       .setting-button,
       .volume-card,
       .output-card,
       .random-card,
-      .sync-card,
-      .output-option {
-        border-radius: 11px;
+      .sync-card {
+        border-radius: var(--card-radius);
+        background: var(--panel);
       }
 
       .setting-button {
@@ -259,18 +309,31 @@
         justify-content: space-between;
         gap: 10px;
         padding: 0 12px;
-        border: 2px solid var(--border);
-        background: #ffffff;
+        border: var(--border-width) solid var(--border);
         color: var(--accent);
-        box-shadow: 0 2px 0 rgba(0, 131, 81, 0.02);
-        transition: background 120ms ease, color 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+        transition:
+          border-color var(--duration-fast) var(--ease-standard),
+          background var(--duration-fast) var(--ease-standard),
+          color var(--duration-fast) var(--ease-standard),
+          filter var(--duration-fast) var(--ease-standard),
+          transform var(--duration-fast) var(--ease-standard);
+      }
+
+      .setting-button:hover {
+        border-color: var(--accent);
+        background: var(--panel-ghost);
+        transform: translateY(-1px);
       }
 
       .setting-button.is-selected {
         border-color: var(--accent);
         background: var(--accent);
         color: #ffffff;
-        box-shadow: 0 10px 18px rgba(0, 131, 81, 0.12);
+      }
+
+      .setting-button.is-selected:hover {
+        background: var(--accent);
+        filter: brightness(1.03);
       }
 
       .setting-button.is-wide {
@@ -298,18 +361,31 @@
         align-items: center;
         gap: 16px;
         padding: 0 12px;
-        border: 2px solid var(--border);
-        background: #ffffff;
+        border: var(--border-width) solid var(--border);
         color: var(--accent);
-        box-shadow: 0 2px 0 rgba(0, 131, 81, 0.02);
-        transition: background 120ms ease, color 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+        transition:
+          border-color var(--duration-fast) var(--ease-standard),
+          background var(--duration-fast) var(--ease-standard),
+          color var(--duration-fast) var(--ease-standard),
+          filter var(--duration-fast) var(--ease-standard),
+          transform var(--duration-fast) var(--ease-standard);
+      }
+
+      .volume-card:hover {
+        border-color: var(--accent);
+        background: var(--panel-ghost);
+        transform: translateY(-1px);
       }
 
       .volume-card.is-selected {
         border-color: var(--accent);
         background: var(--accent);
         color: #ffffff;
-        box-shadow: 0 10px 18px rgba(0, 131, 81, 0.12);
+      }
+
+      .volume-card.is-selected:hover {
+        background: var(--accent);
+        filter: brightness(1.03);
       }
 
       .volume-meter {
@@ -322,15 +398,19 @@
       .meter-dot {
         width: 8px;
         height: 8px;
-        border-radius: 999px;
+        border-radius: var(--pill-radius);
         opacity: 0.24;
         transform: scale(0.86);
-        transition: opacity 100ms ease, transform 100ms ease;
+        transition:
+          opacity var(--duration-fast) var(--ease-standard),
+          transform var(--duration-fast) var(--ease-standard);
       }
 
       .meter-dot.is-on {
         opacity: 1;
         transform: scale(1);
+        animation: meter-pulse 1.3s var(--ease-standard) infinite;
+        animation-delay: calc(var(--dot-index, 0) * 60ms);
       }
 
       .volume-value {
@@ -347,9 +427,7 @@
         align-items: center;
         gap: 8px;
         padding: 0 10px;
-        border: 2px solid var(--border);
-        background: #ffffff;
-        box-shadow: 0 2px 0 rgba(0, 131, 81, 0.02);
+        border: var(--border-width) solid var(--border);
       }
 
       .output-label {
@@ -366,27 +444,41 @@
 
       .output-option {
         min-width: 0;
-        height: 22px;
+        height: 24px;
         border: 1.5px solid var(--border);
-        border-radius: 999px;
+        border-radius: 12px;
         background: transparent;
-        padding: 0 4px;
+        padding: 0 6px;
         color: var(--accent);
-        font-size: 9.5px;
-        line-height: 19px;
+        font-size: 10px;
+        line-height: 20px;
         text-transform: lowercase;
         letter-spacing: 0;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
-        transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+        transition:
+          border-color var(--duration-fast) var(--ease-standard),
+          background var(--duration-fast) var(--ease-standard),
+          color var(--duration-fast) var(--ease-standard),
+          transform var(--duration-fast) var(--ease-standard);
+      }
+
+      .output-option:hover {
+        border-color: var(--accent);
+        background: var(--panel-ghost);
+        transform: translateY(-1px);
       }
 
       .output-option.is-active {
         border-color: var(--accent);
         background: var(--accent);
         color: #ffffff;
-        box-shadow: 0 8px 16px rgba(0, 131, 81, 0.12);
+      }
+
+      .output-option.is-active:hover {
+        background: var(--accent);
+        filter: brightness(1.03);
       }
 
       .random-card {
@@ -396,10 +488,18 @@
         height: 40px;
         display: grid;
         place-items: center;
-        border: 2px solid var(--border);
-        background: #ffffff;
+        border: var(--border-width) solid var(--border);
         color: var(--accent);
-        box-shadow: 0 2px 0 rgba(0, 131, 81, 0.02);
+        transition:
+          border-color var(--duration-fast) var(--ease-standard),
+          background var(--duration-fast) var(--ease-standard),
+          transform var(--duration-fast) var(--ease-standard);
+      }
+
+      .random-card:hover {
+        border-color: var(--accent);
+        background: var(--panel-ghost);
+        transform: translateY(-1px);
       }
 
       .dice {
@@ -416,18 +516,31 @@
         align-items: center;
         justify-content: space-between;
         padding: 0 12px;
-        border: 2px solid var(--border);
-        background: #ffffff;
+        border: var(--border-width) solid var(--border);
         color: var(--accent);
-        box-shadow: 0 2px 0 rgba(0, 131, 81, 0.02);
-        transition: background 120ms ease, color 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+        transition:
+          border-color var(--duration-fast) var(--ease-standard),
+          background var(--duration-fast) var(--ease-standard),
+          color var(--duration-fast) var(--ease-standard),
+          filter var(--duration-fast) var(--ease-standard),
+          transform var(--duration-fast) var(--ease-standard);
+      }
+
+      .sync-card:hover {
+        border-color: var(--accent);
+        background: var(--panel-ghost);
+        transform: translateY(-1px);
       }
 
       .sync-card.is-selected {
         border-color: var(--accent);
         background: var(--accent);
         color: #ffffff;
-        box-shadow: 0 10px 18px rgba(0, 131, 81, 0.12);
+      }
+
+      .sync-card.is-selected:hover {
+        background: var(--accent);
+        filter: brightness(1.03);
       }
 
       .sync-value {
@@ -445,14 +558,17 @@
         width: 44px;
         height: 44px;
         color: var(--off);
-        opacity: 1;
-        filter: none;
-        transition: color 100ms ease, transform 100ms ease, filter 100ms ease;
+        opacity: 0.82;
+        transition:
+          color var(--duration-fast) var(--ease-standard),
+          opacity var(--duration-fast) var(--ease-standard),
+          transform var(--duration-fast) var(--ease-standard);
       }
 
       .led.is-on {
         color: currentColor;
-        filter: drop-shadow(0 0 1.2px rgba(106, 116, 110, 0.72));
+        opacity: 1;
+        animation: leaf-breathe 1.8s var(--ease-standard) infinite;
       }
 
       .flower-button {
@@ -466,18 +582,79 @@
         background: transparent;
         color: var(--accent);
         padding: 0;
+        transition: transform var(--duration-fast) var(--ease-standard);
+      }
+
+      .flower-button:hover {
+        transform: translateY(-1px);
       }
 
       .flower {
         width: 122px;
         height: 122px;
         transform: rotate(var(--encoder-angle, 0deg));
-        transition: transform 100ms ease;
+        transition: transform 180ms var(--ease-standard);
+      }
+
+      @keyframes chart-idle {
+        0%,
+        100% {
+          opacity: 1;
+          transform: translateY(0);
+        }
+
+        50% {
+          opacity: 0.92;
+          transform: translateY(-1px);
+        }
+      }
+
+      @keyframes leaf-breathe {
+        0%,
+        100% {
+          transform: scale(1);
+        }
+
+        50% {
+          transform: scale(1.03);
+        }
+      }
+
+      @keyframes meter-pulse {
+        0%,
+        100% {
+          transform: scale(1);
+        }
+
+        50% {
+          transform: scale(1.16);
+        }
       }
 
       @media (max-width: 700px), (max-height: 920px) {
         .control-app {
           padding: 16px;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        #plant-chart polyline,
+        .midi-cell.is-on .leaf,
+        .meter-dot.is-on,
+        .led.is-on {
+          animation: none !important;
+        }
+
+        .mode-button,
+        .mode-link,
+        .setting-button,
+        .volume-card,
+        .output-option,
+        .random-card,
+        .sync-card,
+        .flower-button,
+        .flower {
+          transition: none !important;
         }
       }
     </style>
@@ -488,12 +665,14 @@
         <section class="control-frame">
           <div class="logo-lockup" id="brand-lockup" aria-hidden="true"></div>
 
-          <button class="mode-button" type="button" aria-label="Control view">
-            <span class="mode-icon" id="wave-icon" aria-hidden="true"></span>
-          </button>
-          <a class="mode-link" href="/setup" aria-label="Setup view">
-            <span class="mode-icon" id="gear-icon" aria-hidden="true"></span>
-          </a>
+          <div class="mode-actions">
+            <button class="mode-button" type="button" aria-label="Control view">
+              <span class="mode-icon" id="wave-icon" aria-hidden="true"></span>
+            </button>
+            <a class="mode-link" href="/setup" aria-label="Setup view">
+              <span class="mode-icon" id="gear-icon" aria-hidden="true"></span>
+            </a>
+          </div>
 
           <div class="chart-caption">plant input:</div>
           <section class="chart-panel" aria-label="Plant monitor">
@@ -1257,10 +1436,11 @@
       }
 
       function initVolumeMeter() {
-        METER_COLORS.forEach((color) => {
+        METER_COLORS.forEach((color, index) => {
           const dot = document.createElement("span");
           dot.className = "meter-dot";
           dot.style.background = color;
+          dot.style.setProperty("--dot-index", index);
           el.volumeMeter.appendChild(dot);
           dom.volumeDots.push(dot);
         });
