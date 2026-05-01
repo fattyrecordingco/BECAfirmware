@@ -18,6 +18,23 @@ if ([string]::IsNullOrWhiteSpace($Tag)) {
 $root = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 Set-Location $root
 
+function Resolve-PythonCommand {
+  foreach ($candidate in @("py", "python3", "python")) {
+    $cmd = Get-Command $candidate -ErrorAction SilentlyContinue
+    if (-not $cmd) {
+      continue
+    }
+
+    & $candidate --version *> $null
+    if ($LASTEXITCODE -eq 0) {
+      return $candidate
+    }
+  }
+  throw "Python 3 was not found. Install Python or enable the Windows 'py' launcher."
+}
+
+$python = Resolve-PythonCommand
+
 Write-Host "Building firmware for env '$Environment'..."
 pio run -e $Environment
 
@@ -32,10 +49,10 @@ foreach ($file in @($bootloader, $partitions, $firmware)) {
   }
 }
 
-python -m esptool version | Out-Null
+& $python -m esptool version | Out-Null
 if ($LASTEXITCODE -ne 0) {
   Write-Host "Installing esptool for merged image generation..."
-  python -m pip install --disable-pip-version-check esptool
+  & $python -m pip install --disable-pip-version-check esptool
 }
 
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
@@ -43,7 +60,7 @@ $assetName = "beca-$Version-merged.bin"
 $mergedPath = Join-Path $OutputDir $assetName
 
 Write-Host "Merging firmware image..."
-python -m esptool --chip esp32 merge_bin `
+& $python -m esptool --chip esp32 merge_bin `
   -o $mergedPath `
   --flash_mode dio `
   --flash_freq 40m `
@@ -56,7 +73,7 @@ $sha256 = (Get-FileHash -Algorithm SHA256 -Path $mergedPath).Hash.ToLowerInvaria
 $manifestPath = Join-Path $OutputDir "firmware-manifest.json"
 
 Write-Host "Generating manifest..."
-python tools/release/generate_firmware_manifest.py `
+& $python tools/release/generate_firmware_manifest.py `
   --repo $Repo `
   --version $Version `
   --tag $Tag `

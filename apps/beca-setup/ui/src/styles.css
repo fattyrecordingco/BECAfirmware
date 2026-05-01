@@ -7,7 +7,7 @@
   --accent: #008351;
   --border: #bebebe;
   --muted: #d2d2cd;
-  --muted-text: #9fa29a;
+  --muted-text: #667067;
   --text: #008351;
   --danger: #ff4a42;
   --ok: #008351;
@@ -15,11 +15,17 @@
   --disabled-border: #d8d4cb;
   --disabled-text: #aca79d;
   --frame-radius: 26px;
-  --card-radius: 14px;
+  --card-radius: 12px;
   --pill-radius: 999px;
-  --field-height: 42px;
-  --field-padding: 0 14px;
+  --field-height: 38px;
+  --field-padding: 0 12px;
   --border-width: 2px;
+  --type-title: 16px;
+  --type-body: 10px;
+  --type-control: 10.5px;
+  --type-caption: 9px;
+  --line-tight: 1.12;
+  --line-body: 1.35;
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -105,10 +111,8 @@ button {
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
-  transform: translateY(12px);
   transition:
     opacity var(--duration-base) var(--ease-standard),
-    transform var(--duration-base) var(--ease-standard),
     visibility 0s linear var(--duration-base);
 }
 
@@ -116,12 +120,10 @@ button {
   opacity: 1;
   visibility: visible;
   pointer-events: auto;
-  transform: none;
   transition-delay: 0s;
 }
 
-.control-host,
-.setup-viewport {
+.control-host {
   width: min(575px, calc(100vw - 48px), calc((100vh - 48px) * 575 / 842));
   aspect-ratio: 575 / 842;
 }
@@ -129,6 +131,16 @@ button {
 .control-host {
   display: grid;
   place-items: center;
+}
+
+.setup-viewport {
+  width: calc(575px * var(--setup-scale, 1));
+  height: calc(842px * var(--setup-scale, 1));
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  max-width: calc(100vw - 48px);
+  max-height: calc(100vh - 48px);
 }
 
 .control-surface-frame {
@@ -235,18 +247,21 @@ button {
 
 .setup-frame {
   position: relative;
-  width: 100%;
-  height: 100%;
+  flex: none;
+  width: 575px;
+  height: 842px;
   border: var(--border-width) solid var(--accent);
   border-radius: var(--frame-radius);
   background: var(--panel);
-  overflow: auto;
+  overflow: hidden;
   color: var(--accent);
   display: grid;
   grid-template-columns: 1fr;
   align-content: start;
-  gap: var(--space-3);
-  padding: 96px 20px 18px;
+  gap: 0;
+  padding: 106px 20px 16px;
+  transform: scale(var(--setup-scale, 1));
+  transform-origin: top center;
   scrollbar-width: thin;
   scrollbar-color: var(--muted) transparent;
 }
@@ -267,6 +282,12 @@ button {
   width: 96px;
   height: 72px;
   color: var(--accent);
+}
+
+.setup-logo svg {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
 .setup-top-actions {
@@ -294,8 +315,9 @@ button {
 }
 
 .setup-top-icon svg {
-  width: 24px;
-  height: 24px;
+  display: block;
+  width: 26px;
+  height: 26px;
 }
 
 .setup-top-icon-active {
@@ -331,16 +353,17 @@ button {
 .setup-row {
   position: relative;
   width: 100%;
+  padding: 10px 0 11px;
 }
 
 .setup-copy h2,
 .setup-row-help h2 {
   margin: 0;
   font-family: var(--display);
-  font-size: 18px;
+  font-size: var(--type-title);
   font-weight: 800;
-  line-height: 0.98;
-  letter-spacing: 0.01em;
+  line-height: var(--line-tight);
+  letter-spacing: 0;
   text-transform: lowercase;
 }
 
@@ -350,23 +373,24 @@ button {
 .setup-inline-note,
 .setup-fixes {
   margin: 0;
-  font-size: 9px;
-  line-height: 1.45;
+  font-size: var(--type-caption);
+  line-height: var(--line-body);
   color: var(--muted-text);
 }
 
 .setup-copy p {
-  max-width: 144px;
+  max-width: 136px;
+  margin-top: 4px;
 }
 
 .setup-row-help {
-  border: var(--border-width) solid var(--border);
-  border-radius: var(--card-radius);
-  padding: 12px 14px;
-  min-height: 108px;
-  background: var(--panel-ghost);
+  padding-bottom: 0;
+  min-height: 72px;
+  background: transparent;
   display: grid;
-  gap: 10px;
+  grid-template-columns: 148px 1fr;
+  column-gap: 12px;
+  gap: 0;
   align-content: start;
 }
 
@@ -402,7 +426,7 @@ button {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-size: 11.5px;
+  font-size: var(--type-control);
 }
 
 .setup-status-box.is-error {
@@ -418,15 +442,19 @@ button {
 }
 
 .setup-button {
-  padding: 0 16px;
+  min-width: 0;
+  min-height: var(--field-height);
+  padding: 0 10px;
   display: flex;
   align-items: center;
   justify-content: center;
-  white-space: nowrap;
-  font-size: 11px;
+  text-align: center;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  font-size: var(--type-control);
   font-weight: 700;
-  line-height: 1;
-  letter-spacing: 0.01em;
+  line-height: var(--line-tight);
+  letter-spacing: 0;
   text-transform: lowercase;
   cursor: pointer;
 }
@@ -484,7 +512,11 @@ button {
 
 .setup-select,
 .setup-input {
-  font-size: 11.5px;
+  min-width: 0;
+  font-size: var(--type-control);
+  line-height: var(--line-tight);
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .setup-input::placeholder {
@@ -502,7 +534,7 @@ button {
 
 .setup-row-firmware progress {
   width: 100%;
-  height: 14px;
+  height: 10px;
   appearance: none;
   margin: 0;
 }
@@ -531,14 +563,14 @@ button {
 
 .setup-action-row {
   display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
+  gap: 8px;
+  flex-wrap: nowrap;
 }
 
 .setup-action-row .setup-button {
   flex: 1 1 0;
   min-width: 0;
-  font-size: 10.5px;
+  font-size: 9.5px;
 }
 
 .setup-bridge-status {
@@ -575,9 +607,9 @@ button {
 .setup-row-wifi,
 .setup-row-bridge {
   display: grid;
-  grid-template-columns: 148px minmax(0, 1fr) minmax(164px, 176px);
-  column-gap: 14px;
-  row-gap: 10px;
+  grid-template-columns: 148px minmax(0, 1fr) 150px;
+  column-gap: 12px;
+  row-gap: 8px;
   align-items: start;
 }
 

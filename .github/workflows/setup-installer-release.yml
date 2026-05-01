@@ -20,7 +20,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest]
+        os: [windows-latest, macos-latest, ubuntu-22.04]
 
     runs-on: ${{ matrix.os }}
 
@@ -38,6 +38,19 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Install Linux app dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            libasound2-dev \
+            libudev-dev \
+            librsvg2-dev \
+            patchelf
+
       - name: Install JS dependencies
         working-directory: apps/beca-setup
         run: npm install
@@ -49,8 +62,8 @@ jobs:
         if: runner.os == 'Windows'
         run: cargo build -p beca-bridge --release -vv
 
-      - name: Build bridge sidecar (macOS)
-        if: runner.os == 'macOS'
+      - name: Build bridge sidecar (macOS/Linux)
+        if: runner.os != 'Windows'
         shell: bash
         run: |
           set -euo pipefail
@@ -103,7 +116,7 @@ jobs:
           Copy-Item $env:RUNNER_TEMP\esptool.exe apps\beca-setup\src-tauri\binaries\esptool.exe -Force
 
       - name: Copy sidecars (macOS/Linux)
-        if: runner.os == 'macOS'
+        if: runner.os != 'Windows'
         run: |
           cp target/release/beca-bridge apps/beca-setup/src-tauri/binaries/beca-bridge
           cp target/release/beca-flasher apps/beca-setup/src-tauri/binaries/beca-flasher
@@ -164,10 +177,11 @@ jobs:
           staged_root="${RUNNER_TEMP}/beca-setup-staged-mirror"
 
           rm -rf "${staged_root}"
-          mkdir -p "${staged_root}/windows" "${staged_root}/macos"
+          mkdir -p "${staged_root}/windows" "${staged_root}/macos" "${staged_root}/linux"
 
           windows_count=0
           macos_count=0
+          linux_count=0
 
           while IFS= read -r -d '' file; do
             lower="$(echo "${file}" | tr '[:upper:]' '[:lower:]')"
@@ -176,6 +190,10 @@ jobs:
                 cp "${file}" "${staged_root}/macos/"
                 macos_count=$((macos_count+1))
                 ;;
+              *.appimage|*.deb)
+                cp "${file}" "${staged_root}/linux/"
+                linux_count=$((linux_count+1))
+                ;;
               *.exe|*.msi|*.zip|*webview2loader.dll)
                 cp "${file}" "${staged_root}/windows/"
                 windows_count=$((windows_count+1))
@@ -183,16 +201,17 @@ jobs:
             esac
           done < <(find "${artifact_root}" -type f -print0)
 
-          echo "Installer files copied -> windows:${windows_count} macos:${macos_count}"
-          if [ "${windows_count}" -eq 0 ] || [ "${macos_count}" -eq 0 ]; then
-            echo "Missing Windows or macOS artifacts. Mirror update aborted."
+          echo "Installer files copied -> windows:${windows_count} macos:${macos_count} linux:${linux_count}"
+          if [ "${windows_count}" -eq 0 ] || [ "${macos_count}" -eq 0 ] || [ "${linux_count}" -eq 0 ]; then
+            echo "Missing Windows, macOS, or Linux artifacts. Mirror update aborted."
             exit 1
           fi
 
-          rm -rf "${mirror_root}/windows" "${mirror_root}/macos"
+          rm -rf "${mirror_root}/windows" "${mirror_root}/macos" "${mirror_root}/linux"
           mkdir -p "${mirror_root}/windows" "${mirror_root}/macos" "${mirror_root}/linux"
           cp -a "${staged_root}/windows/." "${mirror_root}/windows/"
           cp -a "${staged_root}/macos/." "${mirror_root}/macos/"
+          cp -a "${staged_root}/linux/." "${mirror_root}/linux/"
           touch "${mirror_root}/windows/.gitkeep" "${mirror_root}/macos/.gitkeep" "${mirror_root}/linux/.gitkeep"
 
       - name: Commit installer mirror updates

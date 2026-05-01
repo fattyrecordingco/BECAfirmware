@@ -285,7 +285,7 @@ fn open_midi_output(target_name: &str) -> Result<MidiOutputConnection> {
         let selected_name = midi_out.port_name(&ports[idx])?;
         return midi_out
             .connect(&ports[idx], "BECA Bridge")
-            .with_context(|| format!("failed to open MIDI output {selected_name}"));
+            .map_err(|err| anyhow!("failed to open MIDI output {selected_name}: {err}"));
     }
 
     for port in &ports {
@@ -297,7 +297,7 @@ fn open_midi_output(target_name: &str) -> Result<MidiOutputConnection> {
         {
             return midi_out
                 .connect(port, "BECA Bridge")
-                .with_context(|| format!("failed to open MIDI output {name}"));
+                .map_err(|err| anyhow!("failed to open MIDI output {name}: {err}"));
         }
     }
 

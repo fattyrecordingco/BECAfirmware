@@ -25,6 +25,8 @@ __pycache__/
 # Node/Tauri
 node_modules/
 dist/
+apps/beca-setup/playwright-report/
+apps/beca-setup/test-results/
 apps/beca-setup/src-tauri/target/
 target/
 apps/beca-setup/src-tauri/binaries/*

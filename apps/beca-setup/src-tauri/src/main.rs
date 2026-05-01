@@ -35,7 +35,7 @@ use zip::write::SimpleFileOptions;
 
 const DEFAULT_FIRMWARE_REPO: &str = "fattyrecordingco/BECAfirmware";
 const HARDWARE_ID: &str = "ESP32-PICO-V3";
-const LOCAL_FIRMWARE_VERSION: &str = "local-current";
+const LATEST_STABLE_FIRMWARE: &str = "latest-stable";
 const SERIAL_CTRL_BAUD: u32 = 115200;
 const ESPFLASH_SIDECAR_VERSION: &str = "4.2.0";
 const ESPTOOL_SIDECAR_VERSION: &str = "5.2.0";
@@ -219,71 +219,16 @@ async fn list_firmware_versions(
     app: AppHandle,
     state: State<'_, RuntimeState>,
 ) -> Result<Vec<FirmwareOption>, String> {
-    let mut options = Vec::new();
+    let manifest = load_manifest(&app, &state).await.map_err(err_to_string)?;
+    let latest = manifest
+        .latest_stable_for_hardware(HARDWARE_ID)
+        .ok_or_else(|| format!("No stable firmware found for {HARDWARE_ID}"))?;
 
-    if let Some(local_binary) = resolve_local_firmware_binary_for_app(&app) {
-        let label = format!(
-            "Current Workspace Build ({})",
-            local_binary
-                .file_name()
-                .and_then(|name| name.to_str())
-                .unwrap_or("local firmware")
-        );
-        options.push(FirmwareOption {
-            version: LOCAL_FIRMWARE_VERSION.to_string(),
-            label,
-            default: true,
-        });
-    }
-
-    match load_manifest(&app, &state).await {
-        Ok(manifest) => {
-            let latest_stable = manifest
-                .latest_stable_for_hardware(HARDWARE_ID)
-                .map(|fw| fw.version.clone());
-
-            options.push(FirmwareOption {
-                version: "latest-stable".to_string(),
-                label: if options.is_empty() {
-                    "Latest Stable (recommended)".to_string()
-                } else {
-                    "Latest Stable (remote release)".to_string()
-                },
-                default: options.is_empty(),
-            });
-
-            for fw in &manifest.firmware {
-                if !fw
-                    .supported_hardware
-                    .iter()
-                    .any(|hw| hw.eq_ignore_ascii_case(HARDWARE_ID))
-                {
-                    continue;
-                }
-
-                let mut label = format!("{} ({})", fw.version, fw.channel);
-                if latest_stable.as_deref() == Some(&fw.version) {
-                    label.push_str(" - latest stable");
-                }
-
-                options.push(FirmwareOption {
-                    version: fw.version.clone(),
-                    label,
-                    default: false,
-                });
-            }
-
-            Ok(options)
-        }
-        Err(err) => {
-            if options.is_empty() {
-                Err(err_to_string(err))
-            } else {
-                info!("manifest unavailable, using local firmware option only: {err}");
-                Ok(options)
-            }
-        }
-    }
+    Ok(vec![FirmwareOption {
+        version: LATEST_STABLE_FIRMWARE.to_string(),
+        label: format!("Latest Stable {} (recommended)", latest.version),
+        default: true,
+    }])
 }
 
 #[tauri::command]
@@ -293,35 +238,24 @@ async fn flash_firmware(
     serial_port: String,
     firmware_version: String,
 ) -> Result<(), String> {
+    if !firmware_version.eq_ignore_ascii_case(LATEST_STABLE_FIRMWARE) {
+        return Err("This app can only flash the latest stable BECA firmware.".to_string());
+    }
+
     ensure_bridge_not_running(&state).await?;
     let _serial_guard = state.serial_op_lock.lock().await;
-    let binary_path = if firmware_version.eq_ignore_ascii_case(LOCAL_FIRMWARE_VERSION) {
-        emit_flash_progress(&app, 10, "Using current workspace firmware build...");
-        resolve_local_firmware_binary_for_app(&app).ok_or_else(|| {
-            "Current workspace firmware is not bundled in this app build. Rebuild the app bundle or use PlatformIO first.".to_string()
-        })?
-    } else {
-        emit_flash_progress(&app, 10, "Loading firmware manifest...");
-        let manifest = load_manifest(&app, &state).await.map_err(err_to_string)?;
+    emit_flash_progress(&app, 10, "Loading latest stable firmware manifest...");
+    let manifest = load_manifest(&app, &state).await.map_err(err_to_string)?;
+    let firmware = manifest
+        .latest_stable_for_hardware(HARDWARE_ID)
+        .ok_or_else(|| format!("No stable firmware found for {HARDWARE_ID}"))?
+        .clone();
 
-        let firmware = if firmware_version.eq_ignore_ascii_case("latest-stable") {
-            manifest
-                .latest_stable_for_hardware(HARDWARE_ID)
-                .ok_or_else(|| format!("No stable firmware found for {HARDWARE_ID}"))?
-                .clone()
-        } else {
-            manifest
-                .by_version_for_hardware(&firmware_version, HARDWARE_ID)
-                .ok_or_else(|| format!("Firmware version {firmware_version} is unavailable"))?
-                .clone()
-        };
-
-        emit_flash_progress(&app, 30, "Downloading firmware binary...");
-        let cache_dir = app_data_dir(&app)?.join("cache").join("firmware");
-        download_firmware(&firmware, &cache_dir)
-            .await
-            .map_err(err_to_string)?
-    };
+    emit_flash_progress(&app, 30, "Downloading latest stable firmware binary...");
+    let cache_dir = app_data_dir(&app)?.join("cache").join("firmware");
+    let binary_path = download_firmware(&firmware, &cache_dir)
+        .await
+        .map_err(err_to_string)?;
 
     emit_flash_progress(&app, 65, "Preparing flash tool...");
     let (tool, tool_path) = resolve_flash_tool_for_app(&app).await?;
@@ -1230,23 +1164,6 @@ fn resolve_named_tool_for_app(app: &AppHandle, tool_name: &str) -> Option<PathBu
         .or_else(|| resolve_tool_on_path(tool_name))
 }
 
-fn resolve_local_firmware_binary_for_app(app: &AppHandle) -> Option<PathBuf> {
-    let mut candidates = Vec::new();
-    for dir in candidate_binary_dirs(app) {
-        candidates.push(dir.join("beca-current.bin"));
-        candidates.push(dir.join("firmware.bin"));
-    }
-
-    candidates.push(
-        PathBuf::from(".pio")
-            .join("build")
-            .join("esp32dev")
-            .join("firmware.bin"),
-    );
-
-    candidates.into_iter().find(|path| path.exists())
-}
-
 fn resolve_binary_for_app(app: &AppHandle, binary_name: &str) -> anyhow::Result<PathBuf> {
     let file = executable_name(binary_name);
     for dir in candidate_binary_dirs(app) {
@@ -1346,13 +1263,17 @@ fn espflash_download_url_for_target() -> Option<String> {
 
 fn esptool_download_url_for_target() -> Option<String> {
     #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
-    let asset = format!("esptool-v{ESPTOOL_SIDECAR_VERSION}-windows-amd64.zip");
-    #[cfg(not(all(target_os = "windows", target_arch = "x86_64")))]
-    return None;
+    {
+        let asset = format!("esptool-v{ESPTOOL_SIDECAR_VERSION}-windows-amd64.zip");
+        Some(format!(
+            "https://github.com/espressif/esptool/releases/download/v{ESPTOOL_SIDECAR_VERSION}/{asset}"
+        ))
+    }
 
-    Some(format!(
-        "https://github.com/espressif/esptool/releases/download/v{ESPTOOL_SIDECAR_VERSION}/{asset}"
-    ))
+    #[cfg(not(all(target_os = "windows", target_arch = "x86_64")))]
+    {
+        None
+    }
 }
 
 async fn ensure_espflash_sidecar(app: &AppHandle) -> anyhow::Result<PathBuf> {
