@@ -200,6 +200,11 @@
         color: var(--off-text);
       }
 
+      .chart-caption.is-disconnected {
+        color: #b5533f;
+        font-weight: 700;
+      }
+
       .chart-panel {
         left: 20px;
         top: 111px;
@@ -481,6 +486,14 @@
         filter: brightness(1.03);
       }
 
+      .output-option.is-jack-present:not(.is-active) {
+        border-color: var(--accent);
+      }
+
+      .output-option.is-auto {
+        box-shadow: inset 0 0 0 1px currentColor;
+      }
+
       .random-card {
         left: 20px;
         top: 790px;
@@ -674,7 +687,7 @@
             </a>
           </div>
 
-          <div class="chart-caption">plant input:</div>
+          <div class="chart-caption" id="plant-caption">plant input:</div>
           <section class="chart-panel" aria-label="Plant monitor">
             <svg id="plant-chart" viewBox="0 0 350 162" preserveAspectRatio="none"></svg>
           </section>
@@ -722,7 +735,7 @@
       const MODE_LABELS = ["notes", "arpeggio", "chords", "drums"];
       const SCALE_LABELS = ["maj", "min", "dorian", "lyd", "mix", "pent min", "pent maj", "harm min", "phryg", "whole", "maj7", "min7", "dom7", "sus2", "sus4"];
       const NOTE_LENGTHS = ["1/32", "1/16t", "1/16", "1/8t", "1/8", "1/4", "1/2", "1/1"];
-      const OUTPUTS = ["ble", "serial", "aux out"];
+      const OUTPUTS = ["ble", "aux out", "serial"];
       const TIME_SIGNATURES = ["1-1", "2-2", "2-4", "3-4", "4-4", "5-4", "7-4", "6-8", "9-8", "12-8", "4-8", "4-16", "8-32"];
       const LED_SLOT_COUNT = 8;
       const LED_DISPLAY_SETTING = 0;
@@ -759,6 +772,9 @@
         "aux out": ["#8bc43e", "#8bc43e", null, null, null, null, null, null]
       };
       const RANDOM_PATTERN = ["#7239d9", null, "#8bc43e", null, "#fed605", null, "#fe5501", null];
+      const PLANT_RENDER_MS = 33;
+      const PLANT_BLEND_LIVE = 0.42;
+      const PLANT_RENDER_EPSILON = 0.0012;
 
         const state = {
           selectedSettingId: "sensitivity",
@@ -776,6 +792,10 @@
         dragLastY: null,
         dragMoved: false,
         plantPoints: Array.from({ length: 34 }, () => 0.45),
+        targetPlantValue: 0.45,
+        displayPlantValue: 0.45,
+        plantAnimationFrame: null,
+        lastPlantFrameAt: 0,
         params: {
           synth_presets: [...DEFAULT_SYNTH_PRESETS]
         },
@@ -798,6 +818,10 @@
           resonance: 0.7,
           master: 0.25,
           outputmode: "serial",
+          plant_jack: 1,
+          plant_auto_mute: 0,
+          aux_jack: 0,
+          aux_auto: 0,
           daw_sync: 1,
           encoder_setting_name: "sensitivity",
           encoder_volume_mode: 0,
@@ -820,6 +844,7 @@
         brandLockup: document.getElementById("brand-lockup"),
         waveIcon: document.getElementById("wave-icon"),
         gearIcon: document.getElementById("gear-icon"),
+        plantCaption: document.getElementById("plant-caption"),
         plantChart: document.getElementById("plant-chart"),
         midiReadout: document.getElementById("midi-readout"),
         midiStrip: document.getElementById("midi-strip"),
@@ -1073,15 +1098,6 @@
           format: () => String(state.live.bpm ?? 120)
         },
         {
-          id: "timeSig",
-          label: "time sig",
-          color: SETTING_COLORS.timeSig,
-          read: () => getTimeSignatureIndex(state.live.ts || "4/4"),
-          write: (value) => postSet("ts", TIME_SIGNATURES[value]),
-          step: (dir) => clamp(getTimeSignatureIndex(state.live.ts || "4/4") + dir, 0, TIME_SIGNATURES.length - 1),
-          format: () => (state.live.ts || "4/4").replace("-", "/")
-        },
-        {
           id: "swing",
           label: "swing",
           color: SETTING_COLORS.swing,
@@ -1118,6 +1134,24 @@
           format: () => `c${state.live.hi ?? 8}`
         },
         {
+          id: "timeSig",
+          label: "time sig",
+          color: SETTING_COLORS.timeSig,
+          read: () => getTimeSignatureIndex(state.live.ts || "4/4"),
+          write: (value) => postSet("ts", TIME_SIGNATURES[value]),
+          step: (dir) => clamp(getTimeSignatureIndex(state.live.ts || "4/4") + dir, 0, TIME_SIGNATURES.length - 1),
+          format: () => (state.live.ts || "4/4").replace("-", "/")
+        },
+        {
+          id: "noteLength",
+          label: "note length",
+          color: SETTING_COLORS.noteLength,
+          read: () => state.live.note_length_idx ?? 2,
+          write: (value) => postSet("note_length", String(value)),
+          step: (dir) => clamp((state.live.note_length_idx ?? 2) + dir, 0, NOTE_LENGTHS.length - 1),
+          format: () => state.live.note_length || NOTE_LENGTHS[state.live.note_length_idx ?? 2] || "1/16"
+        },
+        {
           id: "filter",
           label: "filter",
           color: SETTING_COLORS.filter,
@@ -1136,15 +1170,6 @@
           write: (value) => postSet("resonance", value.toFixed(2)),
           step: (dir) => clamp((state.live.resonance ?? 0.7) + dir * 0.05, 0.1, 10),
           format: () => (state.live.resonance ?? 0.7).toFixed(2)
-        },
-        {
-          id: "noteLength",
-          label: "note length",
-          color: SETTING_COLORS.noteLength,
-          read: () => state.live.note_length_idx ?? 2,
-          write: (value) => postSet("note_length", String(value)),
-          step: (dir) => clamp((state.live.note_length_idx ?? 2) + dir, 0, NOTE_LENGTHS.length - 1),
-          format: () => state.live.note_length || NOTE_LENGTHS[state.live.note_length_idx ?? 2] || "1/16"
         }
       ];
 
@@ -1493,6 +1518,36 @@
         `;
       }
 
+      function appendPlantFrame(value) {
+        state.plantPoints = [...state.plantPoints.slice(1), value];
+        renderChart();
+      }
+
+      function startPlantAnimationLoop() {
+        if (state.plantAnimationFrame != null) return;
+
+        const tick = (timestamp) => {
+          if (document.hidden) {
+            state.plantAnimationFrame = null;
+            return;
+          }
+
+          if (!state.lastPlantFrameAt || (timestamp - state.lastPlantFrameAt) >= PLANT_RENDER_MS) {
+            const delta = state.targetPlantValue - state.displayPlantValue;
+            state.displayPlantValue += delta * PLANT_BLEND_LIVE;
+            if (Math.abs(delta) <= PLANT_RENDER_EPSILON) {
+              state.displayPlantValue = state.targetPlantValue;
+            }
+            appendPlantFrame(clamp(state.displayPlantValue, 0, 1));
+            state.lastPlantFrameAt = timestamp;
+          }
+
+          state.plantAnimationFrame = window.requestAnimationFrame(tick);
+        };
+
+        state.plantAnimationFrame = window.requestAnimationFrame(tick);
+      }
+
       function inferChordName(notes) {
         if (!notes.length) return "--";
         const pitchSet = [...new Set(notes.map((note) => note % 12))].sort((a, b) => a - b);
@@ -1537,8 +1592,29 @@
       function renderOutputs() {
         const activeOutput = normalizeOutputModeToken(state.live.outputmode, Number(state.live.outputmode));
         OUTPUTS.forEach((output) => {
-          dom.outputButtons.get(output)?.classList.toggle("is-active", activeOutput === output);
+          const button = dom.outputButtons.get(output);
+          if (!button) return;
+          const isAux = output === "aux out";
+          const auxJack = Number(state.live.aux_jack ?? 0) !== 0;
+          const auxAuto = Number(state.live.aux_auto ?? 0) !== 0;
+          button.classList.toggle("is-active", activeOutput === output);
+          button.classList.toggle("is-jack-present", isAux && auxJack);
+          button.classList.toggle("is-auto", isAux && auxAuto);
+          if (isAux) {
+            button.title = auxAuto
+              ? "Aux jack auto-routed"
+              : (auxJack ? "Aux jack connected" : "Aux jack not detected");
+          }
         });
+      }
+
+      function renderJackStatus() {
+        const plantConnected = state.live.plant_jack === undefined || Number(state.live.plant_jack) !== 0;
+        const plantAutoMute = Number(state.live.plant_auto_mute ?? 0) !== 0;
+        el.plantCaption.textContent = plantConnected
+          ? "plant input:"
+          : (plantAutoMute ? "plant input: auto-muted" : "plant input: unplugged");
+        el.plantCaption.classList.toggle("is-disconnected", !plantConnected);
       }
 
       function renderSync() {
@@ -1677,6 +1753,7 @@
       }
 
       function renderLiveState() {
+        renderJackStatus();
         renderSettings();
         renderVolume();
         renderOutputs();
@@ -1692,9 +1769,8 @@
       }
 
       function applyPlantValue(value) {
-        const next = clamp(Number(value) || 0, 0, 1);
-        state.plantPoints = [...state.plantPoints.slice(1), next];
-        renderChart();
+        state.targetPlantValue = clamp(Number(value) || 0, 0, 1);
+        startPlantAnimationLoop();
       }
 
       function applyNotePayload(payload) {
@@ -1807,8 +1883,8 @@
             }).catch((error) => console.error("Next setting failed", error));
           } else if (state.clickCount === 2) {
             runExclusive(async () => {
-              await postEncoderAction("toggle_volume");
-            }).catch((error) => console.error("Volume toggle failed", error));
+              await postEncoderAction("volume");
+            }).catch((error) => console.error("Volume mode failed", error));
           }
           state.clickCount = 0;
         }, 260);
@@ -1942,6 +2018,7 @@
       initLeds();
       setScale();
       bindEvents();
+      startPlantAnimationLoop();
       startLedAnimationLoop();
       renderAll();
       loadInitialState();

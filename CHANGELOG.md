@@ -1,5 +1,33 @@
 # CHANGELOG
 
+## 2026-05-01 - Plant Detect Disabled By Default
+
+### Changed
+
+- Disabled `IO32` plant jack detect by default so IO34/IO35 plant input is always treated as connected and can keep driving note selection on the current circuit.
+- Updated serial `@C PINS` to report `plant_detect_enabled` and avoid reading IO32 when plant detect is compiled out.
+- Changed startup checklist LED 5 (`output`) to pass when firmware safely stabilizes a saved `aux out` boot into BLE or Serial during the aux startup lock, instead of presenting the safe fallback as a warning.
+- Raised firmware live visual SSE streams from ~15 fps to a shared 24 fps target and matched the desktop app network control cache/poll cadence to reduce visible lag while keeping state updates diff-based.
+- Added client-side plant-scope interpolation so the app can render smoothly at roughly 30 fps without forcing serial control or BLE sessions into a heavier path.
+
+## 2026-04-30 - BECA v1.0.2 Hardware Detect
+
+### Added
+
+- Debounced BECA v1.0.2 jack detect support:
+  - plant ADC streams on `IO34` and `IO35`
+  - optional plant input detect on `IO32`
+  - aux out detect on `IO33`
+- Aux jack auto-routing to `aux out`, with restore to the previous BLE or Serial output when the aux cable is unplugged after an auto-route.
+- Plant cable disconnected state and plant auto-mute in `/api/state`, `/api/plant`, `/api/outputmode`, serial `@C STATE`, serial `@C PLANT`, and optional serial telemetry when plant detect is enabled.
+- Serial `@C PINS` hardware bring-up diagnostic for encoder switch, optional plant detect, aux detect, plant ADC, and effective mute levels.
+- Desktop Control view status for plant cable presence and aux jack auto-routing.
+
+### Changed
+
+- Encoder switch handling on `IO15` now defaults to active-high v1.0.2 wiring with debounce timing: single tap advances controls, double tap enters volume, hold cycles BLE, aux out, then Serial when aux is available, and triple tap randomizes core settings.
+- Desktop Control setting order now matches the physical encoder single-tap order.
+
 ## 2026-02-28 - BECA Control M4L Milestone (feature/ableton-m4l-control)
 
 ### Added

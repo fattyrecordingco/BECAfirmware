@@ -11,6 +11,13 @@ The current product workflow is desktop-first:
 
 The old browser page on the device is now a fallback and recovery path, not the primary user interface.
 
+## Current Release Baseline
+
+- app: `setup-v0.1.4`
+- firmware release tag: `firmware-v1.0.8`
+- primary branch for release-ready source: `master`
+- firmware build target: ESP32 Arduino core `2.0.14`
+
 ## What BECA Includes
 
 - BECA device firmware in [BECAfinalsv02.ino](./BECAfinalsv02.ino)
@@ -66,6 +73,17 @@ If Wi-Fi setup through USB is not available on an older firmware build:
 - computer running Windows, macOS, or Linux
 - optional DAC/speakers if using `aux out`
 
+### BECA v1.0.2 board inputs
+
+BECA v1.0.2 keeps the same core architecture and adds hardware detect lines:
+
+- encoder switch: `IO15`
+- plant input ADC streams: `IO34` and `IO35`
+- plant input jack detect footprint: `IO32` (disabled in firmware by default for the current circuit)
+- aux out jack detect: `IO33`
+
+The firmware debounces the active switch lines. BECA v1.0.2 defaults use `INPUT_PULLDOWN` and treat `HIGH` as pressed or connected for the encoder switch and aux jack detect input. Plant performance now treats the plant input as connected unless `BECA_PLANT_JACK_DETECT_ENABLED` is explicitly set to `1` before compiling. If a board revision wires the active switch contacts with the opposite polarity, adjust the relevant `*_PIN_MODE` and `*_CONNECTED_LEVEL` or `*_PRESSED_LEVEL` constants in the sketch before compiling.
+
 ### Firmware and library baseline
 
 The project is pinned to these known-good versions:
@@ -77,6 +95,16 @@ The project is pinned to these known-good versions:
 - `fastled/FastLED@3.10.3`
 
 ## Install The BECA App
+
+Download the app from the GitHub Releases page for this repository:
+
+- https://github.com/fattyrecordingco/BECAfirmware/releases
+- choose the newest `setup-v*` release
+- Windows users should download `BECA_*_x64-setup.exe`
+- macOS users should download `BECA_*.dmg` when published
+- Linux users should download `BECA_*.AppImage` or `.deb` when published
+
+The app can flash the newest stable firmware from the release manifest. A source checkout is only needed for development or manual PlatformIO flashing.
 
 ### Windows
 
@@ -171,7 +199,7 @@ The `Control` page is the main live interface. It mirrors the instrument and let
 - plant input monitor
 - note or chord readout
 - 12-note MIDI monitor strip
-- 12 parameter tiles
+- 13 parameter tiles
 - volume row
 - output mode row
 - random button
@@ -209,11 +237,11 @@ The current control surface exposes:
 - scale
 - root note
 - tempo
-- time signature
 - swing
 - rest
 - low octave
 - high octave
+- time signature
 - note length
 - filter
 - resonance
@@ -247,6 +275,8 @@ In `aux out`:
 - filter and resonance become active
 - note length still works
 
+On BECA v1.0.2, inserting an aux cable on the aux out jack automatically routes output to `aux out` after the startup aux safety lock has expired. If that auto-route owns the output, unplugging the aux cable restores the previous BLE or Serial output. A manual output change while the aux cable remains connected is respected until the cable is unplugged and reinserted.
+
 ## LED Language
 
 The 8 device LEDs and the 8 leaves on the right side of the app are now information-only. They are not audio-reactive.
@@ -261,10 +291,24 @@ The 8 device LEDs and the 8 leaves on the right side of the app are now informat
 
 On boot, the 8 device LEDs now run a short self-check before BECA announces Serial MIDI readiness. Green means the check passed, yellow means BECA is in a safe fallback state, and red means that check needs attention.
 
+Checklist order:
+
+1. `prefs`: settings storage opened. Red means the ESP32 preferences/NVS store did not open.
+2. `session`: last runtime state restored. Yellow is normal after a clean first flash or if no saved session exists.
+3. `plant`: plant input is available. Yellow means plant detect is enabled and the plant cable is not detected.
+4. `ble`: BLE-MIDI handlers initialized.
+5. `output`: output mode is valid and safe. This should be green after the latest firmware; older builds could show this as yellow when a saved `aux out` session was safely booted into BLE/Serial during the aux startup lock.
+6. `wifi_saved`: saved Wi-Fi credentials exist. Yellow is normal before first Wi-Fi setup.
+7. `network`: network mode is ready. Green means station Wi-Fi connected; yellow means setup AP mode is active with no saved Wi-Fi; red means saved Wi-Fi exists but connection failed.
+8. `services`: web and mDNS services are ready. Yellow is normal in AP setup mode because `.local` service discovery is station-network-only.
+
+If the 5th checklist LED is red or red-looking on boot, update to the current firmware first. In current code LED 5 only fails if the output mode is outside the valid BLE/Serial/Aux range; if it appears after the checklist, it may instead be the normal output-mode LED pattern, not the startup checklist.
+
 Plant trigger stability:
 - firmware now uses a small hysteresis window and re-arm delay on plant triggers
 - this reduces rapid stop-start retriggers when the sensor energy hovers near the threshold
-- the live plant scope stream now updates faster at `15 fps`
+- the live plant scope, note, and drum streams target `24 fps` by default for smoother app feedback without pushing the ESP32 into a heavy 30 fps web workload
+- the app interpolates plant-scope frames at roughly `30 fps`, so the UI remains smooth even when the ESP32 or Wi-Fi link drops visual frames under load
 
 ### How each control reads
 
@@ -285,10 +329,14 @@ The app and the device follow the same interaction language as closely as possib
 
 - turn clockwise: increase current value
 - turn anticlockwise: decrease current value
-- single tap: move to next setting
-- double tap: enter or exit volume mode
-- tap and hold: cycle output mode
+- single tap: move to next setting in the hardware LED order
+- double tap: enter volume mode
+- tap and hold: cycle output mode as BLE, aux out, then Serial
 - triple tap: randomize core settings
+
+The current single-tap order is sensitivity, preset, scale, root note, tempo, swing, rest, low octave, high octave, time signature, note length, filter, and resonance. Filter and resonance are skipped unless `aux out` is active.
+
+Plant jack detect on `IO32` is disabled by default, so the plant input is treated as connected and IO34/IO35 plant movement can continue to drive notes normally. For hardware bring-up, serial control command `@C PINS` reports the raw and debounced encoder switch, aux detect, plant ADC pin states, and whether plant detect was compiled in.
 
 ### On-screen control flow
 
@@ -343,6 +391,23 @@ If `DAW Sync` is on and no DAW clock is being received, BECA remains safe and st
 - close BECA and reopen it from the installed app entry
 - confirm the installed app is the current build, not an old portable copy
 - reconnect the device and let the app rediscover the best control transport
+
+### 5th startup LED is red or yellow
+
+- LED 5 is the `output` check
+- update/flash the latest firmware from the BECA app first
+- in current firmware, a saved `aux out` session is safely booted into BLE/Serial during the aux startup lock and LED 5 should still pass
+- if LED 5 is truly red during the checklist, open the serial monitor at `115200` and look for `@I STARTUP CHECK 5 output fail`
+- if the red LED appears after the checklist animation, it is probably a normal LED display pattern, especially Serial output mode or the red tempo control color
+
+### Jack detection looks inverted
+
+- the v1.0.2 defaults expect active jack detect lines to read `HIGH` when a plug is inserted
+- plant jack detect is disabled by default; `@C PINS` should report `plant_detect_enabled:0` and the app should treat plant input as connected
+- if you explicitly re-enable plant detect and the app says the plant cable is unplugged while it is inserted, check `@C PINS`; if the raw level is `0` while connected, review `BECA_PLANT_JACK_PIN_MODE` and `BECA_PLANT_JACK_CONNECTED_LEVEL`
+- if aux auto-routing happens when no aux cable is inserted, check `@C PINS`; if the raw level is `1` while unplugged, review `BECA_AUX_JACK_PIN_MODE` and `BECA_AUX_JACK_CONNECTED_LEVEL`
+- after changing either polarity, rebuild and flash the firmware again
+- use serial command `@C PINS` while inserting or removing cables to confirm raw pin polarity before changing the firmware constants
 
 ## Build From Source
 
@@ -403,6 +468,8 @@ That workflow:
 - [apps/beca-setup/ui/index.html](./apps/beca-setup/ui/index.html): setup workspace shell
 - [tools/bridge](./tools/bridge): native MIDI bridge
 - [tools/flasher](./tools/flasher): flash and backup helpers
+- [ableton](./ableton): optional Ableton Live and Max for Live support files
+- [docs](./docs): architecture notes that support this README
 
 ## Notes For Maintainers
 

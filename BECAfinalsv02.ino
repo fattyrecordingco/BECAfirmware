@@ -47,12 +47,41 @@ extern const char SETUP_HTML[] PROGMEM;
 #define LED_TYPE           WS2812B
 #define LED_COLOR_ORDER    GRB
 
-#define PLANT1_PIN         34   // degree
-#define PLANT2_PIN         34   // octave (currently same; change if you have 2nd channel)
+#define PLANT1_PIN         34   // degree stream
+#define PLANT2_PIN         35   // octave stream
 
 #define ENC_PIN_A          4
 #define ENC_PIN_B          5
 #define ENC_PIN_SW         15
+
+#define PLANT_JACK_PIN     32
+#define AUX_JACK_PIN       33
+
+#ifndef BECA_ENCODER_SWITCH_PIN_MODE
+#define BECA_ENCODER_SWITCH_PIN_MODE INPUT_PULLDOWN
+#endif
+#ifndef BECA_ENCODER_SWITCH_PRESSED_LEVEL
+#define BECA_ENCODER_SWITCH_PRESSED_LEVEL HIGH
+#endif
+
+#ifndef BECA_PLANT_JACK_DETECT_ENABLED
+#define BECA_PLANT_JACK_DETECT_ENABLED 0
+#endif
+#ifndef BECA_AUX_JACK_DETECT_ENABLED
+#define BECA_AUX_JACK_DETECT_ENABLED 1
+#endif
+#ifndef BECA_PLANT_JACK_PIN_MODE
+#define BECA_PLANT_JACK_PIN_MODE INPUT_PULLDOWN
+#endif
+#ifndef BECA_AUX_JACK_PIN_MODE
+#define BECA_AUX_JACK_PIN_MODE INPUT_PULLDOWN
+#endif
+#ifndef BECA_PLANT_JACK_CONNECTED_LEVEL
+#define BECA_PLANT_JACK_CONNECTED_LEVEL HIGH
+#endif
+#ifndef BECA_AUX_JACK_CONNECTED_LEVEL
+#define BECA_AUX_JACK_CONNECTED_LEVEL HIGH
+#endif
 
 // PCM5102A I2S defaults for AUX OUT
 #define I2S_BCK_PIN        26
@@ -67,6 +96,11 @@ uint8_t gBrightness = 154;
 volatile bool gMidiConnected = false;
 enum OutputMode : uint8_t { OUTPUT_BLE = 0, OUTPUT_SERIAL = 1, OUTPUT_AUX = 2 };
 volatile uint8_t gOutputMode = OUTPUT_BLE;
+enum OutputChangeSource : uint8_t {
+  OUTPUT_CHANGE_USER = 0,
+  OUTPUT_CHANGE_AUX_AUTO,
+  OUTPUT_CHANGE_AUX_RESTORE
+};
 const uint32_t SERIAL_MIDI_BAUD = 115200;
 const uint32_t SERIAL_MIDI_BEACON_MS = 2000;
 const uint32_t AUX_STARTUP_LOCK_MS = 12000;
@@ -76,8 +110,22 @@ const uint32_t AUX_STARTUP_LOCK_MS = 12000;
 uint32_t gLastSerialBeaconMs = 0;
 uint32_t gAuxUnlockAtMs = 0;
 volatile bool gIoMuted = false;
+volatile bool gPlantAutoMuted = false;
 volatile bool gSerialJsonTelemetry = (BECA_SERIAL_JSON_TELEMETRY_DEFAULT != 0);
 uint32_t gLastSerialPlantTelemetryMs = 0;
+const uint32_t JACK_DEBOUNCE_MS = 60;
+uint8_t gPlantJackRawLevel = HIGH;
+uint8_t gPlantJackStableLevel = HIGH;
+uint32_t gPlantJackChangedAtMs = 0;
+volatile bool gPlantJackConnected = true;
+uint8_t gAuxJackRawLevel = HIGH;
+uint8_t gAuxJackStableLevel = HIGH;
+uint32_t gAuxJackChangedAtMs = 0;
+volatile bool gAuxJackConnected = false;
+bool gAuxJackAutoActive = false;
+bool gAuxJackAutoSuppressed = false;
+uint8_t gAuxJackPreviousOutput = OUTPUT_BLE;
+uint32_t gLastAuxAutoLogMs = 0;
 
 beca::SynthEngine gSynth;
 uint32_t gLastSynthUnderrunLogMs = 0;
@@ -89,14 +137,21 @@ const uint32_t BLE_KICK_INTERVAL_MS = 2500; // kick advertise every 2.5s when no
 static inline bool outputModeIsAux() { return gOutputMode == OUTPUT_AUX; }
 static inline bool outputModeIsBle() { return gOutputMode == OUTPUT_BLE; }
 static inline bool outputModeIsSerial() { return gOutputMode == OUTPUT_SERIAL; }
-static inline bool ioMuteActive() { return gIoMuted; }
+static inline bool ioMuteManualActive() { return gIoMuted; }
+static inline bool plantAutoMuteActive() { return gPlantAutoMuted; }
+static inline bool ioMuteActive() { return gIoMuted || gPlantAutoMuted; }
 static inline bool midiOutIsSerial() { return outputModeIsSerial(); }
 static inline bool midiOutReady()    { return !ioMuteActive() && (outputModeIsSerial() || (outputModeIsBle() && gMidiConnected)); }
+static inline bool plantJackConnected();
+static inline bool auxJackConnected();
+static inline void setupJackInputs();
+static inline void serviceJackInputs(uint32_t nowMs);
 static inline bool auxSwitchReady() { return (int32_t)(millis() - gAuxUnlockAtMs) >= 0; }
 static inline uint32_t auxSwitchWaitMs() {
   if (auxSwitchReady()) return 0;
   return gAuxUnlockAtMs - millis();
 }
+static inline uint8_t nextOutputModeForCycle();
 static inline bool drumsAllowedForCurrentOutput();
 static inline void enforceAuxDrumGuard();
 static inline bool isValidDen(uint8_t d);
@@ -104,6 +159,7 @@ static inline void recalcTransport(bool resetPhase);
 static inline void pushStateIfChanged(bool force=false);
 static inline void saveOutputModePref();
 static inline void normalizeEncoderSetting();
+static inline void activeClear();
 
 extern Preferences prefs;
 extern float restProb;
@@ -260,6 +316,82 @@ static inline const char* outputModeName(uint8_t mode) {
   }
 }
 
+static inline bool jackLevelIsConnected(uint8_t level, uint8_t connectedLevel) {
+  return level == connectedLevel;
+}
+
+static inline bool encoderSwitchLevelIsPressed(bool level) {
+  return level == (BECA_ENCODER_SWITCH_PRESSED_LEVEL == HIGH);
+}
+
+static inline bool plantJackConnected() {
+#if BECA_PLANT_JACK_DETECT_ENABLED
+  return gPlantJackConnected;
+#else
+  return true;
+#endif
+}
+
+static inline bool auxJackConnected() {
+#if BECA_AUX_JACK_DETECT_ENABLED
+  return gAuxJackConnected;
+#else
+  return false;
+#endif
+}
+
+static inline bool updateDebouncedJack(uint8_t pin,
+                                       uint8_t connectedLevel,
+                                       uint8_t& rawLevel,
+                                       uint8_t& stableLevel,
+                                       uint32_t& changedAtMs,
+                                       volatile bool& connected,
+                                       uint32_t nowMs) {
+  const uint8_t raw = (uint8_t)digitalRead(pin);
+  if (raw != rawLevel) {
+    rawLevel = raw;
+    changedAtMs = nowMs;
+  }
+
+  if (raw == stableLevel || (int32_t)(nowMs - changedAtMs) < (int32_t)JACK_DEBOUNCE_MS) {
+    return false;
+  }
+
+  stableLevel = raw;
+  const bool nextConnected = jackLevelIsConnected(stableLevel, connectedLevel);
+  if (nextConnected == connected) return false;
+  connected = nextConnected;
+  return true;
+}
+
+static inline void setupJackInputs() {
+#if BECA_PLANT_JACK_DETECT_ENABLED
+  pinMode(PLANT_JACK_PIN, BECA_PLANT_JACK_PIN_MODE);
+  gPlantJackRawLevel = (uint8_t)digitalRead(PLANT_JACK_PIN);
+  gPlantJackStableLevel = gPlantJackRawLevel;
+  gPlantJackChangedAtMs = millis();
+  gPlantJackConnected = jackLevelIsConnected(gPlantJackStableLevel, BECA_PLANT_JACK_CONNECTED_LEVEL);
+#else
+  gPlantJackConnected = true;
+#endif
+
+#if BECA_AUX_JACK_DETECT_ENABLED
+  pinMode(AUX_JACK_PIN, BECA_AUX_JACK_PIN_MODE);
+  gAuxJackRawLevel = (uint8_t)digitalRead(AUX_JACK_PIN);
+  gAuxJackStableLevel = gAuxJackRawLevel;
+  gAuxJackChangedAtMs = millis();
+  gAuxJackConnected = jackLevelIsConnected(gAuxJackStableLevel, BECA_AUX_JACK_CONNECTED_LEVEL);
+#else
+  gAuxJackConnected = false;
+#endif
+}
+
+static inline uint8_t nextOutputModeForCycle() {
+  if (outputModeIsBle()) return auxSwitchReady() ? OUTPUT_AUX : OUTPUT_SERIAL;
+  if (outputModeIsAux()) return OUTPUT_SERIAL;
+  return OUTPUT_BLE;
+}
+
 static inline bool startAuxAudio() {
   if (ioMuteActive()) return true;
   if (gSynth.running()) return true;
@@ -305,13 +437,48 @@ static inline void applyIoMute(bool muteOn) {
   }
 }
 
-static inline void setOutputMode(uint8_t mode) {
-  uint8_t next = (uint8_t)constrain((int)mode, 0, 2);
-  if (next == OUTPUT_AUX && !auxSwitchReady()) {
-    Serial.printf("@I AUX LOCKED %lu ms\n", (unsigned long)auxSwitchWaitMs());
+static inline void applyPlantAutoMute(bool muteOn) {
+  if ((bool)gPlantAutoMuted == muteOn) return;
+
+  gPlantAutoMuted = muteOn;
+  allNotesOffBothTransports();
+  gSynth.allNotesOff();
+  gSynth.allDrumsOff();
+  for (auto &q : offQ) q.on = false;
+  for (auto &q : uiNoteQ) q.on = false;
+  activeClear();
+
+  if (muteOn) {
+    stopAuxAudio();
+    Serial.println("@I PLANT AUTO MUTE ON");
     return;
   }
-  if (next == gOutputMode) return;
+
+  Serial.println("@I PLANT AUTO MUTE OFF");
+  if (!ioMuteManualActive() && outputModeIsAux()) {
+    enforceAuxDrumGuard();
+    gSynth.setDrumsEnabled(false);
+    startAuxAudio();
+  }
+}
+
+static inline bool setOutputMode(uint8_t mode, OutputChangeSource source = OUTPUT_CHANGE_USER) {
+  uint8_t next = (uint8_t)constrain((int)mode, 0, 2);
+  if (source == OUTPUT_CHANGE_USER) {
+    gAuxJackAutoActive = false;
+    if (next != OUTPUT_AUX) {
+      gAuxJackPreviousOutput = next;
+      if (auxJackConnected()) gAuxJackAutoSuppressed = true;
+    } else {
+      gAuxJackAutoSuppressed = false;
+    }
+  }
+
+  if (next == OUTPUT_AUX && !auxSwitchReady()) {
+    Serial.printf("@I AUX LOCKED %lu ms\n", (unsigned long)auxSwitchWaitMs());
+    return false;
+  }
+  if (next == gOutputMode) return true;
 
   Serial.printf("@I OUTPUTMODE %s -> %s\n", outputModeName(gOutputMode), outputModeName(next));
   allNotesOffBothTransports();
@@ -331,7 +498,7 @@ static inline void setOutputMode(uint8_t mode) {
     enforceAuxDrumGuard();
     gSynth.setDrumsEnabled(false);
     if (!ioMuteActive()) startAuxAudio();
-    return;
+    return true;
   }
 
   gSynth.setDrumsEnabled(true);
@@ -343,6 +510,7 @@ static inline void setOutputMode(uint8_t mode) {
     Serial.println("@I MIDIMODE BLE");
     bleKickAdvertising();
   }
+  return true;
 }
 
 static inline void setMidiOutModeLegacy(uint8_t mode) {
@@ -918,7 +1086,7 @@ static inline void captureRuntimeState(RuntimeStateBlob& out) {
   out.magic = RUNTIME_STATE_MAGIC;
   out.version = RUNTIME_STATE_VER;
   out.outputmode = (uint8_t)constrain((int)gOutputMode, 0, 2);
-  out.io_muted = ioMuteActive() ? 1 : 0;
+  out.io_muted = ioMuteManualActive() ? 1 : 0;
   out.daw_sync = gDawSyncEnabled ? 1 : 0;
   out.mode = (uint8_t)gMode;
   out.clock = (uint8_t)CLOCK_INTERNAL;
@@ -1627,12 +1795,18 @@ static inline void onMidiContinue() {
 // -------------------- Encoder --------------------
 int  encLastA  = HIGH;
 bool encLastSW = HIGH;
+bool encRawSW = HIGH;
+uint32_t encRawSwChangedMs = 0;
 bool encPressed = false;
 bool encHoldHandled = false;
 uint32_t encPressStartMs = 0;
 uint32_t encLastReleaseMs = 0;
 uint32_t encLastStepMs = 0;
 uint8_t encTapCount = 0;
+const uint16_t ENC_SW_DEBOUNCE_MS = 28;
+const uint16_t ENC_HOLD_MS = 550;
+const uint16_t ENC_TAP_GAP_RESET_MS = 450;
+const uint16_t ENC_TAP_SETTLE_MS = 260;
 
 static inline void showEncoderNav(uint32_t holdMs = 4000) {
   gEncoderNavUntilMs = millis() + holdMs;
@@ -1801,9 +1975,11 @@ static inline void stepEncoderVolume(int dir) {
 static inline void setupEncoder() {
   pinMode(ENC_PIN_A,  INPUT_PULLUP);
   pinMode(ENC_PIN_B,  INPUT_PULLUP);
-  pinMode(ENC_PIN_SW, INPUT_PULLUP);
+  pinMode(ENC_PIN_SW, BECA_ENCODER_SWITCH_PIN_MODE);
   encLastA  = digitalRead(ENC_PIN_A);
-  encLastSW = digitalRead(ENC_PIN_SW);
+  encRawSW = digitalRead(ENC_PIN_SW);
+  encLastSW = encRawSW;
+  encRawSwChangedMs = millis();
 }
 
 static inline void applyEncoder() {
@@ -1822,30 +1998,43 @@ static inline void applyEncoder() {
   }
   encLastA = a;
 
-  bool sw = digitalRead(ENC_PIN_SW);
-  if (!encPressed && encLastSW == HIGH && sw == LOW) {
+  const bool rawSw = digitalRead(ENC_PIN_SW);
+  if (rawSw != encRawSW) {
+    encRawSW = rawSw;
+    encRawSwChangedMs = nowMs;
+  }
+
+  bool sw = encLastSW;
+  if (rawSw != encLastSW &&
+      (int32_t)(nowMs - encRawSwChangedMs) >= (int32_t)ENC_SW_DEBOUNCE_MS) {
+      sw = rawSw;
+  }
+
+  const bool lastSwPressed = encoderSwitchLevelIsPressed(encLastSW);
+  const bool swPressed = encoderSwitchLevelIsPressed(sw);
+
+  if (!encPressed && !lastSwPressed && swPressed) {
     encPressed = true;
     encHoldHandled = false;
     encPressStartMs = nowMs;
   }
 
-  if (encPressed && !encHoldHandled && sw == LOW && (int32_t)(nowMs - encPressStartMs) >= 550) {
+  if (encPressed && !encHoldHandled && swPressed &&
+      (int32_t)(nowMs - encPressStartMs) >= (int32_t)ENC_HOLD_MS) {
     encHoldHandled = true;
-    uint8_t next = (uint8_t)((gOutputMode + 1u) % 3u);
-    if (!(next == OUTPUT_AUX && !auxSwitchReady())) {
-      setOutputMode(next);
-      saveOutputModePref();
-      normalizeEncoderSetting();
-      showLedDisplay(LED_DISPLAY_OUTPUT, 1600);
-      showEncoderNav(5200);
-      pushStateIfChanged(true);
-    }
+    uint8_t next = nextOutputModeForCycle();
+    setOutputMode(next);
+    saveOutputModePref();
+    normalizeEncoderSetting();
+    showLedDisplay(LED_DISPLAY_OUTPUT, 1600);
+    showEncoderNav(5200);
+    pushStateIfChanged(true);
   }
 
-  if (encPressed && encLastSW == LOW && sw == HIGH) {
+  if (encPressed && lastSwPressed && !swPressed) {
     encPressed = false;
     if (!encHoldHandled) {
-      if ((int32_t)(nowMs - encLastReleaseMs) > 450) {
+      if ((int32_t)(nowMs - encLastReleaseMs) > (int32_t)ENC_TAP_GAP_RESET_MS) {
         encTapCount = 0;
       }
       encTapCount++;
@@ -1854,13 +2043,14 @@ static inline void applyEncoder() {
     }
   }
 
-  if (!encPressed && encTapCount > 0 && (int32_t)(nowMs - encLastReleaseMs) > 260) {
+  if (!encPressed && encTapCount > 0 &&
+      (int32_t)(nowMs - encLastReleaseMs) > (int32_t)ENC_TAP_SETTLE_MS) {
     if (encTapCount == 1) {
       clearLedDisplayTransient();
       gEncoderVolumeMode = false;
       cycleEncoderSetting();
     } else if (encTapCount == 2) {
-      gEncoderVolumeMode = !gEncoderVolumeMode;
+      gEncoderVolumeMode = true;
     } else {
       gEncoderVolumeMode = false;
       randomizeBasicSettingsInline();
@@ -1969,11 +2159,127 @@ static inline uint8_t buildMidiFromBins(int degIdx, int octIdx) {
   return (uint8_t)m;
 }
 
+static inline void resetPlantTrackingToRaw(float raw1, float raw2) {
+  ema1 = base1 = raw1;
+  ema2 = base2 = raw2;
+  noise1 = noise2 = 1.0f;
+  env = 0.0f;
+  agcLevel = AGC_TARGET_LEVEL;
+  agcGain = 1.0f;
+  lastEnergy = 0.0f;
+  triggerEnergy = 0.0f;
+  gPlantArmed = false;
+  gPlantVel = 0;
+  gPlantEnergy = 0.0f;
+  gFeatDeg = 0.0f;
+  gFeatOct = 0.0f;
+  gFeatEnergy = 0.0f;
+  gFeatVel = 0;
+  gScopePlant = 0.0f;
+}
+
+static inline void resetPlantTrackingToCurrentRaw() {
+  const float raw1 = analogRead(PLANT1_PIN);
+  const float raw2 = (PLANT2_PIN == PLANT1_PIN) ? raw1 : analogRead(PLANT2_PIN);
+  gPlantRaw1 = (uint16_t)constrain((int)raw1, 0, 4095);
+  gPlantRaw2 = (uint16_t)constrain((int)raw2, 0, 4095);
+  resetPlantTrackingToRaw(raw1, raw2);
+}
+
+static inline void serviceJackInputs(uint32_t nowMs) {
+  bool plantChanged = false;
+  bool auxChanged = false;
+
+#if BECA_PLANT_JACK_DETECT_ENABLED
+  plantChanged = updateDebouncedJack(
+    PLANT_JACK_PIN,
+    BECA_PLANT_JACK_CONNECTED_LEVEL,
+    gPlantJackRawLevel,
+    gPlantJackStableLevel,
+    gPlantJackChangedAtMs,
+    gPlantJackConnected,
+    nowMs
+  );
+#endif
+
+#if BECA_AUX_JACK_DETECT_ENABLED
+  auxChanged = updateDebouncedJack(
+    AUX_JACK_PIN,
+    BECA_AUX_JACK_CONNECTED_LEVEL,
+    gAuxJackRawLevel,
+    gAuxJackStableLevel,
+    gAuxJackChangedAtMs,
+    gAuxJackConnected,
+    nowMs
+  );
+#endif
+
+  if (plantChanged) {
+    const bool plantConnected = plantJackConnected();
+    applyPlantAutoMute(!plantConnected);
+    resetPlantTrackingToCurrentRaw();
+    gPlantTriggerReady = false;
+    gPlantTriggerReleaseMs = nowMs;
+    lastNoteMs = nowMs;
+    setStartupCheck(STARTUP_CHECK_PLANT, plantConnected ? STARTUP_CHECK_OK : STARTUP_CHECK_WARN);
+    Serial.printf("@I PLANT JACK %s\n", plantConnected ? "CONNECTED" : "DISCONNECTED");
+    pushStateIfChanged(true);
+  }
+
+  if (auxChanged) {
+    Serial.printf("@I AUX JACK %s\n", auxJackConnected() ? "CONNECTED" : "DISCONNECTED");
+    pushStateIfChanged(true);
+  }
+
+  if (!auxJackConnected()) {
+    gAuxJackAutoSuppressed = false;
+    if (gAuxJackAutoActive) {
+      const uint8_t restore = (gAuxJackPreviousOutput == OUTPUT_SERIAL) ? OUTPUT_SERIAL : OUTPUT_BLE;
+      gAuxJackAutoActive = false;
+      if (setOutputMode(restore, OUTPUT_CHANGE_AUX_RESTORE)) {
+        showLedDisplay(LED_DISPLAY_OUTPUT, 1600);
+        showEncoderNav(4000);
+        pushStateIfChanged(true);
+        Serial.printf("@I AUX JACK AUTO RESTORE %s\n", outputModeName(restore));
+      }
+    }
+    return;
+  }
+
+  if (gAuxJackAutoSuppressed || outputModeIsAux()) return;
+
+  if (!auxSwitchReady()) {
+    if ((int32_t)(nowMs - gLastAuxAutoLogMs) >= 1000) {
+      gLastAuxAutoLogMs = nowMs;
+      Serial.printf("@I AUX JACK AUTO WAIT %lu ms\n", (unsigned long)auxSwitchWaitMs());
+    }
+    return;
+  }
+
+  gAuxJackPreviousOutput = outputModeIsSerial() ? OUTPUT_SERIAL : OUTPUT_BLE;
+  if (setOutputMode(OUTPUT_AUX, OUTPUT_CHANGE_AUX_AUTO)) {
+    gAuxJackAutoActive = true;
+    showLedDisplay(LED_DISPLAY_OUTPUT, 1600);
+    showEncoderNav(5200);
+    pushStateIfChanged(true);
+    Serial.println("@I AUX JACK AUTO OUTPUT AUX");
+  }
+}
+
 static inline void samplePlant(float &fDeg, float &fOct, uint8_t &velOut, float &energyOut) {
   float raw1 = analogRead(PLANT1_PIN);
   float raw2 = (PLANT2_PIN == PLANT1_PIN) ? raw1 : analogRead(PLANT2_PIN);
   gPlantRaw1 = (uint16_t)constrain((int)raw1, 0, 4095);
   gPlantRaw2 = (uint16_t)constrain((int)raw2, 0, 4095);
+
+  if (!plantJackConnected()) {
+    resetPlantTrackingToRaw(raw1, raw2);
+    fDeg = 0.0f;
+    fOct = 0.0f;
+    velOut = 0;
+    energyOut = 0.0f;
+    return;
+  }
 
   ema1  += EMA_ALPHA      * (raw1 - ema1);
   ema2  += EMA_ALPHA      * (raw2 - ema2);
@@ -2198,6 +2504,10 @@ static inline void stepDRUM_internal() {
 }
 
 static inline void step_fromPlantTrigger() {
+  if (!plantJackConnected()) {
+    gPlantArmed = false;
+    return;
+  }
   if (!gPlantArmed) return;
   activeClear();
   gPlantArmed = false;
@@ -2279,6 +2589,7 @@ static inline void transportTick() {
   T.stepInBar++;
   if (T.stepInBar >= T.stepsPerBar) T.stepInBar = 0;
   if (ioMuteActive()) return;
+  if (!plantJackConnected()) return;
 
   gClock = CLOCK_INTERNAL;
   switch (gMode) {
@@ -2328,6 +2639,7 @@ struct LastState {
   uint8_t  midimode;
   uint8_t  outputmode;
   uint8_t  io_muted;
+  uint8_t  plant_auto_mute;
   uint8_t  daw_sync;
   uint8_t  daw_lock;
   uint8_t  clock;
@@ -2352,6 +2664,9 @@ struct LastState {
   uint8_t  den;
   uint8_t  drumsel;
   uint8_t  auxready;
+  uint8_t  plant_jack;
+  uint8_t  aux_jack;
+  uint8_t  aux_auto;
   uint8_t  preset;
   uint8_t  note_length;
   uint8_t  encoder_setting;
@@ -2430,6 +2745,7 @@ static inline bool stateChanged() {
   if (LS.midimode != (uint8_t)(outputModeIsSerial() ? 1 : 0)) return true;
   if (LS.outputmode != (uint8_t)gOutputMode) return true;
   if (LS.io_muted != (ioMuteActive() ? 1 : 0)) return true;
+  if (LS.plant_auto_mute != (plantAutoMuteActive() ? 1 : 0)) return true;
   if (LS.daw_sync != (gDawSyncEnabled ? 1 : 0)) return true;
   if (LS.daw_lock != (dawSyncLocked(0) ? 1 : 0)) return true;
   if (LS.clock != (uint8_t)CLOCK_INTERNAL) return true;
@@ -2450,10 +2766,11 @@ static inline bool stateChanged() {
   if (LS.nr    != (avoidRepeats ? 1 : 0)) return true;
   if (LS.beats != gTS.beats) return true;
   if (LS.den   != gTS.noteVal) return true;
-  if (LS.last  != lastNote) return true;
-  if (LS.vel   != lastVel) return true;
   if (LS.drumsel != (uint8_t)drumSelMask) return true;
   if (LS.auxready != (auxSwitchReady() ? 1 : 0)) return true;
+  if (LS.plant_jack != (plantJackConnected() ? 1 : 0)) return true;
+  if (LS.aux_jack != (auxJackConnected() ? 1 : 0)) return true;
+  if (LS.aux_auto != (gAuxJackAutoActive ? 1 : 0)) return true;
   if (LS.preset != p.preset) return true;
   if (LS.note_length != gNoteLengthIndex) return true;
   if (LS.encoder_setting != (uint8_t)gEncoderSetting) return true;
@@ -2474,6 +2791,7 @@ static inline void captureState() {
   LS.midimode = (uint8_t)(outputModeIsSerial() ? 1 : 0);
   LS.outputmode = (uint8_t)gOutputMode;
   LS.io_muted = ioMuteActive() ? 1 : 0;
+  LS.plant_auto_mute = plantAutoMuteActive() ? 1 : 0;
   LS.daw_sync = gDawSyncEnabled ? 1 : 0;
   LS.daw_lock = dawSyncLocked(0) ? 1 : 0;
   LS.clock = (uint8_t)CLOCK_INTERNAL;
@@ -2498,6 +2816,9 @@ static inline void captureState() {
   LS.den   = gTS.noteVal;
   LS.drumsel = (uint8_t)drumSelMask;
   LS.auxready = auxSwitchReady() ? 1 : 0;
+  LS.plant_jack = plantJackConnected() ? 1 : 0;
+  LS.aux_jack = auxJackConnected() ? 1 : 0;
+  LS.aux_auto = gAuxJackAutoActive ? 1 : 0;
   LS.preset = p.preset;
   LS.note_length = gNoteLengthIndex;
   LS.encoder_setting = (uint8_t)gEncoderSetting;
@@ -2513,7 +2834,7 @@ static inline size_t renderStateJson(char* out, size_t outLen, bool bumpVersion)
   captureState();
   if (bumpVersion) stateVersion++;
   const uint32_t ver = stateVersion;
-  char buf[1536];
+  char buf[1792];
   snprintf(buf, sizeof(buf),
     "{\"ver\":%u,"
     "\"ble\":%u,"
@@ -2521,6 +2842,7 @@ static inline size_t renderStateJson(char* out, size_t outLen, bool bumpVersion)
     "\"outputmode\":%u,"
     "\"outputname\":\"%s\","
     "\"io_muted\":%u,"
+    "\"plant_auto_mute\":%u,"
     "\"daw_sync\":%u,"
     "\"daw_lock\":%u,"
     "\"clock\":%u,"
@@ -2543,6 +2865,9 @@ static inline size_t renderStateJson(char* out, size_t outLen, bool bumpVersion)
     "\"nr\":%u,"
     "\"aux_ready\":%u,"
     "\"aux_wait_ms\":%lu,"
+    "\"plant_jack\":%u,"
+    "\"aux_jack\":%u,"
+    "\"aux_auto\":%u,"
     "\"preset\":%u,"
     "\"preset_name\":\"%s\","
     "\"note_length_idx\":%u,"
@@ -2566,6 +2891,7 @@ static inline size_t renderStateJson(char* out, size_t outLen, bool bumpVersion)
     LS.outputmode,
     outputModeName(LS.outputmode),
     LS.io_muted,
+    LS.plant_auto_mute,
     LS.daw_sync,
     LS.daw_lock,
     LS.clock,
@@ -2588,6 +2914,9 @@ static inline size_t renderStateJson(char* out, size_t outLen, bool bumpVersion)
     LS.nr,
     LS.auxready,
     (unsigned long)auxSwitchWaitMs(),
+    LS.plant_jack,
+    LS.aux_jack,
+    LS.aux_auto,
     LS.preset,
     beca::SynthEngine::presetName(LS.preset),
     LS.note_length,
@@ -2618,7 +2947,7 @@ static inline void pushStateIfChanged(bool force) {
   if (!sseClient.connected()) { sseConnected = false; return; }
   if (!force && !stateChanged()) return;
 
-  char buf[1100];
+  char buf[1500];
   renderStateJson(buf, sizeof(buf), true);
 
   sseSend("state", buf);
@@ -2768,9 +3097,12 @@ static inline void handleApiOutputModeGet() {
   char buf[160];
   snprintf(
     buf, sizeof(buf),
-    "{\"mode\":\"%s\",\"value\":%u,\"aux_ready\":%u,\"aux_wait_ms\":%lu}",
+    "{\"mode\":\"%s\",\"value\":%u,\"aux_ready\":%u,\"aux_wait_ms\":%lu,\"aux_jack\":%u,\"aux_auto\":%u}",
     outputModeName(gOutputMode), (unsigned)gOutputMode,
-    auxSwitchReady() ? 1u : 0u, (unsigned long)auxSwitchWaitMs()
+    auxSwitchReady() ? 1u : 0u,
+    (unsigned long)auxSwitchWaitMs(),
+    auxJackConnected() ? 1u : 0u,
+    gAuxJackAutoActive ? 1u : 0u
   );
   server.send(200, "application/json", buf);
 }
@@ -2832,17 +3164,21 @@ static inline void handleApiSyncPost() {
 
 static inline void handleApiMuteGet() {
   sendNoCacheHeaders();
-  char buf[128];
+  char buf[192];
   snprintf(
     buf, sizeof(buf),
-    "{\"io_muted\":%u,\"outputmode\":%u,\"aux_running\":%u}",
-    ioMuteActive() ? 1u : 0u, (unsigned)gOutputMode, gSynth.running() ? 1u : 0u
+    "{\"io_muted\":%u,\"manual_muted\":%u,\"plant_auto_mute\":%u,\"outputmode\":%u,\"aux_running\":%u}",
+    ioMuteActive() ? 1u : 0u,
+    ioMuteManualActive() ? 1u : 0u,
+    plantAutoMuteActive() ? 1u : 0u,
+    (unsigned)gOutputMode,
+    gSynth.running() ? 1u : 0u
   );
   server.send(200, "application/json", buf);
 }
 
 static inline void handleApiMutePost() {
-  bool nextMute = ioMuteActive();
+  bool nextMute = ioMuteManualActive();
   bool ok = false;
 
   if (server.hasArg("v")) ok = parseOnOffArg(server.arg("v"), nextMute);
@@ -3190,12 +3526,13 @@ static inline bool applyParamByKey(const String& keyIn, const String& valueIn, S
       showEncoderNav(gEncoderVolumeMode ? 6000 : 4000);
       return true;
     }
+    if (action == "volume") {
+      gEncoderVolumeMode = true;
+      showEncoderNav(6000);
+      return true;
+    }
     if (action == "cycle_output") {
-      uint8_t next = (uint8_t)((gOutputMode + 1u) % 3u);
-      if (next == OUTPUT_AUX && !auxSwitchReady()) {
-        err = "aux not ready";
-        return false;
-      }
+      uint8_t next = nextOutputModeForCycle();
       setOutputMode(next);
       saveOutputModePref();
       normalizeEncoderSetting();
@@ -3240,7 +3577,7 @@ static inline bool applyParamByKey(const String& keyIn, const String& valueIn, S
     return true;
   }
   if (key == "mute" || key == "io_muted") {
-    bool on = ioMuteActive();
+    bool on = ioMuteManualActive();
     if (!parseOnOffArg(value, on)) {
       err = "invalid mute value";
       return false;
@@ -3295,17 +3632,22 @@ static inline bool applyParamByKey(const String& keyIn, const String& valueIn, S
 
 static inline void handleApiStateGet() {
   sendNoCacheHeaders();
-      char buf[1100];
+  char buf[1500];
   renderStateJson(buf, sizeof(buf), false);
   server.send(200, "application/json", buf);
 }
 
 static inline String buildApiPlantJson() {
-  char buf[160];
+  char buf[224];
   snprintf(
     buf, sizeof(buf),
-    "{\"value\":%.4f,\"raw\":%u,\"raw2\":%u,\"ts\":%lu}",
-    (double)gScopePlant, (unsigned)gPlantRaw1, (unsigned)gPlantRaw2, (unsigned long)millis()
+    "{\"value\":%.4f,\"raw\":%u,\"raw2\":%u,\"connected\":%u,\"plant_auto_mute\":%u,\"ts\":%lu}",
+    (double)gScopePlant,
+    (unsigned)gPlantRaw1,
+    (unsigned)gPlantRaw2,
+    plantJackConnected() ? 1u : 0u,
+    plantAutoMuteActive() ? 1u : 0u,
+    (unsigned long)millis()
   );
   return String(buf);
 }
@@ -3371,7 +3713,7 @@ static inline void handleApiDrumGet() {
 }
 
 static inline String buildApiLiveJson() {
-  char stateBuf[1536];
+  char stateBuf[1500];
   renderStateJson(stateBuf, sizeof(stateBuf), false);
 
   String out;
@@ -3661,7 +4003,11 @@ static inline String buildApiInfoJson() {
   json += "\"midimode\":"; json += (outputModeIsSerial() ? 1 : 0); json += ",";
   json += "\"outputmode\":\""; json += outputModeName(gOutputMode); json += "\",";
   json += "\"io_muted\":"; json += (ioMuteActive() ? 1 : 0); json += ",";
+  json += "\"manual_muted\":"; json += (ioMuteManualActive() ? 1 : 0); json += ",";
+  json += "\"plant_auto_mute\":"; json += (plantAutoMuteActive() ? 1 : 0); json += ",";
   json += "\"ble_connected\":"; json += (gMidiConnected ? 1 : 0); json += ",";
+  json += "\"plant_jack\":"; json += (plantJackConnected() ? 1 : 0); json += ",";
+  json += "\"aux_jack\":"; json += (auxJackConnected() ? 1 : 0); json += ",";
   json += "\"last_reset\":\""; json += resetReasonName((esp_reset_reason_t)gLastResetReasonCode); json += "\",";
   json += "\"recovering\":"; json += (gRecoveringFromCrash ? 1 : 0); json += ",";
   json += "\"crash_count\":"; json += gCrashCount;
@@ -4235,7 +4581,7 @@ static inline void handleSerialControlLine(const char *line) {
   }
 
   if (strcmp(cmd, "STATE") == 0) {
-    char buf[1100];
+    char buf[1500];
     renderStateJson(buf, sizeof(buf), false);
     serialCtrlReply("STATE", String(buf));
     return;
@@ -4257,13 +4603,59 @@ static inline void handleSerialControlLine(const char *line) {
   }
 
   if (strcmp(cmd, "PLANT") == 0) {
-    char buf[192];
+    char buf[256];
     snprintf(
       buf, sizeof(buf),
-      "{\"value\":%.4f,\"raw\":%u,\"raw2\":%u,\"ts\":%lu}",
-      (double)gScopePlant, (unsigned)gPlantRaw1, (unsigned)gPlantRaw2, (unsigned long)millis()
+      "{\"value\":%.4f,\"raw\":%u,\"raw2\":%u,\"connected\":%u,\"plant_auto_mute\":%u,\"ts\":%lu}",
+      (double)gScopePlant,
+      (unsigned)gPlantRaw1,
+      (unsigned)gPlantRaw2,
+      plantJackConnected() ? 1u : 0u,
+      plantAutoMuteActive() ? 1u : 0u,
+      (unsigned long)millis()
     );
     serialCtrlReply("PLANT", String(buf));
+    return;
+  }
+
+  if (strcmp(cmd, "PINS") == 0) {
+    const uint16_t adc1 = (uint16_t)constrain((int)analogRead(PLANT1_PIN), 0, 4095);
+    const uint16_t adc2 = (uint16_t)constrain((int)analogRead(PLANT2_PIN), 0, 4095);
+    const uint8_t plantDetectRaw =
+#if BECA_PLANT_JACK_DETECT_ENABLED
+      digitalRead(PLANT_JACK_PIN) ? 1u : 0u;
+#else
+      1u;
+#endif
+    char buf[384];
+    snprintf(
+      buf, sizeof(buf),
+      "{\"enc_sw_raw\":%u,\"enc_sw_stable\":%u,\"enc_pressed\":%u,"
+      "\"plant_detect_enabled\":%u,\"plant_raw\":%u,\"plant_stable\":%u,\"plant_connected\":%u,"
+      "\"aux_raw\":%u,\"aux_stable\":%u,\"aux_connected\":%u,"
+      "\"plant_adc1\":%u,\"plant_adc2\":%u,\"io_muted\":%u,"
+      "\"manual_muted\":%u,\"plant_auto_mute\":%u}",
+      digitalRead(ENC_PIN_SW) ? 1u : 0u,
+      encLastSW ? 1u : 0u,
+      encPressed ? 1u : 0u,
+#if BECA_PLANT_JACK_DETECT_ENABLED
+      1u,
+#else
+      0u,
+#endif
+      plantDetectRaw,
+      (unsigned)gPlantJackStableLevel,
+      plantJackConnected() ? 1u : 0u,
+      digitalRead(AUX_JACK_PIN) ? 1u : 0u,
+      (unsigned)gAuxJackStableLevel,
+      auxJackConnected() ? 1u : 0u,
+      (unsigned)adc1,
+      (unsigned)adc2,
+      ioMuteActive() ? 1u : 0u,
+      ioMuteManualActive() ? 1u : 0u,
+      plantAutoMuteActive() ? 1u : 0u
+    );
+    serialCtrlReply("PINS", String(buf));
     return;
   }
 
@@ -4580,9 +4972,15 @@ static inline void startAPPortal() {
 // -------------------- Loop timing --------------------
 const uint32_t PLANT_INTERVAL_MS = 8;    // ~125 Hz
 const uint32_t LED_INTERVAL_MS   = 34;   // ~29 FPS
-const uint32_t SSE_SCOPE_MS      = 66;   // 15 fps scope (plant only)
-const uint32_t SSE_NOTE_MS       = 72;   // ~14 fps note grid
-const uint32_t SSE_DRUM_MS       = 66;   // ~15 fps drum UI
+#ifndef BECA_UI_STREAM_FPS
+#define BECA_UI_STREAM_FPS 24
+#endif
+const uint32_t UI_STREAM_FPS     = (uint32_t)constrain((int)BECA_UI_STREAM_FPS, 12, 30);
+const uint32_t UI_STREAM_MS      = 1000u / UI_STREAM_FPS;
+const uint32_t SSE_SCOPE_MS      = UI_STREAM_MS; // plant scope
+const uint32_t SSE_NOTE_MS       = UI_STREAM_MS; // note grid, diff-based
+const uint32_t SSE_DRUM_MS       = UI_STREAM_MS; // drum UI, diff-based
+const uint32_t SSE_STATE_MS      = 125;          // state is diff-based; keep below visual fps
 bool     gWarmupDone = false;
 uint32_t gWarmupEndMs = 0;
 
@@ -4615,6 +5013,10 @@ void setup() {
   // Plant + encoder
   analogReadResolution(12);
   analogSetAttenuation(ADC_11db);
+  pinMode(PLANT1_PIN, INPUT);
+  pinMode(PLANT2_PIN, INPUT);
+  setupJackInputs();
+  applyPlantAutoMute(!plantJackConnected());
 
   ema1 = base1 = analogRead(PLANT1_PIN);
   ema2 = base2 = analogRead(PLANT2_PIN);
@@ -4622,7 +5024,10 @@ void setup() {
   warmupPlant(60);
   gWarmupDone = false;
   gWarmupEndMs = millis() + 1600;
-  setStartupCheck(STARTUP_CHECK_PLANT, STARTUP_CHECK_OK);
+  setStartupCheck(STARTUP_CHECK_PLANT, plantJackConnected() ? STARTUP_CHECK_OK : STARTUP_CHECK_WARN);
+  Serial.printf("@I JACKS PLANT %s AUX %s\n",
+                plantJackConnected() ? "CONNECTED" : "DISCONNECTED",
+                auxJackConnected() ? "CONNECTED" : "DISCONNECTED");
 
   // Wi-Fi provisioning + runtime recovery boot
   const esp_reset_reason_t resetReason = esp_reset_reason();
@@ -4683,11 +5088,7 @@ void setup() {
   gEncoderSetting = (EncoderSettingId)storedEncoderSetting;
   normalizeEncoderSetting();
   gEncoderVolumeMode = storedEncoderVolumeMode;
-  StartupCheckStatus outputCheck = STARTUP_CHECK_WARN;
-  if (prefsReady && storedOutput <= OUTPUT_AUX && !bootOutputStabilized) {
-    outputCheck = STARTUP_CHECK_OK;
-  }
-  setStartupCheck(STARTUP_CHECK_OUTPUT, outputCheck);
+  setStartupCheck(STARTUP_CHECK_OUTPUT, bootOutput <= OUTPUT_AUX ? STARTUP_CHECK_OK : STARTUP_CHECK_FAIL);
 
   Serial.printf("@I RESET %s crash_count=%u\n", resetReasonName(resetReason), (unsigned)gCrashCount);
   if (gDeviceName.length() == 0) gDeviceName = "beca-" + shortChipId();
@@ -4839,6 +5240,7 @@ void loop() {
   maintainWiFi(now);
   serviceMDNS(now);
   applyEncoder();
+  serviceJackInputs(now);
 
   // keep WDT + WiFi/BLE happy
   delay(0);
@@ -4854,11 +5256,16 @@ void loop() {
 
   if (gSerialJsonTelemetry && (int32_t)(now - gLastSerialPlantTelemetryMs) >= 50) {
     gLastSerialPlantTelemetryMs = now;
-    char line[160];
+    char line[192];
     int n = snprintf(
       line, sizeof(line),
-      "{\"type\":\"plant\",\"value\":%.4f,\"raw\":%u,\"raw2\":%u,\"ts\":%lu}\n",
-      (double)gScopePlant, (unsigned)gPlantRaw1, (unsigned)gPlantRaw2, (unsigned long)now
+      "{\"type\":\"plant\",\"value\":%.4f,\"raw\":%u,\"raw2\":%u,\"connected\":%u,\"plant_auto_mute\":%u,\"ts\":%lu}\n",
+      (double)gScopePlant,
+      (unsigned)gPlantRaw1,
+      (unsigned)gPlantRaw2,
+      plantJackConnected() ? 1u : 0u,
+      plantAutoMuteActive() ? 1u : 0u,
+      (unsigned long)now
     );
     if (n > 0) Serial.write((const uint8_t*)line, (size_t)n);
   }
@@ -4957,7 +5364,7 @@ void loop() {
       sseConnected = false;
     } else {
       // State diff push
-      if ((int32_t)(now - lastStatePushMs) >= 140) {
+      if ((int32_t)(now - lastStatePushMs) >= (int32_t)SSE_STATE_MS) {
         lastStatePushMs = now;
         pushStateIfChanged(false);
       }

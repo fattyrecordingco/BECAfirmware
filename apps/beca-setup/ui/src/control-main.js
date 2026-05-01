@@ -1,17 +1,17 @@
 import { invoke } from "@tauri-apps/api/core";
 
 const POLL_INTERVAL_MS = {
-  network: 72,
+  network: 42,
   serial: 118,
-  fallback: 96,
-  stale: 54,
-  render: 32,
+  fallback: 84,
+  stale: 84,
+  render: 33,
   error: 220
 };
 const SCOPE_DELTA_EPSILON = 0.0012;
-const SCOPE_FRAME_HEARTBEAT_MS = 140;
-const SCOPE_BLEND_LIVE = 0.34;
-const SCOPE_BLEND_STALE = 0.18;
+const SCOPE_FRAME_HEARTBEAT_MS = 84;
+const SCOPE_BLEND_LIVE = 0.42;
+const SCOPE_BLEND_STALE = 0.22;
 
 function splitPathAndQuery(rawUrl) {
   const [path, search = ""] = rawUrl.split("?");

@@ -1243,13 +1243,6 @@ fn resolve_local_firmware_binary_for_app(app: &AppHandle) -> Option<PathBuf> {
             .join("esp32dev")
             .join("firmware.bin"),
     );
-    candidates.push(
-        PathBuf::from("C:\\Users\\AJ\\OneDrive\\Documents\\Fatty Recording Co\\BECA\\BECAv1.0.1\\Codes\\BECAfinalsv02")
-            .join(".pio")
-            .join("build")
-            .join("esp32dev")
-            .join("firmware.bin"),
-    );
 
     candidates.into_iter().find(|path| path.exists())
 }
