@@ -9,6 +9,8 @@ It is the primary user-facing product for:
 - Serial MIDI bridge management
 - diagnostics export
 
+Firmware flashing is intentionally locked to the latest stable release listed in the published firmware manifest. Older releases and ad hoc workspace builds are for developer-only PlatformIO flows, not the shipped setup app.
+
 ## Run In Development
 
 ```bash
@@ -23,6 +25,19 @@ npm run tauri dev
 cd apps/beca-setup
 npm run build
 ```
+
+## UI Verification
+
+Use these during design refinement before shipping desktop UI changes:
+
+```bash
+cd apps/beca-setup
+npm run verify:browser
+npm run test:ui
+```
+
+`verify:browser` uses `agent-browser` for a fast smoke check and saves screenshots under `.beca-cache/ui-verification/`.
+`test:ui` runs Playwright checks for the setup/control panel geometry, visible overflow, accessibility contrast, and encoder arrow-key behavior.
 
 ## Build The Native App
 
@@ -42,9 +57,8 @@ npm run release:windows
 ```
 
 That script:
-1. copies `.pio/build/esp32dev/firmware.bin` into `src-tauri/binaries/beca-current.bin`
-2. builds the Tauri app
-3. refreshes `dist-installer/windows/` with the current installer and portable executable
+1. builds the Tauri app
+2. refreshes `dist-installer/windows/` with the current installer and portable executable
 
 ## Output Locations
 

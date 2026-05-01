@@ -65,6 +65,17 @@ const state = {
 
 const VIEW_STORAGE_KEY = "beca-active-screen";
 const BRIDGE_PREFS_STORAGE_KEY = "beca-bridge-prefs-v1";
+const SETUP_FRAME_WIDTH = 575;
+const SETUP_FRAME_HEIGHT = 842;
+
+function setSetupScale() {
+  const viewportWidth = window.visualViewport?.width || window.innerWidth;
+  const viewportHeight = window.visualViewport?.height || window.innerHeight;
+  const availableWidth = Math.max(1, viewportWidth - 48);
+  const availableHeight = Math.max(1, viewportHeight - 48);
+  const scale = Math.min(1, availableWidth / SETUP_FRAME_WIDTH, availableHeight / SETUP_FRAME_HEIGHT);
+  document.documentElement.style.setProperty("--setup-scale", scale.toFixed(4));
+}
 
 function addLog(line) {
   const stamped = `[${new Date().toISOString()}] ${line}`;
@@ -122,6 +133,32 @@ function syncSetupTopIcons(screenName) {
   el.btnOpenSetup.setAttribute("aria-current", setupActive ? "page" : "false");
 }
 
+function isTextEntryTarget(target) {
+  if (!target) return false;
+  const tag = target.tagName;
+  return target.isContentEditable || tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+}
+
+function sendEncoderKeyToControl(event) {
+  if (state.activeScreen !== "control" || isTextEntryTarget(event.target)) return;
+  const keyDirections = {
+    ArrowUp: 1,
+    ArrowRight: 1,
+    ArrowDown: -1,
+    ArrowLeft: -1
+  };
+  const direction = keyDirections[event.key];
+  if (!direction) return;
+  const frameWindow = el.controlHost.querySelector("iframe")?.contentWindow;
+  if (!frameWindow) return;
+  event.preventDefault();
+  frameWindow.postMessage({
+    type: "beca-encoder-key",
+    direction,
+    steps: event.shiftKey ? 5 : 1
+  }, "*");
+}
+
 function currentMirrorMidiPort() {
   const value = (el.midiMirrorSelect?.value || "").trim();
   return value || null;
@@ -170,9 +207,9 @@ function renderControlPlaceholder(message) {
             </svg>
           </button>
           <button class="control-placeholder-icon control-placeholder-icon-muted" type="button" data-open-setup aria-label="Open setup">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="12" cy="12" r="3.2" />
-              <path d="M19.4 15a1 1 0 0 0 .2 1.1l.1.1a1 1 0 0 1 0 1.4l-1.2 1.2a1 1 0 0 1-1.4 0l-.1-.1a1 1 0 0 0-1.1-.2 1 1 0 0 0-.6.9V20a1 1 0 0 1-1 1h-1.7a1 1 0 0 1-1-1v-.2a1 1 0 0 0-.6-.9 1 1 0 0 0-1.1.2l-.1.1a1 1 0 0 1-1.4 0l-1.2-1.2a1 1 0 0 1 0-1.4l.1-.1a1 1 0 0 0 .2-1.1 1 1 0 0 0-.9-.6H4a1 1 0 0 1-1-1v-1.7a1 1 0 0 1 1-1h.2a1 1 0 0 0 .9-.6 1 1 0 0 0-.2-1.1l-.1-.1a1 1 0 0 1 0-1.4l1.2-1.2a1 1 0 0 1 1.4 0l.1.1a1 1 0 0 0 1.1.2 1 1 0 0 0 .6-.9V4a1 1 0 0 1 1-1h1.7a1 1 0 0 1 1 1v.2a1 1 0 0 0 .6.9 1 1 0 0 0 1.1-.2l.1-.1a1 1 0 0 1 1.4 0l1.2 1.2a1 1 0 0 1 0 1.4l-.1.1a1 1 0 0 0-.2 1.1 1 1 0 0 0 .9.6h.2a1 1 0 0 1 1 1v1.7a1 1 0 0 1-1 1h-.2a1 1 0 0 0-.9.6Z" />
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M9.671 4.136a2.34 2.34 0 0 1 4.658 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.329 4.034 2.34 2.34 0 0 0 0 3.83 2.34 2.34 0 0 1-2.329 4.034 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.658 0 2.34 2.34 0 0 0-3.319-1.915 2.34 2.34 0 0 1-2.329-4.034 2.34 2.34 0 0 0 0-3.83 2.34 2.34 0 0 1 2.329-4.034 2.34 2.34 0 0 0 3.319-1.915Z" />
+              <circle cx="12" cy="12" r="3" />
             </svg>
           </button>
         </div>
@@ -643,11 +680,12 @@ async function refreshFirmwareOptions() {
       if (item.default) opt.selected = true;
       el.firmwareSelect.appendChild(opt);
     });
-    addLog("Firmware manifest loaded.");
+    addLog("Latest stable firmware manifest loaded.");
   } catch (err) {
     addLog(`Failed to load firmware manifest: ${err}`);
     el.flashStatus.textContent =
       "Unable to load firmware list from GitHub releases. Check repo setup or internet, then retry.";
+    el.firmwareSelect.innerHTML = "";
   }
 }
 
@@ -714,6 +752,12 @@ async function doFlash({ provisionAfterFlash = false } = {}) {
   state.flashInProgress = true;
   setWifiControlsEnabled(false);
   const version = el.firmwareSelect.value;
+  if (version !== "latest-stable") {
+    el.flashStatus.textContent = "Only the latest stable BECA firmware can be flashed from this app.";
+    state.flashInProgress = false;
+    setWifiControlsEnabled(Boolean(state.selectedPort) && !state.wifiOpInFlight);
+    return;
+  }
   const wifiPayload = currentWifiPayload();
   if (provisionAfterFlash && !wifiPayload.ssid) {
     el.flashStatus.textContent = "Choose or type Wi-Fi SSID before Flash + Save Wi-Fi.";
@@ -1017,8 +1061,12 @@ el.btnExport.addEventListener("click", exportDiagnostics);
 window.addEventListener("beforeunload", () => {
   writeBridgePrefs();
 });
+window.addEventListener("keydown", sendEncoderKeyToControl);
+window.addEventListener("resize", setSetupScale);
+window.visualViewport?.addEventListener("resize", setSetupScale);
 
 async function init() {
+  setSetupScale();
   switchScreen("setup");
   setBridgeUi(false);
   resetWifiSection();

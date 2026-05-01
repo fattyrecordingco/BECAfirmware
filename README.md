@@ -13,8 +13,8 @@ The old browser page on the device is now a fallback and recovery path, not the 
 
 ## Current Release Baseline
 
-- app: `setup-v0.1.4`
-- firmware release tag: `firmware-v1.0.8`
+- app: `setup-v0.1.5`
+- firmware release tag: `firmware-v1.0.9`
 - primary branch for release-ready source: `master`
 - firmware build target: ESP32 Arduino core `2.0.14`
 
@@ -145,7 +145,7 @@ On the `Setup` screen:
 
 ### 2. Flash Firmware
 
-1. choose the current firmware build in `upload firmware`
+1. confirm `Latest Stable` is selected in `upload firmware`
 2. click `flash firmware`
 3. wait for flash completion before doing anything else
 

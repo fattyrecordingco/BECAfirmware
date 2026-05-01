@@ -18,6 +18,10 @@
         --card-radius: 14px;
         --pill-radius: 999px;
         --border-width: 2px;
+        --type-label: 10.5px;
+        --type-value: 11px;
+        --type-caption: 9px;
+        --line-tight: 1.12;
         --duration-fast: 140ms;
         --duration-base: 240ms;
         --ease-standard: cubic-bezier(0.2, 0.8, 0.2, 1);
@@ -190,8 +194,8 @@
       .output-label,
       .sync-label,
       .volume-label {
-        font-size: 11px;
-        line-height: 1.2;
+        font-size: var(--type-label);
+        line-height: var(--line-tight);
       }
 
       .chart-caption {
@@ -242,7 +246,7 @@
       }
 
       .midi-readout {
-        font-size: 12px;
+        font-size: var(--type-value);
         font-weight: 700;
       }
 
@@ -277,7 +281,7 @@
       }
 
       .midi-note {
-        font-size: 9px;
+        font-size: var(--type-caption);
         line-height: 1;
         color: var(--off-text);
       }
@@ -312,10 +316,12 @@
         display: flex;
         align-items: center;
         justify-content: space-between;
-        gap: 10px;
-        padding: 0 12px;
+        gap: 8px;
+        padding: 0 10px;
         border: var(--border-width) solid var(--border);
         color: var(--accent);
+        min-width: 0;
+        overflow: hidden;
         transition:
           border-color var(--duration-fast) var(--ease-standard),
           background var(--duration-fast) var(--ease-standard),
@@ -346,11 +352,21 @@
         grid-column: 1 / span 2;
       }
 
+      .setting-name {
+        min-width: 0;
+        flex: 1 1 auto;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
       .setting-value {
-        font-size: 11px;
-        line-height: 1.15;
+        flex: 0 1 auto;
+        min-width: 0;
+        max-width: 78px;
+        font-size: var(--type-value);
+        line-height: var(--line-tight);
         color: inherit;
-        max-width: 84px;
         overflow: hidden;
         text-align: right;
         text-overflow: ellipsis;
@@ -419,7 +435,7 @@
       }
 
       .volume-value {
-        font-size: 11px;
+        font-size: var(--type-value);
         color: inherit;
       }
 
@@ -455,8 +471,8 @@
         background: transparent;
         padding: 0 6px;
         color: var(--accent);
-        font-size: 10px;
-        line-height: 20px;
+        font-size: var(--type-caption);
+        line-height: 1;
         text-transform: lowercase;
         letter-spacing: 0;
         overflow: hidden;
@@ -557,7 +573,7 @@
       }
 
       .sync-value {
-        font-size: 11px;
+        font-size: var(--type-value);
       }
 
       .led-column {
@@ -930,9 +946,9 @@
 
       function gearSvg() {
         return `
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="12" r="3.2" />
-            <path d="M19 12.8v-1.6l-1.8-.6a5.7 5.7 0 0 0-.5-1.2l.9-1.7-1.1-1.1-1.7.9a5.7 5.7 0 0 0-1.2-.5L13 5h-1.6l-.6 1.8a5.7 5.7 0 0 0-1.2.5l-1.7-.9-1.1 1.1.9 1.7a5.7 5.7 0 0 0-.5 1.2L5 11.2v1.6l1.8.6a5.7 5.7 0 0 0 .5 1.2l-.9 1.7 1.1 1.1 1.7-.9a5.7 5.7 0 0 0 1.2.5l.6 1.8H13l.6-1.8a5.7 5.7 0 0 0 1.2-.5l1.7.9 1.1-1.1-.9-1.7a5.7 5.7 0 0 0 .5-1.2z" />
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9.671 4.136a2.34 2.34 0 0 1 4.658 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.329 4.034 2.34 2.34 0 0 0 0 3.83 2.34 2.34 0 0 1-2.329 4.034 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.658 0 2.34 2.34 0 0 0-3.319-1.915 2.34 2.34 0 0 1-2.329-4.034 2.34 2.34 0 0 0 0-3.83 2.34 2.34 0 0 1 2.329-4.034 2.34 2.34 0 0 0 3.319-1.915Z" />
+            <circle cx="12" cy="12" r="3" />
           </svg>
         `;
       }
@@ -1180,7 +1196,7 @@
         const viewportHeight = window.visualViewport?.height || window.innerHeight;
         const availableWidth = Math.max(320, Math.min(bounds.width || viewportWidth, viewportWidth) - 20);
         const availableHeight = Math.max(560, Math.min(bounds.height || viewportHeight, viewportHeight) - 20);
-        const scale = Math.min(availableWidth / 575, availableHeight / 842, 1.06);
+        const scale = Math.min(availableWidth / 575, availableHeight / 842, 1);
         document.documentElement.style.setProperty("--ui-scale", scale.toFixed(4));
       }
 
@@ -1831,6 +1847,27 @@
         startAdjustmentFlush();
       }
 
+      function isTextEntryTarget(target) {
+        if (!target) return false;
+        const tag = target.tagName;
+        return target.isContentEditable || tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+      }
+
+      function handleEncoderKeyboardInput(event) {
+        if (isTextEntryTarget(event.target)) return false;
+        const keyDirections = {
+          ArrowUp: 1,
+          ArrowRight: 1,
+          ArrowDown: -1,
+          ArrowLeft: -1
+        };
+        const direction = keyDirections[event.key];
+        if (!direction) return false;
+        event.preventDefault();
+        queueAdjustment(direction, event.shiftKey ? 5 : 1);
+        return true;
+      }
+
       function startLedAnimationLoop() {
         if (state.ledAnimationTimer != null) return;
         state.ledAnimationTimer = window.setInterval(() => {
@@ -1892,6 +1929,13 @@
 
       function bindEvents() {
         window.addEventListener("resize", setScale);
+        window.addEventListener("keydown", handleEncoderKeyboardInput);
+        window.addEventListener("message", (event) => {
+          if (event.data?.type !== "beca-encoder-key") return;
+          const direction = Number(event.data.direction);
+          if (!direction) return;
+          queueAdjustment(direction > 0 ? 1 : -1, event.data.steps || 1);
+        });
         if (window.ResizeObserver) {
           const host = el.viewport.closest(".control-host");
           if (host) {

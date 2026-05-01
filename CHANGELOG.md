@@ -9,6 +9,9 @@
 - Changed startup checklist LED 5 (`output`) to pass when firmware safely stabilizes a saved `aux out` boot into BLE or Serial during the aux startup lock, instead of presenting the safe fallback as a warning.
 - Raised firmware live visual SSE streams from ~15 fps to a shared 24 fps target and matched the desktop app network control cache/poll cadence to reduce visible lag while keeping state updates diff-based.
 - Added client-side plant-scope interpolation so the app can render smoothly at roughly 30 fps without forcing serial control or BLE sessions into a heavier path.
+- Locked the setup app firmware upload path to the latest stable manifest entry only; older versions and local workspace builds are no longer selectable from the shipped app.
+- Added Linux to the setup installer release workflow so Windows, macOS, and Linux installer assets are built and mirrored by CI.
+- Made the firmware release asset script use the working Windows `py` launcher when `python` or `python3` resolve to Microsoft Store aliases.
 
 ## 2026-04-30 - BECA v1.0.2 Hardware Detect
 

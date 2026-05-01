@@ -19,6 +19,7 @@ function createControlFrame(host) {
   frame.title = "BECA control surface";
   frame.setAttribute("loading", "eager");
   frame.setAttribute("referrerpolicy", "no-referrer");
+  frame.setAttribute("tabindex", "0");
   frame.style.width = "100%";
   frame.style.height = "100%";
   frame.style.border = "0";
@@ -57,6 +58,7 @@ export async function mountControlSurface(host, { onOpenSetup, onStatus } = {}) 
   const html = await loadControlHtml();
   const frame = createControlFrame(host);
   writeFrameHtml(frame, html, onOpenSetup);
+  frame.focus();
 
   onStatus?.("BECA unified surface loaded.");
 }
