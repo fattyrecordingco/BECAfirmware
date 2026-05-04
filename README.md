@@ -180,6 +180,7 @@ On the `MIDI bridge` section:
 Bridge rules:
 - the bridge owns the serial port while running
 - stop the bridge before Wi-Fi setup or any direct serial maintenance
+- while the bridge is running, live Control uses Wi-Fi when BECA is online; if BECA is offline and USB is occupied by the bridge, the app shows the target as not ready instead of leaving a stale control surface on screen
 - the app now reflects bridge state on launch, so it should not come up lying about whether bridge is running
 - the app now stops the bridge automatically when the desktop window exits
 - the last bridge routing and MicroFreak toggle choices are restored on the next launch
@@ -189,6 +190,7 @@ Live stability rules:
 - live snapshots are cached briefly and reused across UI polls so the plant monitor stays smoother
 - if Wi-Fi or serial control stalls for a moment, the app keeps the last good live frame while it reconnects instead of dropping immediately into a dead-looking monitor
 - the control page now defaults back to `Setup` until a live target is actually ready
+- the firmware SSE stream sends lightweight keepalives and drops blocked clients, so stale browser sockets reconnect instead of wedging the main loop
 
 ## The Control View
 
@@ -318,6 +320,7 @@ Plant trigger stability:
 - `volume` uses the colored meter dots and matching LED count
 - `output mode` uses a distinct LED pattern per mode
 - `randomize` uses its own transient pattern
+- LED colors use the stronger hardware semantic palette, not pastel UI-only colors, so the app mirror stays readable and matches the physical ring
 
 This gives the hardware enough information to feel playable without the app, while the app gives exact value readouts when the user wants precision.
 

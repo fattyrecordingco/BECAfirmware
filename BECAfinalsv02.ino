@@ -1338,19 +1338,19 @@ void fxSplitFade() {
 
 static inline CRGB encoderSettingColor(EncoderSettingId setting) {
   switch (setting) {
-    case ENC_SET_SENS:        return CRGB(139, 196, 62);
-    case ENC_SET_MODE:        return CRGB(254, 214, 5);
-    case ENC_SET_SCALE:       return CRGB(254, 85, 1);
-    case ENC_SET_ROOT:        return CRGB(27, 200, 248);
+    case ENC_SET_SENS:        return CRGB(0, 200, 83);
+    case ENC_SET_MODE:        return CRGB(255, 212, 0);
+    case ENC_SET_SCALE:       return CRGB(255, 90, 0);
+    case ENC_SET_ROOT:        return CRGB(0, 200, 255);
     case ENC_SET_TEMPO:       return CRGB(241, 33, 41);
-    case ENC_SET_SWING:       return CRGB(114, 57, 217);
+    case ENC_SET_SWING:       return CRGB(110, 44, 255);
     case ENC_SET_REST:        return CRGB(237, 41, 172);
     case ENC_SET_OCTAVE_LOW:
     case ENC_SET_OCTAVE_HIGH: return CRGB(255, 255, 255);
-    case ENC_SET_TIME_SIG:    return CRGB(18, 201, 156);
+    case ENC_SET_TIME_SIG:    return CRGB(0, 196, 154);
     case ENC_SET_NOTE_LENGTH: return CRGB(18, 76, 236);
-    case ENC_SET_FILTER:      return CRGB(37, 191, 69);
-    case ENC_SET_RESONANCE:   return CRGB(255, 181, 0);
+    case ENC_SET_FILTER:      return CRGB(0, 191, 69);
+    case ENC_SET_RESONANCE:   return CRGB(255, 159, 0);
     default:                  return CRGB::Green;
   }
 }
@@ -1579,13 +1579,13 @@ static inline void renderSettingInfoLeds() {
 
 static inline void renderVolumeInfoLeds() {
   static const CRGB kVolumeColors[LED_COUNT] = {
-    CRGB(139, 196, 62),
-    CRGB(139, 196, 62),
-    CRGB(169, 205, 57),
-    CRGB(214, 217, 46),
-    CRGB(254, 214, 5),
-    CRGB(255, 181, 0),
-    CRGB(255, 129, 23),
+    CRGB(0, 200, 83),
+    CRGB(0, 200, 83),
+    CRGB(127, 217, 0),
+    CRGB(216, 223, 0),
+    CRGB(255, 212, 0),
+    CRGB(255, 159, 0),
+    CRGB(255, 90, 0),
     CRGB(241, 33, 41)
   };
 
@@ -1598,28 +1598,28 @@ static inline void renderVolumeInfoLeds() {
 
 static inline void renderOutputInfoLeds() {
   static const CRGB kBlePattern[LED_COUNT] = {
-    CRGB(27, 200, 248),
+    CRGB(0, 200, 255),
     CRGB::Black,
-    CRGB(27, 200, 248),
+    CRGB(0, 200, 255),
     CRGB::Black,
-    CRGB(27, 200, 248),
+    CRGB(0, 200, 255),
     CRGB::Black,
-    CRGB(27, 200, 248),
+    CRGB(0, 200, 255),
     CRGB::Black
   };
   static const CRGB kSerialPattern[LED_COUNT] = {
-    CRGB(114, 57, 217),
-    CRGB(18, 201, 156),
-    CRGB(139, 196, 62),
-    CRGB(139, 196, 62),
-    CRGB(254, 214, 5),
-    CRGB(254, 214, 5),
-    CRGB(254, 85, 1),
+    CRGB(110, 44, 255),
+    CRGB(0, 196, 154),
+    CRGB(0, 200, 83),
+    CRGB(0, 200, 83),
+    CRGB(255, 212, 0),
+    CRGB(255, 212, 0),
+    CRGB(255, 90, 0),
     CRGB(241, 33, 41)
   };
   static const CRGB kAuxPattern[LED_COUNT] = {
-    CRGB(139, 196, 62),
-    CRGB(139, 196, 62),
+    CRGB(0, 200, 83),
+    CRGB(0, 200, 83),
     CRGB::Black,
     CRGB::Black,
     CRGB::Black,
@@ -1638,13 +1638,13 @@ static inline void renderOutputInfoLeds() {
 
 static inline void renderRandomInfoLeds() {
   static const CRGB kRandomPattern[LED_COUNT] = {
-    CRGB(114, 57, 217),
+    CRGB(110, 44, 255),
     CRGB::Black,
-    CRGB(139, 196, 62),
+    CRGB(0, 200, 83),
     CRGB::Black,
-    CRGB(254, 214, 5),
+    CRGB(255, 212, 0),
     CRGB::Black,
-    CRGB(254, 85, 1),
+    CRGB(255, 90, 0),
     CRGB::Black
   };
 
@@ -2629,6 +2629,7 @@ uint32_t lastDrumHash = 0;
 
 // lifetime prevents browsers keeping dead sockets forever
 const uint32_t SSE_MAX_LIFETIME_MS = 180000;
+const uint32_t SSE_KEEPALIVE_MS = 15000;
 
 // ---- State push (diff-based) ----
 uint32_t stateVersion = 0;
@@ -2690,19 +2691,23 @@ static inline void sseSend(const char* event, const char* data) {
   if (!sseConnected) return;
   if (!sseClient.connected()) { sseConnected = false; return; }
 
-  const bool critical =
-    (strcmp(event, "hello") == 0) ||
-    (strcmp(event, "state") == 0) ||
-    (strcmp(event, "scope") == 0) ||
-    (strcmp(event, "note") == 0) ||
-    (strcmp(event, "drum") == 0);
-
-  if (!critical) {
-    size_t need = 8 + strlen(event) + 7 + strlen(data) + 2;
-    if (!sseCanWrite(need)) return;
+  const bool mustDeliver = (strcmp(event, "hello") == 0) || (strcmp(event, "state") == 0);
+  const size_t need = 8 + strlen(event) + 7 + strlen(data) + 2;
+  if (!sseCanWrite(need)) {
+    if (mustDeliver) {
+      sseClient.stop();
+      sseConnected = false;
+    }
+    return;
   }
-  sseClient.printf("event: %s\n", event);
-  sseClient.printf("data: %s\n\n", data);
+
+  const size_t n1 = sseClient.printf("event: %s\n", event);
+  const size_t n2 = sseClient.printf("data: %s\n\n", data);
+  if (n1 == 0 || n2 == 0) {
+    sseClient.stop();
+    sseConnected = false;
+  }
+  delay(0);
 }
 
 static inline void handleEvents() {
@@ -2719,7 +2724,7 @@ static inline void handleEvents() {
   sseConnected = true;
   sseConnectedAt = millis();
   lastSseScopeMs = 0;
-  lastSseKeepAliveMs = 0;
+  lastSseKeepAliveMs = sseConnectedAt;
   lastSseNoteMs = 0;
   lastNoteHash = 0;
   lastSseDrumMs = 0;
@@ -3674,7 +3679,6 @@ static inline String buildApiNotesJson() {
   }
   if (uiCount == 0) notesCsv[0] = '\0';
 
-  sendNoCacheHeaders();
   char buf[360];
   snprintf(
     buf, sizeof(buf),
@@ -5363,6 +5367,17 @@ void loop() {
       sseClient.stop();
       sseConnected = false;
     } else {
+      if ((int32_t)(now - lastSseKeepAliveMs) >= (int32_t)SSE_KEEPALIVE_MS) {
+        lastSseKeepAliveMs = now;
+        if (sseCanWrite(8)) {
+          sseClient.print(": ping\n\n");
+          delay(0);
+        } else {
+          sseClient.stop();
+          sseConnected = false;
+        }
+      }
+
       // State diff push
       if ((int32_t)(now - lastStatePushMs) >= (int32_t)SSE_STATE_MS) {
         lastStatePushMs = now;

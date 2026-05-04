@@ -766,7 +766,12 @@ async fn discover_serial_targets(
             issue: None,
         };
 
-        if !bridge_running && serial_probe_allowed {
+        if bridge_running {
+            target.issue = Some(
+                "Bridge is running and owns USB serial. Live Control can continue over Wi-Fi; stop Bridge for offline USB control."
+                    .to_string(),
+            );
+        } else if serial_probe_allowed {
             let port_name = port.port_name.clone();
             if let Ok(info) = tokio::task::spawn_blocking(move || {
                 run_serial_command_json(&port_name, "@C WIFI_INFO", "WIFI_INFO", 2_500, 1)

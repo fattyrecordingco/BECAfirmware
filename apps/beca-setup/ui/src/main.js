@@ -447,6 +447,9 @@ async function refreshTargets({ forceReload = false } = {}) {
       el.deviceSelect.appendChild(option);
       updateTargetSummary({ selected_id: null, target: null, transport: null, detail: "No BECA devices found yet." });
       addLog("Device discovery found no BECA targets.");
+      if (state.activeScreen === "control") {
+        await ensureControlSurfaceLoaded();
+      }
       return;
     }
 
@@ -923,7 +926,7 @@ async function startBridge() {
       .join(" | ");
     addLog(`Bridge started${detail ? `: ${detail}` : "."}`);
     setBridgeUi(true, detail ? `bridge connected: ${detail}` : "bridge connected");
-    await refreshControlStatus();
+    await refreshTargets({ forceReload: true });
   } catch (err) {
     setBridgeUi(false, `bridge error: ${err}`);
     addLog(`Bridge start failed: ${err}`);
@@ -936,7 +939,7 @@ async function stopBridge() {
     setBridgeUi(false, "bridge stopped");
     setActivity(false);
     addLog("Bridge stopped.");
-    await refreshControlStatus();
+    await refreshTargets({ forceReload: true });
   } catch (err) {
     addLog(`Bridge stop failed: ${err}`);
   }
@@ -993,7 +996,7 @@ async function bindEvents() {
       if (!nextConnected) {
         setActivity(false);
       }
-      await refreshControlStatus();
+      await refreshTargets({ forceReload: true });
     } else if (payload.event === "activity") {
       if (!state.bridgeConnected) {
         setBridgeUi(true, "bridge connected");

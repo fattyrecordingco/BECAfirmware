@@ -82,18 +82,20 @@ Named baseline for this cycle:
 - Includes an optional `MicroFreak mode` toggle for direct Arturia MicroFreak note routing over the serial bridge.
 - Restores the last selected bridge routing + MicroFreak toggles on next launch.
 - Stops the bridge automatically when the BECA desktop app exits.
+- Rechecks live-control transport when bridge state changes so Wi-Fi takes over when available and occupied-offline serial does not leave a stale control page mounted.
 
 5. **Live Control**
 - Reuses one native HTTP client for desktop live control instead of rebuilding the transport for each poll.
 - Keeps a short-lived cached `/api/live` snapshot so UI refreshes stay smooth without hammering USB or Wi-Fi.
 - Holds the last good live frame briefly during reconnects so the plant monitor does not appear to freeze and reset on every transient delay.
 - Defaults back to `Setup` until a control-ready target exists, with one always-visible device/status strip above both views.
+- Matches the setup/control 575x842 frame sizing and keeps the 8-leaf LED mirror orientation stable in active color states.
 
 ## UI cohesion with BECA control page
 
 The setup app UI intentionally mirrors BECA web control styling:
 - same primary accent (`#008351`)
-- same soft green glass surfaces and gradient background treatment
+- same quiet white/green surface language without decorative gradients
 - matching typography stack and mono diagnostics style
 
 Keep this visual language aligned when changing either UI.

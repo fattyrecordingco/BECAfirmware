@@ -66,7 +66,7 @@
         display: grid;
         place-items: center;
         overflow: hidden;
-        padding: clamp(10px, 1.4vw, 18px);
+        padding: 0;
       }
 
       .control-viewport {
@@ -75,8 +75,8 @@
         display: flex;
         justify-content: center;
         align-items: flex-start;
-        max-width: calc(100% - 8px);
-        max-height: calc(100% - 8px);
+        max-width: 100%;
+        max-height: 100%;
       }
 
       .control-frame {
@@ -586,8 +586,11 @@
       .led {
         width: 44px;
         height: 44px;
+        --leaf-orientation: scaleX(1);
         color: var(--off);
         opacity: 0.82;
+        transform: var(--leaf-orientation) scale(1);
+        transform-origin: 50% 50%;
         transition:
           color var(--duration-fast) var(--ease-standard),
           opacity var(--duration-fast) var(--ease-standard),
@@ -601,10 +604,10 @@
       }
 
       .flower-button {
-        left: 408px;
-        top: 644px;
-        width: 122px;
-        height: 122px;
+        left: 379px;
+        top: 616px;
+        width: 150px;
+        height: 150px;
         display: grid;
         place-items: center;
         border: 0;
@@ -619,8 +622,8 @@
       }
 
       .flower {
-        width: 122px;
-        height: 122px;
+        width: 150px;
+        height: 150px;
         transform: rotate(var(--encoder-angle, 0deg));
         transition: transform 180ms var(--ease-standard);
       }
@@ -641,11 +644,11 @@
       @keyframes leaf-breathe {
         0%,
         100% {
-          transform: scale(1);
+          transform: var(--leaf-orientation, scaleX(1)) scale(1);
         }
 
         50% {
-          transform: scale(1.03);
+          transform: var(--leaf-orientation, scaleX(1)) scale(1.03);
         }
       }
 
@@ -767,27 +770,27 @@
         "Thick Mono Bass",
         "Rubber Bass"
       ];
-      const METER_COLORS = ["#8bc43e", "#8bc43e", "#a9cd39", "#d6d92e", "#fed605", "#ffb500", "#ff8117", "#f12129"];
+      const METER_COLORS = ["#00c853", "#00c853", "#7fd900", "#d8df00", "#ffd400", "#ff9f00", "#ff5a00", "#f12129"];
       const SETTING_COLORS = {
-        sensitivity: "#8bc43e",
-        preset: "#fed605",
-        scale: "#fe5501",
-        root: "#1bc8f8",
+        sensitivity: "#00c853",
+        preset: "#ffd400",
+        scale: "#ff5a00",
+        root: "#00c8ff",
         tempo: "#f12129",
-        swing: "#7239d9",
+        swing: "#6e2cff",
         rest: "#ed29ac",
         octaveRange: "#ffffff",
-        timeSig: "#12c99c",
+        timeSig: "#00c49a",
         noteLength: "#124cec",
-        filter: "#25bf45",
-        resonance: "#ffb500"
+        filter: "#00bf45",
+        resonance: "#ff9f00"
       };
       const OUTPUT_PATTERNS = {
-        ble: ["#1bc8f8", null, "#1bc8f8", null, "#1bc8f8", null, "#1bc8f8", null],
-        serial: ["#7239d9", "#12c99c", "#8bc43e", "#8bc43e", "#fed605", "#fed605", "#fe5501", "#f12129"],
-        "aux out": ["#8bc43e", "#8bc43e", null, null, null, null, null, null]
+        ble: ["#00c8ff", null, "#00c8ff", null, "#00c8ff", null, "#00c8ff", null],
+        serial: ["#6e2cff", "#00c49a", "#00c853", "#00c853", "#ffd400", "#ffd400", "#ff5a00", "#f12129"],
+        "aux out": ["#00c853", "#00c853", null, null, null, null, null, null]
       };
-      const RANDOM_PATTERN = ["#7239d9", null, "#8bc43e", null, "#fed605", null, "#fe5501", null];
+      const RANDOM_PATTERN = ["#6e2cff", null, "#00c853", null, "#ffd400", null, "#ff5a00", null];
       const PLANT_RENDER_MS = 33;
       const PLANT_BLEND_LIVE = 0.42;
       const PLANT_RENDER_EPSILON = 0.0012;
@@ -1194,8 +1197,8 @@
         const bounds = host.getBoundingClientRect();
         const viewportWidth = window.visualViewport?.width || window.innerWidth;
         const viewportHeight = window.visualViewport?.height || window.innerHeight;
-        const availableWidth = Math.max(320, Math.min(bounds.width || viewportWidth, viewportWidth) - 20);
-        const availableHeight = Math.max(560, Math.min(bounds.height || viewportHeight, viewportHeight) - 20);
+        const availableWidth = Math.max(1, Math.min(bounds.width || viewportWidth, viewportWidth));
+        const availableHeight = Math.max(1, Math.min(bounds.height || viewportHeight, viewportHeight));
         const scale = Math.min(availableWidth / 575, availableHeight / 842, 1);
         document.documentElement.style.setProperty("--ui-scale", scale.toFixed(4));
       }
@@ -1219,7 +1222,12 @@
         if (!response.ok) {
           throw new Error(`${path} returned ${response.status}`);
         }
-        return response.json();
+        const text = await response.text();
+        const trimmed = text.trim();
+        if (!trimmed || trimmed[0] === "<") {
+          throw new Error(`${path} did not return BECA JSON`);
+        }
+        return JSON.parse(trimmed);
       }
 
       async function postSet(key, value, { refreshState = true } = {}) {
@@ -1420,7 +1428,7 @@
           mergeLiveState(baseState);
           renderAll();
         } catch (error) {
-          console.error("Initial control state failed", error);
+          console.warn("Initial BECA control state unavailable", error);
         }
       }
 
@@ -1512,7 +1520,7 @@
           const led = document.createElement("span");
           const visualIndex = LED_SLOT_COUNT - 1 - slot;
           led.className = "led";
-          led.style.transform = visualIndex % 2 === 0 ? "scaleX(1)" : "scaleX(-1)";
+          led.style.setProperty("--leaf-orientation", visualIndex % 2 === 0 ? "scaleX(1)" : "scaleX(-1)");
           led.innerHTML = leafSvg();
           dom.ledLeaves[slot] = led;
           el.ledColumn.appendChild(led);
