@@ -570,7 +570,10 @@
 
       .led-leaf {
         width: clamp(44px, 4vw, 58px);
-        color: rgba(139, 196, 62, 0.22);
+        --leaf-orientation: scaleX(1);
+        color: rgba(0, 200, 83, 0.24);
+        transform: var(--leaf-orientation) scale(1);
+        transform-origin: 50% 50%;
         transition:
           color 160ms ease,
           transform 160ms ease,
@@ -578,13 +581,12 @@
       }
 
       .led-leaf.is-on {
-        color: #85c83d;
-        transform: scale(1.02);
-        filter: drop-shadow(0 4px 12px rgba(133, 200, 61, 0.2));
+        transform: var(--leaf-orientation) scale(1.02);
+        filter: drop-shadow(0 4px 12px rgba(0, 200, 83, 0.24));
       }
 
       .led-leaf.is-hit {
-        color: #0ca062;
+        color: #00c49a;
       }
 
       .led-summary {
@@ -1246,6 +1248,34 @@
         const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
         const OUTPUT_LABELS = ["BLE", "SERIAL", "AUX OUT"];
         const CLOCK_LABELS = ["Internal", "Plant"];
+        const LED_SLOT_COUNT = 8;
+        const LED_DISPLAY_SETTING = 0;
+        const LED_DISPLAY_VOLUME = 1;
+        const LED_DISPLAY_OUTPUT = 2;
+        const LED_DISPLAY_RANDOM = 3;
+        const LED_OFF_COLOR = "rgba(0, 200, 83, 0.24)";
+        const METER_COLORS = ["#00c853", "#00c853", "#7fd900", "#d8df00", "#ffd400", "#ff9f00", "#ff5a00", "#f12129"];
+        const SETTING_COLORS = [
+          "#00c853",
+          "#ffd400",
+          "#ff5a00",
+          "#00c8ff",
+          "#f12129",
+          "#6e2cff",
+          "#ed29ac",
+          "#ffffff",
+          "#ffffff",
+          "#00c49a",
+          "#124cec",
+          "#00bf45",
+          "#ff9f00"
+        ];
+        const OUTPUT_PATTERNS = [
+          ["#00c8ff", null, "#00c8ff", null, "#00c8ff", null, "#00c8ff", null],
+          ["#6e2cff", "#00c49a", "#00c853", "#00c853", "#ffd400", "#ffd400", "#ff5a00", "#f12129"],
+          ["#00c853", "#00c853", null, null, null, null, null, null]
+        ];
+        const RANDOM_PATTERN = ["#6e2cff", null, "#00c853", null, "#ffd400", null, "#ff5a00", null];
         const DRUM_PARTS = [
           { bit: 0, label: "Kick" },
           { bit: 1, label: "Snare" },
@@ -1498,18 +1528,67 @@
           });
         }
 
-        function renderLedStack() {
+        function clamp(value, min, max) {
+          return Math.max(min, Math.min(max, Number(value) || 0));
+        }
+
+        function buildLedPattern() {
           const runtime = state.runtime || {};
-          const activeCount = Math.max(
+          const fallbackCount = Math.max(
             1,
-            Math.round((((runtime.vi || 0) / 255) * 0.55 + state.scopeValue * 0.45) * 8)
+            Math.round((((runtime.vi || 0) / 255) * 0.55 + state.scopeValue * 0.45) * LED_SLOT_COUNT)
           );
+          const displayMode = clamp(runtime.led_display_mode, LED_DISPLAY_SETTING, LED_DISPLAY_RANDOM);
+
+          if (displayMode === LED_DISPLAY_VOLUME) {
+            const onCount = clamp(runtime.encoder_led_count || Math.round((state.synth?.master || 0.25) * LED_SLOT_COUNT), 1, LED_SLOT_COUNT);
+            return Array.from({ length: LED_SLOT_COUNT }, (_, slot) => ({
+              color: METER_COLORS[Math.min(slot, METER_COLORS.length - 1)],
+              on: slot < onCount
+            }));
+          }
+
+          if (displayMode === LED_DISPLAY_OUTPUT) {
+            const pattern = OUTPUT_PATTERNS[clamp(runtime.outputmode, 0, OUTPUT_PATTERNS.length - 1)] || OUTPUT_PATTERNS[0];
+            return pattern.map((color) => ({ color: color || LED_OFF_COLOR, on: Boolean(color) }));
+          }
+
+          if (displayMode === LED_DISPLAY_RANDOM) {
+            return RANDOM_PATTERN.map((color) => ({ color: color || LED_OFF_COLOR, on: Boolean(color) }));
+          }
+
+          const setting = clamp(runtime.encoder_setting, 0, SETTING_COLORS.length - 1);
+          const color = SETTING_COLORS[setting] || SETTING_COLORS[0];
+          if (setting === 4) {
+            const bpm = clamp(runtime.bpm || 120, 20, 240);
+            const beatMs = Math.max(120, 60000 / bpm);
+            const activeSlot = Math.floor(performance.now() / beatMs) % LED_SLOT_COUNT;
+            return Array.from({ length: LED_SLOT_COUNT }, (_, slot) => ({ color, on: slot === activeSlot }));
+          }
+          if (setting === 7 || setting === 8) {
+            const lo = clamp(runtime.lo || 1, 1, LED_SLOT_COUNT);
+            const hi = clamp(runtime.hi || lo, lo, LED_SLOT_COUNT);
+            return Array.from({ length: LED_SLOT_COUNT }, (_, slot) => ({
+              color,
+              on: slot + 1 >= lo && slot + 1 <= hi
+            }));
+          }
+
+          const onCount = clamp(runtime.encoder_led_count || fallbackCount, 1, LED_SLOT_COUNT);
+          return Array.from({ length: LED_SLOT_COUNT }, (_, slot) => ({ color, on: slot < onCount }));
+        }
+
+        function renderLedStack() {
+          const pattern = buildLedPattern();
           el.ledStack.innerHTML = "";
-          for (let i = 0; i < 8; i += 1) {
+          for (let visual = LED_SLOT_COUNT - 1; visual >= 0; visual -= 1) {
             const leaf = document.createElement("div");
             leaf.className = "led-leaf";
-            if (i < activeCount) leaf.classList.add("is-on");
-            if (((state.drumHitMask >> i) & 1) === 1) leaf.classList.add("is-hit");
+            const topIndex = LED_SLOT_COUNT - 1 - visual;
+            leaf.style.setProperty("--leaf-orientation", topIndex % 2 === 0 ? "scaleX(1)" : "scaleX(-1)");
+            leaf.style.color = pattern[visual]?.on ? pattern[visual].color : LED_OFF_COLOR;
+            if (pattern[visual]?.on) leaf.classList.add("is-on");
+            if (((state.drumHitMask >> visual) & 1) === 1) leaf.classList.add("is-hit");
             leaf.innerHTML = noteLeafSvg();
             el.ledStack.appendChild(leaf);
           }
@@ -2086,6 +2165,13 @@
         async function init() {
           seedVisuals();
           bindEvents();
+          window.setInterval(() => {
+            if (document.hidden || !state.runtime) return;
+            if (Number(state.runtime.led_display_mode) === LED_DISPLAY_SETTING &&
+                Number(state.runtime.encoder_setting) === 4) {
+              renderLedStack();
+            }
+          }, 80);
           await refreshAll();
           setupRealtime();
         }
