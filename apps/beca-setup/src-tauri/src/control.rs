@@ -75,7 +75,7 @@ pub struct ControlSnapshot {
 pub async fn discover_beca_targets(
     state: State<'_, RuntimeState>,
 ) -> Result<ControlDiscoveryResult, String> {
-    let bridge_running = state.bridge_child.lock().await.is_some();
+    let bridge_running = state.bridge_running().await;
     let serial_probe_guard = state.serial_op_lock.try_lock().ok();
     let serial_targets =
         discover_serial_targets(bridge_running, serial_probe_guard.is_some()).await;
@@ -1179,7 +1179,7 @@ async fn serial_json_command(
     expected_tag: &str,
     timeout_ms: u64,
 ) -> anyhow::Result<Value> {
-    if state.bridge_child.lock().await.is_some() {
+    if state.bridge_running().await {
         return Err(anyhow!(
             "Bridge is running and owns the serial port. Stop Bridge or use Wi-Fi live control."
         ));

@@ -399,6 +399,7 @@ If `DAW Sync` is on and no DAW clock is being received, BECA remains safe and st
 
 - close BECA and reopen it from the installed app entry
 - confirm the installed app is the current build, not an old portable copy
+- on Windows, reopening BECA now clears a leftover `beca-bridge.exe` from a previous session before rediscovery
 - reconnect the device and let the app rediscover the best control transport
 - if the bridge shows connected but Windows moved the board to a new COM port, disconnect bridge, click `rescan device`, then reconnect bridge
 - avoid opening the browser UI, desktop Control view, and Max for Live control surface at the same time on the same BECA; use one live control surface plus the serial MIDI bridge

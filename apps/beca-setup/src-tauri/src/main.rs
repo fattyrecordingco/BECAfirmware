@@ -96,6 +96,27 @@ impl Default for RuntimeState {
     }
 }
 
+impl RuntimeState {
+    pub(crate) async fn bridge_running(&self) -> bool {
+        let mut lock = self.bridge_child.lock().await;
+        let Some(child) = lock.as_mut() else {
+            return false;
+        };
+
+        match child.try_wait() {
+            Ok(Some(_)) => {
+                *lock = None;
+                false
+            }
+            Ok(None) => true,
+            Err(err) => {
+                error!("failed to inspect bridge child state: {}", err);
+                true
+            }
+        }
+    }
+}
+
 #[derive(Debug, Serialize)]
 struct DeviceDetectionResult {
     port_name: Option<String>,
@@ -161,8 +182,7 @@ struct WifiProvisionResult {
 }
 
 async fn ensure_bridge_not_running(state: &State<'_, RuntimeState>) -> Result<(), String> {
-    let lock = state.bridge_child.lock().await;
-    if lock.is_some() {
+    if state.bridge_running().await {
         return Err(
             "Bridge is running and owns the serial port. Stop Bridge, then retry Wi-Fi setup."
                 .to_string(),
@@ -627,7 +647,7 @@ async fn start_bridge(
 #[tauri::command]
 async fn bridge_status(state: State<'_, RuntimeState>) -> Result<BridgeStatus, String> {
     Ok(BridgeStatus {
-        running: state.bridge_child.lock().await.is_some(),
+        running: state.bridge_running().await,
     })
 }
 
@@ -1530,6 +1550,31 @@ fn init_logging(app: &AppHandle, state: &RuntimeState) -> anyhow::Result<()> {
     Ok(())
 }
 
+#[cfg(target_os = "windows")]
+fn cleanup_stale_bridge_processes_on_startup() {
+    let output = std::process::Command::new("taskkill")
+        .args(["/IM", "beca-bridge.exe", "/F", "/T"])
+        .output();
+
+    match output {
+        Ok(result) if result.status.success() => {
+            info!("cleaned up stale BECA bridge processes on startup");
+        }
+        Ok(result) => {
+            let stderr = String::from_utf8_lossy(&result.stderr);
+            if !stderr.to_ascii_lowercase().contains("not found") {
+                info!("stale bridge cleanup skipped: {}", stderr.trim());
+            }
+        }
+        Err(err) => {
+            info!("stale bridge cleanup unavailable: {}", err);
+        }
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn cleanup_stale_bridge_processes_on_startup() {}
+
 fn err_to_string<E: std::fmt::Display>(err: E) -> String {
     err.to_string()
 }
@@ -1544,6 +1589,7 @@ pub fn run() {
             if let Err(err) = init_logging(&app_handle, state.inner()) {
                 eprintln!("logging init failed: {err}");
             }
+            cleanup_stale_bridge_processes_on_startup();
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

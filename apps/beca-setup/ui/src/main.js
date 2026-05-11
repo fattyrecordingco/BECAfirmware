@@ -67,12 +67,21 @@ const VIEW_STORAGE_KEY = "beca-active-screen";
 const BRIDGE_PREFS_STORAGE_KEY = "beca-bridge-prefs-v1";
 const SETUP_FRAME_WIDTH = 575;
 const SETUP_FRAME_HEIGHT = 842;
+const SETUP_SCALE_SAFETY_PX = 2;
 
 function setSetupScale() {
+  const activeSetupSurface = document.querySelector('[data-screen-view="setup"].active');
+  const bounds = activeSetupSurface?.getBoundingClientRect();
   const viewportWidth = window.visualViewport?.width || window.innerWidth;
   const viewportHeight = window.visualViewport?.height || window.innerHeight;
-  const availableWidth = Math.max(1, viewportWidth - 48);
-  const availableHeight = Math.max(1, viewportHeight - 48);
+  const availableWidth = Math.max(
+    1,
+    Math.min(bounds?.width || viewportWidth, viewportWidth) - SETUP_SCALE_SAFETY_PX
+  );
+  const availableHeight = Math.max(
+    1,
+    Math.min(bounds?.height || viewportHeight, viewportHeight) - SETUP_SCALE_SAFETY_PX
+  );
   const scale = Math.min(1, availableWidth / SETUP_FRAME_WIDTH, availableHeight / SETUP_FRAME_HEIGHT);
   document.documentElement.style.setProperty("--setup-scale", scale.toFixed(4));
 }

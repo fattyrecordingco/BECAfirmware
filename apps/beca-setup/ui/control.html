@@ -36,8 +36,7 @@
       body {
         margin: 0;
         width: 100%;
-        height: 100%;
-        overflow: hidden;
+        min-height: 100%;
       }
 
       body {
@@ -63,10 +62,11 @@
       .control-app {
         width: 100vw;
         min-height: 100vh;
+        min-height: 100dvh;
         display: grid;
         place-items: center;
-        overflow: hidden;
-        padding: 0;
+        overflow: auto;
+        padding: 16px;
       }
 
       .control-viewport {
@@ -75,8 +75,8 @@
         display: flex;
         justify-content: center;
         align-items: flex-start;
-        max-width: 100%;
-        max-height: 100%;
+        max-width: calc(100vw - 32px);
+        max-height: calc(100dvh - 32px);
       }
 
       .control-frame {
@@ -665,7 +665,12 @@
 
       @media (max-width: 700px), (max-height: 920px) {
         .control-app {
-          padding: 16px;
+          padding: 14px;
+        }
+
+        .control-viewport {
+          max-width: calc(100vw - 28px);
+          max-height: calc(100dvh - 28px);
         }
       }
 
@@ -1195,10 +1200,21 @@
       function setScale() {
         const host = el.viewport.closest(".control-host") || el.viewport.parentElement || document.body;
         const bounds = host.getBoundingClientRect();
+        const hostStyle = window.getComputedStyle(host);
+        const horizontalPadding =
+          (parseFloat(hostStyle.paddingLeft) || 0) + (parseFloat(hostStyle.paddingRight) || 0);
+        const verticalPadding =
+          (parseFloat(hostStyle.paddingTop) || 0) + (parseFloat(hostStyle.paddingBottom) || 0);
         const viewportWidth = window.visualViewport?.width || window.innerWidth;
         const viewportHeight = window.visualViewport?.height || window.innerHeight;
-        const availableWidth = Math.max(1, Math.min(bounds.width || viewportWidth, viewportWidth));
-        const availableHeight = Math.max(1, Math.min(bounds.height || viewportHeight, viewportHeight));
+        const availableWidth = Math.max(
+          1,
+          Math.min(bounds.width || viewportWidth, viewportWidth) - horizontalPadding - 2
+        );
+        const availableHeight = Math.max(
+          1,
+          Math.min(bounds.height || viewportHeight, viewportHeight) - verticalPadding - 2
+        );
         const scale = Math.min(availableWidth / 575, availableHeight / 842, 1);
         document.documentElement.style.setProperty("--ui-scale", scale.toFixed(4));
       }
