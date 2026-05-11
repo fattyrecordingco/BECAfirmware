@@ -1,12 +1,13 @@
 import { invoke } from "@tauri-apps/api/core";
 
 const POLL_INTERVAL_MS = {
-  network: 42,
-  serial: 118,
-  fallback: 84,
-  stale: 84,
+  network: 900,
+  serial: 900,
+  fallback: 900,
+  nativeStream: 10000,
+  stale: 1200,
   render: 33,
-  error: 220
+  error: 1800
 };
 const SCOPE_DELTA_EPSILON = 0.0012;
 const SCOPE_FRAME_HEARTBEAT_MS = 84;
@@ -83,13 +84,15 @@ function createTransportFetch(targetWindow) {
   };
 }
 
-function createAppEventSource(targetWindow) {
+function createAppEventSource(targetWindow, NativeEventSource) {
   return class AppEventSource {
     constructor(url) {
       this.url = url;
       this.listeners = new Map();
       this.closed = false;
       this.lastError = false;
+      this.nativeStream = null;
+      this.nativeStreaming = false;
       this.scopeTimer = null;
       this.previous = {
         state: "",
@@ -105,6 +108,7 @@ function createAppEventSource(targetWindow) {
 
       queueMicrotask(() => this.emitMessage("hello", "{}"));
       this.startScopeLoop();
+      this.startNativeStream();
       this.poll();
     }
 
@@ -121,6 +125,10 @@ function createAppEventSource(targetWindow) {
 
     close() {
       this.closed = true;
+      if (this.nativeStream) {
+        this.nativeStream.close();
+        this.nativeStream = null;
+      }
       if (this.scopeTimer != null) {
         targetWindow.clearTimeout(this.scopeTimer);
         this.scopeTimer = null;
@@ -136,6 +144,57 @@ function createAppEventSource(targetWindow) {
       if (typeof this.onerror === "function") {
         this.onerror(err);
       }
+    }
+
+    async startNativeStream() {
+      if (!NativeEventSource || typeof invoke !== "function") return;
+
+      try {
+        const status = await invoke("current_control_target");
+        const networkUrl = status?.target?.network_url;
+        if (status?.transport !== "network" || !networkUrl) return;
+
+        const streamUrl = `${String(networkUrl).replace(/\/$/, "")}/events`;
+        const stream = new NativeEventSource(streamUrl);
+        this.nativeStream = stream;
+
+        stream.addEventListener("hello", (event) => {
+          if (this.closed) return;
+          this.nativeStreaming = true;
+          this.lastError = false;
+          this.emitMessage("hello", event.data || "{}");
+        });
+
+        stream.addEventListener("state", (event) => this.forwardNativeMessage("state", event.data));
+        stream.addEventListener("note", (event) => this.forwardNativeMessage("note", event.data));
+        stream.addEventListener("drum", (event) => this.forwardNativeMessage("drum", event.data));
+        stream.addEventListener("scope", (event) => {
+          if (this.closed) return;
+          const next = Math.max(0, Math.min(1, Number(event.data || 0)));
+          this.nativeStreaming = true;
+          this.latestSnapshot = this.latestSnapshot || { stale: false };
+          this.targetScope = next;
+        });
+
+        stream.onerror = () => {
+          this.nativeStreaming = false;
+          if (this.closed) return;
+          this.nativeStream?.close();
+          this.nativeStream = null;
+        };
+      } catch {
+        this.nativeStreaming = false;
+      }
+    }
+
+    forwardNativeMessage(type, data) {
+      if (this.closed) return;
+      this.nativeStreaming = true;
+      this.lastError = false;
+      const payload = String(data || "");
+      if (payload === this.previous[type]) return;
+      this.previous[type] = payload;
+      this.emitMessage(type, payload);
     }
 
     startScopeLoop() {
@@ -171,7 +230,9 @@ function createAppEventSource(targetWindow) {
 
     async poll() {
       while (!this.closed) {
-        let nextDelay = POLL_INTERVAL_MS.fallback;
+        let nextDelay = this.nativeStreaming
+          ? POLL_INTERVAL_MS.nativeStream
+          : POLL_INTERVAL_MS.fallback;
         try {
           const snapshot = await invoke("control_snapshot");
           const isStale = Boolean(snapshot?.stale);
@@ -186,26 +247,30 @@ function createAppEventSource(targetWindow) {
             this.previous.scope = this.targetScope;
             this.animatedScope = this.targetScope;
           }
-          nextDelay = isStale
+          nextDelay = this.nativeStreaming
+            ? POLL_INTERVAL_MS.nativeStream
+            : isStale
             ? POLL_INTERVAL_MS.stale
             : (POLL_INTERVAL_MS[snapshot.transport] || POLL_INTERVAL_MS.fallback);
 
-          const statePayload = snapshotStatePayload(snapshot);
-          if (statePayload !== this.previous.state) {
-            this.previous.state = statePayload;
-            this.emitMessage("state", statePayload);
-          }
+          if (!this.nativeStreaming) {
+            const statePayload = snapshotStatePayload(snapshot);
+            if (statePayload !== this.previous.state) {
+              this.previous.state = statePayload;
+              this.emitMessage("state", statePayload);
+            }
 
-          const notePayload = snapshotNotePayload(snapshot);
-          if (notePayload !== this.previous.note) {
-            this.previous.note = notePayload;
-            this.emitMessage("note", notePayload);
-          }
+            const notePayload = snapshotNotePayload(snapshot);
+            if (notePayload !== this.previous.note) {
+              this.previous.note = notePayload;
+              this.emitMessage("note", notePayload);
+            }
 
-          const drumPayload = snapshotDrumPayload(snapshot);
-          if (drumPayload !== this.previous.drum) {
-            this.previous.drum = drumPayload;
-            this.emitMessage("drum", drumPayload);
+            const drumPayload = snapshotDrumPayload(snapshot);
+            if (drumPayload !== this.previous.drum) {
+              this.previous.drum = drumPayload;
+              this.emitMessage("drum", drumPayload);
+            }
           }
 
           if (issue && issue !== this.previous.issue) {
@@ -232,7 +297,8 @@ function createAppEventSource(targetWindow) {
 
 export function installControlTransport(targetWindow = window) {
   if (!targetWindow || targetWindow.__becaControlTransportInstalled) return;
+  const NativeEventSource = targetWindow.EventSource;
   targetWindow.fetch = createTransportFetch(targetWindow);
-  targetWindow.EventSource = createAppEventSource(targetWindow);
+  targetWindow.EventSource = createAppEventSource(targetWindow, NativeEventSource);
   targetWindow.__becaControlTransportInstalled = true;
 }

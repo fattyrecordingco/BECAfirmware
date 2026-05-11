@@ -2,7 +2,7 @@ use crate::{run_serial_command_json, CachedControlError, CachedControlSnapshot, 
 use anyhow::{anyhow, Context};
 use beca_flasher::detect_beca_ports;
 use if_addrs::{get_if_addrs, IfAddr};
-use reqwest::header::CONTENT_TYPE;
+use reqwest::header::{CONNECTION, CONTENT_TYPE};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -12,13 +12,13 @@ use std::time::{Duration, Instant};
 use tauri::State;
 use tokio::sync::Semaphore;
 
-const NETWORK_SCAN_TIMEOUT_MS: u64 = 450;
-const CONTROL_HTTP_TIMEOUT_MS: u64 = 1400;
-const SNAPSHOT_REFRESH_MS_NETWORK: u64 = 42;
-const SNAPSHOT_REFRESH_MS_SERIAL: u64 = 118;
-const SNAPSHOT_REFRESH_MS_FALLBACK: u64 = 84;
-const SNAPSHOT_STALE_GRACE_MS: u64 = 1800;
-const SNAPSHOT_ERROR_BACKOFF_MS: u64 = 260;
+const NETWORK_SCAN_TIMEOUT_MS: u64 = 2_500;
+const CONTROL_HTTP_TIMEOUT_MS: u64 = 6_000;
+const SNAPSHOT_REFRESH_MS_NETWORK: u64 = 900;
+const SNAPSHOT_REFRESH_MS_SERIAL: u64 = 900;
+const SNAPSHOT_REFRESH_MS_FALLBACK: u64 = 900;
+const SNAPSHOT_STALE_GRACE_MS: u64 = 8_000;
+const SNAPSHOT_ERROR_BACKOFF_MS: u64 = 1_200;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ControlTarget {
@@ -573,6 +573,7 @@ async fn network_request_with_client(
         "POST" => client.post(&url),
         _ => client.get(&url),
     };
+    let request = request.header(CONNECTION, "close");
 
     let request = if !query.is_empty() {
         request.query(query)
@@ -617,16 +618,43 @@ async fn snapshot_over_network_with_client(
 )> {
     let empty_query = BTreeMap::new();
     let empty_form = BTreeMap::new();
-    let live = network_request_with_client(
+    let state = network_request_with_client(
         client,
         base_url,
         "GET",
-        "/api/live",
+        "/api/state",
         &empty_query,
         &empty_form,
     )
     .await?;
-    split_live_snapshot_response(live)
+    let plant = network_request_with_client(
+        client,
+        base_url,
+        "GET",
+        "/api/plant",
+        &empty_query,
+        &empty_form,
+    )
+    .await?;
+    let notes = network_request_with_client(
+        client,
+        base_url,
+        "GET",
+        "/api/notes",
+        &empty_query,
+        &empty_form,
+    )
+    .await?;
+    let drum = network_request_with_client(
+        client,
+        base_url,
+        "GET",
+        "/api/drum",
+        &empty_query,
+        &empty_form,
+    )
+    .await?;
+    Ok((state, plant, notes, drum))
 }
 
 async fn snapshot_over_serial(
@@ -820,6 +848,7 @@ async fn discover_serial_targets(
 async fn discover_network_targets() -> Vec<ControlTarget> {
     let client = match Client::builder()
         .timeout(Duration::from_millis(NETWORK_SCAN_TIMEOUT_MS))
+        .pool_max_idle_per_host(0)
         .build()
     {
         Ok(client) => client,
@@ -831,7 +860,7 @@ async fn discover_network_targets() -> Vec<ControlTarget> {
         Err(_) => return Vec::new(),
     };
 
-    let gate = Arc::new(Semaphore::new(40));
+    let gate = Arc::new(Semaphore::new(16));
     let mut tasks = Vec::with_capacity(scan_urls.len());
 
     for url in scan_urls {
@@ -857,6 +886,7 @@ async fn probe_network_target(client: &Client, base_url: &str) -> anyhow::Result
     let url = format!("{}/api/info", base_url.trim_end_matches('/'));
     let response = client
         .get(&url)
+        .header(CONNECTION, "close")
         .send()
         .await
         .with_context(|| format!("failed to probe {}", base_url))?;
@@ -882,12 +912,12 @@ async fn probe_network_target(client: &Client, base_url: &str) -> anyhow::Result
         issue: None,
     };
     apply_wifi_info(&mut target, &info);
-    match probe_network_control(base_url).await {
-        Ok(()) => {
-            target.network_ready = true;
-            target.control_ready = true;
-        }
-        Err(err) => {
+    target.network_ready = true;
+    target.control_ready = true;
+    if let Err(err) = probe_network_control(base_url).await {
+        if is_incompatible_control_probe_error(&err) {
+            target.network_ready = false;
+            target.control_ready = false;
             target.issue = Some(describe_control_probe_error("Wi-Fi", &err));
         }
     }
@@ -981,6 +1011,7 @@ async fn probe_network_control(base_url: &str) -> anyhow::Result<()> {
     let url = format!("{}/api/state", base_url.trim_end_matches('/'));
     let response = client
         .get(&url)
+        .header(CONNECTION, "close")
         .send()
         .await
         .with_context(|| format!("failed to probe {url}"))?;
@@ -1022,10 +1053,7 @@ fn validate_state_payload(payload: &Value) -> anyhow::Result<()> {
 fn describe_control_probe_error(transport_label: &str, err: &anyhow::Error) -> String {
     let message = err.to_string();
     let lower = message.to_ascii_lowercase();
-    if lower.contains("unknown command")
-        || lower.contains("legacy browser page")
-        || lower.contains("did not expose the unified control state fields")
-    {
+    if is_incompatible_control_probe_message(&lower) {
         return format!(
             "{transport_label} found BECA, but the installed firmware is too old for the unified desktop control surface. Flash the latest firmware in Setup, then reconnect."
         );
@@ -1039,6 +1067,16 @@ fn describe_control_probe_error(transport_label: &str, err: &anyhow::Error) -> S
         );
     }
     format!("{transport_label} found BECA, but live control is unavailable right now: {message}")
+}
+
+fn is_incompatible_control_probe_error(err: &anyhow::Error) -> bool {
+    is_incompatible_control_probe_message(&err.to_string().to_ascii_lowercase())
+}
+
+fn is_incompatible_control_probe_message(lower: &str) -> bool {
+    lower.contains("unknown command")
+        || lower.contains("legacy browser page")
+        || lower.contains("did not expose the unified control state fields")
 }
 
 fn base_url_host(base_url: &str) -> Option<String> {

@@ -71,7 +71,8 @@ That script:
 
 - setup and control views must stay visually aligned with the firmware LED language
 - bridge connect state is a toggle, not separate connect and stop buttons
-- BECA clock is internal-only; the app exposes `DAW Sync` but not a separate clock selector
+- BECA supports internal clock and plant-triggered clock; plant clock must remain edge-triggered by real plant input
 - live control prefers verified Wi-Fi and falls back to direct serial control when needed
+- Wi-Fi live control uses the firmware `/events` stream for monitor/state updates when available; HTTP polling remains conservative enough for ESP32 core 2.0.14 WebServer while serial MIDI is active
 - if release behavior changes, update the root [README.md](../../README.md) in the same commit
 

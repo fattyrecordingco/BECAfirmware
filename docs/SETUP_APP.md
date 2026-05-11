@@ -86,10 +86,15 @@ Named baseline for this cycle:
 
 5. **Live Control**
 - Reuses one native HTTP client for desktop live control instead of rebuilding the transport for each poll.
-- Keeps a short-lived cached `/api/live` snapshot so UI refreshes stay smooth without hammering USB or Wi-Fi.
+- Keeps a short-lived cached live snapshot and polls conservatively so UI refreshes stay smooth without hammering USB or Wi-Fi.
+- Wi-Fi discovery keeps a target eligible after a valid BECA `/api/info` response, even when Bridge owns USB and deeper state probes are slow.
+- Wi-Fi Live Control prefers the firmware `/events` SSE stream for plant, MIDI, drum, and state updates; HTTP snapshots are kept as a slower fallback/status check.
+- Wi-Fi fallback snapshots use smaller state/plant/note/drum requests instead of the combined `/api/live` response to reduce ESP32 heap and socket pressure.
 - Holds the last good live frame briefly during reconnects so the plant monitor does not appear to freeze and reset on every transient delay.
 - Defaults back to `Setup` until a control-ready target exists, with one always-visible device/status strip above both views.
 - Matches the setup/control 575x842 frame sizing and keeps the 8-leaf LED mirror orientation stable in active color states.
+- When the device is set to `Clock: Plant`, firmware output is edge-triggered by plant input instead of the internal sequencer; random rest/no-repeat substitutions are bypassed in that mode.
+- The MIDI monitor reads firmware SSE note/drum events over Wi-Fi when available, with a UI-only note hold as fallback so short internal-clock notes remain visible without lengthening the actual MIDI gate.
 
 ## UI cohesion with BECA control page
 

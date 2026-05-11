@@ -207,7 +207,8 @@ Inbound to M4L from BECA:
 - Parameter updates are queued/debounced to about `15 updates/sec` max.
 - `POST /api/set` writes now retry automatically on transient network/timeout failures.
 - If `/api/set` rejects or is unavailable, transport falls back to legacy endpoint writes for the same key.
-- State polling is low-rate (`~4 Hz`), plant/notes high-rate (`~25 Hz`), synth medium-rate.
+- State polling is low-rate (`~2 Hz`), plant/notes moderate-rate (`~7 Hz`), synth medium-rate.
+- Emit Mode now defaults to `Monitor` so the control surface cannot create an extra MIDI path unless you explicitly switch it to `Reemit`.
 - On disconnect, HTTP mode retries when auto reconnect is enabled.
 - Serial parser ignores malformed lines and keeps the UI responsive.
 
@@ -227,7 +228,7 @@ Inbound to M4L from BECA:
   - backend detected firmware profile where `/api/state` redirects
   - device still auto-connects using `/api/info` + `/events` stream and adopts BECA-reported IP automatically
   - update firmware if you want full `/api/state`/`/api/params` polling path
-- No MIDI output: ensure `Emit Mode = Reemit` and device is before instrument.
+- No MIDI output from the Max for Live device: switch `Emit Mode` to `Reemit` and put the device before the instrument. Leave it on `Monitor` when the BECA desktop bridge is already feeding the DAW.
 - External hardware silent: check Ableton track `MIDI To` target + channel.
 - Missing serial ports in dropdown: install Node dependency (`npm install`) and refresh.
 - If controls appear stale in serial mode: click `Refresh` to force `STATE/PARAMS/SYNTH` requests.

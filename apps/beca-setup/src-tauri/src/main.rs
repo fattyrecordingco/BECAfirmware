@@ -39,7 +39,7 @@ const LATEST_STABLE_FIRMWARE: &str = "latest-stable";
 const SERIAL_CTRL_BAUD: u32 = 115200;
 const ESPFLASH_SIDECAR_VERSION: &str = "4.2.0";
 const ESPTOOL_SIDECAR_VERSION: &str = "5.2.0";
-const CONTROL_HTTP_CLIENT_TIMEOUT_MS: u64 = 1_400;
+const CONTROL_HTTP_CLIENT_TIMEOUT_MS: u64 = 6_000;
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
@@ -75,6 +75,7 @@ impl Default for RuntimeState {
     fn default() -> Self {
         let control_http_client = Client::builder()
             .timeout(Duration::from_millis(CONTROL_HTTP_CLIENT_TIMEOUT_MS))
+            .pool_max_idle_per_host(0)
             .build()
             .unwrap_or_else(|_| Client::new());
 

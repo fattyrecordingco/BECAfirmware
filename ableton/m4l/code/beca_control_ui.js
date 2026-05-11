@@ -56,7 +56,7 @@ var ui = {
   targetConnected: 0,
   targetLastConnected: "",
   targetMode: "http",
-  emitMode: "reemit",
+  emitMode: "monitor",
   autoReconnect: 1,
   lastUiAction: "init",
   lastOutbound: "",

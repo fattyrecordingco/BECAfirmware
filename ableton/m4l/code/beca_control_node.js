@@ -107,7 +107,7 @@ const runtime = {
   deviceName: "beca-blk",
   port: 80,
   autoReconnect: true,
-  emitMode: "reemit", // reemit | monitor
+  emitMode: "monitor", // monitor | reemit
   connected: false,
   httpLegacy: false,
   legacySseReq: null,
@@ -119,8 +119,8 @@ const runtime = {
   lastConnectedHost: "",
   lastStatusToken: "",
   infoTick: 0,
-  statePollMs: 250,
-  fastPollMs: 40,
+  statePollMs: 500,
+  fastPollMs: 140,
   synthPollMs: 2500,
   paramsPollMs: 3000,
   discoveryCooldownMs: 1200,

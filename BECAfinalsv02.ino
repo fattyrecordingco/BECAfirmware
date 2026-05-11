@@ -246,9 +246,11 @@ struct UiHeldNote {
   bool     on;
 };
 UiHeldNote uiNoteQ[24];
+static const uint16_t UI_NOTE_MIN_HOLD_MS = 320;
 
 static inline void uiQueueHeldNote(uint8_t note, uint16_t durMs) {
-  uint32_t until = millis() + durMs;
+  const uint16_t uiDurMs = max<uint16_t>(durMs, UI_NOTE_MIN_HOLD_MS);
+  uint32_t until = millis() + uiDurMs;
   for (auto &q : uiNoteQ) {
     if (q.on && q.note == note) {
       if ((int32_t)(until - q.tOff) > 0) q.tOff = until;
@@ -961,11 +963,13 @@ static inline void sendDrum(uint8_t note, uint8_t vel = 110, uint16_t gateMs = 6
     if (((uint8_t)drumSelMask & (1u << (uint8_t)part)) == 0) return;
   }
 
+  uiQueueHeldNote(note, gateMs);
   if (midiOutReady()) {
     midiSendNoteOn(note, vel, DRUM_CH);
     queueNoteOff(note, DRUM_CH, gateMs);
   }
   triggerVisual(note, vel);
+  activeAdd(note);
 
   if (part >= 0) drumMarkHit((uint8_t)part, 220);
 
@@ -1089,7 +1093,7 @@ static inline void captureRuntimeState(RuntimeStateBlob& out) {
   out.io_muted = ioMuteManualActive() ? 1 : 0;
   out.daw_sync = gDawSyncEnabled ? 1 : 0;
   out.mode = (uint8_t)gMode;
-  out.clock = (uint8_t)CLOCK_INTERNAL;
+  out.clock = (uint8_t)gClock;
   out.scale = (uint8_t)gScale;
   out.root = (uint8_t)(rootMidi % 12);
   out.bpm = (uint16_t)constrain((int)bpm, 20, 240);
@@ -1140,7 +1144,7 @@ static inline bool loadRuntimeStateFromOpenPrefs(RuntimeStateBlob& out) {
 
 static inline void applyRuntimeState(const RuntimeStateBlob& in, bool applyOutputMode, bool applyMute) {
   gMode = (Mode)constrain((int)in.mode, 0, 3);
-  gClock = CLOCK_INTERNAL;
+  gClock = in.clock == (uint8_t)CLOCK_PLANT ? CLOCK_PLANT : CLOCK_INTERNAL;
   gScale = (ScaleType)constrain((int)in.scale, 0, 14);
   rootMidi = (uint8_t)(60 + (in.root % 12));
   bpm = (uint16_t)constrain((int)in.bpm, 20, 240);
@@ -2512,8 +2516,6 @@ static inline void step_fromPlantTrigger() {
   activeClear();
   gPlantArmed = false;
 
-  if (random(100) < (int)(restProb * 100.0f)) return;
-
   const int* S; int len; getScaleArr(S, len);
   (void)S;
 
@@ -2521,10 +2523,6 @@ static inline void step_fromPlantTrigger() {
   float   energ = gPlantEnergy;
 
   uint8_t note = buildMidiFromBins(heldDegIdx, heldOctIdx);
-  if (avoidRepeats && lastMidiOut == note && len > 1) {
-    int alt = constrain(heldDegIdx + (random(0, 2) ? 1 : -1), 0, len - 1);
-    note = buildMidiFromBins(alt, heldOctIdx);
-  }
 
   uint16_t gate = (uint16_t)constrain((int)(120 + 480 * energ), 80, 700);
 
@@ -2591,7 +2589,6 @@ static inline void transportTick() {
   if (ioMuteActive()) return;
   if (!plantJackConnected()) return;
 
-  gClock = CLOCK_INTERNAL;
   switch (gMode) {
     case MODE_NOTE:  stepNOTE_internal();  break;
     case MODE_ARP:   stepARP_internal();   break;
@@ -2693,11 +2690,7 @@ static inline void sseSend(const char* event, const char* data) {
 
   const bool mustDeliver = (strcmp(event, "hello") == 0) || (strcmp(event, "state") == 0);
   const size_t need = 8 + strlen(event) + 7 + strlen(data) + 2;
-  if (!sseCanWrite(need)) {
-    if (mustDeliver) {
-      sseClient.stop();
-      sseConnected = false;
-    }
+  if (!mustDeliver && !sseCanWrite(need)) {
     return;
   }
 
@@ -2733,11 +2726,13 @@ static inline void handleEvents() {
   sseClient.println("HTTP/1.1 200 OK");
   sseClient.println("Content-Type: text/event-stream");
   sseClient.println("Cache-Control: no-cache");
+  sseClient.println("Access-Control-Allow-Origin: *");
   sseClient.println("Connection: keep-alive");
   sseClient.println("X-Accel-Buffering: no");
   sseClient.println();
 
   sseSend("hello", "{\"ok\":1}");
+  pushStateIfChanged(true);
 }
 
 static inline bool stateChanged() {
@@ -2753,7 +2748,7 @@ static inline bool stateChanged() {
   if (LS.plant_auto_mute != (plantAutoMuteActive() ? 1 : 0)) return true;
   if (LS.daw_sync != (gDawSyncEnabled ? 1 : 0)) return true;
   if (LS.daw_lock != (dawSyncLocked(0) ? 1 : 0)) return true;
-  if (LS.clock != (uint8_t)CLOCK_INTERNAL) return true;
+  if (LS.clock != (uint8_t)gClock) return true;
   if (LS.mode  != (uint8_t)gMode) return true;
   if (LS.scale != (uint8_t)gScale) return true;
   if (LS.root  != root) return true;
@@ -2799,7 +2794,7 @@ static inline void captureState() {
   LS.plant_auto_mute = plantAutoMuteActive() ? 1 : 0;
   LS.daw_sync = gDawSyncEnabled ? 1 : 0;
   LS.daw_lock = dawSyncLocked(0) ? 1 : 0;
-  LS.clock = (uint8_t)CLOCK_INTERNAL;
+  LS.clock = (uint8_t)gClock;
   LS.mode  = (uint8_t)gMode;
   LS.scale = (uint8_t)gScale;
   LS.root  = (uint8_t)(rootMidi % 12);
@@ -3048,7 +3043,13 @@ static inline void setMode() {
   pushStateIfChanged(true);
   server.send(200, "text/plain", "OK");
 }
-static inline void setClock()  { gClock = CLOCK_INTERNAL; pushStateIfChanged(true); server.send(200,"text/plain","OK"); }
+static inline void setClock()  {
+  if (server.hasArg("v")) {
+    gClock = server.arg("v").toInt() == (int)CLOCK_PLANT ? CLOCK_PLANT : CLOCK_INTERNAL;
+  }
+  pushStateIfChanged(true);
+  server.send(200,"text/plain","OK");
+}
 static inline void setScale()  { if (server.hasArg("i")) gScale = (ScaleType)constrain(server.arg("i").toInt(), 0, 14); pushStateIfChanged(true); server.send(200,"text/plain","OK"); }
 
 static inline void setRoot() {
@@ -3458,7 +3459,10 @@ static inline bool applyParamByKey(const String& keyIn, const String& valueIn, S
     gMode = next;
     return true;
   }
-  if (key == "clock") { gClock = CLOCK_INTERNAL; return true; }
+  if (key == "clock") {
+    gClock = value.toInt() == (int)CLOCK_PLANT ? CLOCK_PLANT : CLOCK_INTERNAL;
+    return true;
+  }
   if (key == "scale") { gScale = (ScaleType)constrain(value.toInt(), 0, 14); return true; }
   if (key == "root") {
     int semi = constrain(value.toInt(), 0, 11);
@@ -5288,38 +5292,45 @@ void loop() {
   }
 
   static bool wasDawLocked = false;
-  const bool dawLocked = dawSyncLocked(now);
-  if (dawLocked) {
-    if (!wasDawLocked) T.nextTickMs = now + T.stepMs;
-    wasDawLocked = true;
-    uint8_t pending = gDawStepPending;
-    if (pending > 0) {
-      if (pending > 6) pending = 6;
-      gDawStepPending = (uint8_t)(gDawStepPending - pending);
-      while (pending--) transportTick();
-    }
+  if (gClock == CLOCK_PLANT) {
+    step_fromPlantTrigger();
+    T.nextTickMs = now + T.stepMs;
+    gDawStepPending = 0;
+    wasDawLocked = false;
   } else {
-    if (wasDawLocked) {
-      T.nextTickMs = now + T.stepMs;
-      wasDawLocked = false;
-    }
-    if ((int32_t)(now - T.nextTickMs) >= 0) {
-      uint8_t maxCatch = 4;
-      do {
-        uint32_t base = T.stepMs;
-        uint32_t swingAdd = 0;
-
-        T.swingOdd = !T.swingOdd;
-        if (swingPct && T.swingOdd) swingAdd = (base * swingPct) / 100;
-
-        T.nextTickMs += base + swingAdd;
-        transportTick();
-
-        if (--maxCatch == 0) break;
-      } while ((int32_t)(now - T.nextTickMs) >= 0);
-
-      if ((int32_t)(now - T.nextTickMs) > (int32_t)T.stepMs * 8) {
+    const bool dawLocked = dawSyncLocked(now);
+    if (dawLocked) {
+      if (!wasDawLocked) T.nextTickMs = now + T.stepMs;
+      wasDawLocked = true;
+      uint8_t pending = gDawStepPending;
+      if (pending > 0) {
+        if (pending > 6) pending = 6;
+        gDawStepPending = (uint8_t)(gDawStepPending - pending);
+        while (pending--) transportTick();
+      }
+    } else {
+      if (wasDawLocked) {
         T.nextTickMs = now + T.stepMs;
+        wasDawLocked = false;
+      }
+      if ((int32_t)(now - T.nextTickMs) >= 0) {
+        uint8_t maxCatch = 4;
+        do {
+          uint32_t base = T.stepMs;
+          uint32_t swingAdd = 0;
+
+          T.swingOdd = !T.swingOdd;
+          if (swingPct && T.swingOdd) swingAdd = (base * swingPct) / 100;
+
+          T.nextTickMs += base + swingAdd;
+          transportTick();
+
+          if (--maxCatch == 0) break;
+        } while ((int32_t)(now - T.nextTickMs) >= 0);
+
+        if ((int32_t)(now - T.nextTickMs) > (int32_t)T.stepMs * 8) {
+          T.nextTickMs = now + T.stepMs;
+        }
       }
     }
   }

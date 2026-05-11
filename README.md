@@ -187,10 +187,13 @@ Bridge rules:
 
 Live stability rules:
 - the desktop app now reuses its live control HTTP client instead of rebuilding it on every request
-- live snapshots are cached briefly and reused across UI polls so the plant monitor stays smoother
+- live snapshots are cached briefly and polled at a conservative rate so the ESP32 web server stays responsive while MIDI is running
+- desktop Wi-Fi discovery now treats a valid BECA `/api/info` response as enough to keep Wi-Fi Live Control eligible while Bridge owns USB
+- desktop Wi-Fi Live Control now prefers the firmware `/events` SSE stream for plant, MIDI, drum, and state updates; HTTP snapshots stay as a slower fallback/status check instead of the primary monitor path
+- desktop Wi-Fi snapshots use smaller state/plant/note/drum requests instead of the large combined `/api/live` response when the SSE stream is unavailable
 - if Wi-Fi or serial control stalls for a moment, the app keeps the last good live frame while it reconnects instead of dropping immediately into a dead-looking monitor
 - the control page now defaults back to `Setup` until a live target is actually ready
-- the firmware SSE stream sends lightweight keepalives and drops blocked clients, so stale browser sockets reconnect instead of wedging the main loop
+- the firmware SSE stream sends lightweight keepalives, allows the desktop app to subscribe over Wi-Fi, pushes a full state frame on connect, and drops blocked clients so stale browser sockets reconnect instead of wedging the main loop
 
 ## The Control View
 
@@ -309,6 +312,9 @@ If the 5th checklist LED is red or red-looking on boot, update to the current fi
 Plant trigger stability:
 - firmware now uses a small hysteresis window and re-arm delay on plant triggers
 - this reduces rapid stop-start retriggers when the sensor energy hovers near the threshold
+- `Clock: Plant` now disables the internal sequencer tick and only emits from real plant trigger edges
+- in plant-clock mode, random rest chance and no-repeat substitution are ignored so monitor/output notes stay tied to measured plant input
+- MIDI monitor notes now use a short UI-only hold window, so fast internal-clock notes and drum hits appear even when the musical gate is shorter than the app poll interval
 - the live plant scope, note, and drum streams target `24 fps` by default for smoother app feedback without pushing the ESP32 into a heavy 30 fps web workload
 - the app interpolates plant-scope frames at roughly `30 fps`, so the UI remains smooth even when the ESP32 or Wi-Fi link drops visual frames under load
 
@@ -394,6 +400,8 @@ If `DAW Sync` is on and no DAW clock is being received, BECA remains safe and st
 - close BECA and reopen it from the installed app entry
 - confirm the installed app is the current build, not an old portable copy
 - reconnect the device and let the app rediscover the best control transport
+- if the bridge shows connected but Windows moved the board to a new COM port, disconnect bridge, click `rescan device`, then reconnect bridge
+- avoid opening the browser UI, desktop Control view, and Max for Live control surface at the same time on the same BECA; use one live control surface plus the serial MIDI bridge
 
 ### 5th startup LED is red or yellow
 
