@@ -189,6 +189,7 @@ Live stability rules:
 - the desktop app now reuses its live control HTTP client instead of rebuilding it on every request
 - live snapshots are cached briefly and polled at a conservative rate so the ESP32 web server stays responsive while MIDI is running
 - desktop Wi-Fi discovery now treats a valid BECA `/api/info` response as enough to keep Wi-Fi Live Control eligible while Bridge owns USB
+- desktop Wi-Fi discovery also probes the current device-name `.local` address and prefers a ready Wi-Fi target over a USB target that Bridge is occupying
 - desktop Wi-Fi Live Control now prefers the firmware `/events` SSE stream for plant, MIDI, drum, and state updates; HTTP snapshots stay as a slower fallback/status check instead of the primary monitor path
 - desktop Wi-Fi snapshots use smaller state/plant/note/drum requests instead of the large combined `/api/live` response when the SSE stream is unavailable
 - if Wi-Fi or serial control stalls for a moment, the app keeps the last good live frame while it reconnects instead of dropping immediately into a dead-looking monitor

@@ -390,6 +390,17 @@ function currentWifiPayload() {
   };
 }
 
+function controlDiscoveryHints() {
+  const names = [
+    el.wifiName?.value,
+    el.targetName?.textContent
+  ]
+    .map((value) => String(value || "").trim())
+    .filter(Boolean);
+
+  return { names };
+}
+
 function describeTarget(target) {
   const parts = [];
   if (target.serial_port) parts.push(`USB ${target.serial_port}`);
@@ -446,7 +457,7 @@ async function refreshControlStatus({ forceReload = false } = {}) {
 
 async function refreshTargets({ forceReload = false } = {}) {
   try {
-    const result = await invoke("discover_beca_targets");
+    const result = await invoke("discover_beca_targets", { hints: controlDiscoveryHints() });
     el.deviceSelect.innerHTML = "";
 
     if (!result.targets.length) {

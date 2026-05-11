@@ -88,6 +88,7 @@ Named baseline for this cycle:
 - Reuses one native HTTP client for desktop live control instead of rebuilding the transport for each poll.
 - Keeps a short-lived cached live snapshot and polls conservatively so UI refreshes stay smooth without hammering USB or Wi-Fi.
 - Wi-Fi discovery keeps a target eligible after a valid BECA `/api/info` response, even when Bridge owns USB and deeper state probes are slow.
+- Wi-Fi discovery probes the current device-name `.local` address and automatically selects a ready Wi-Fi target when Bridge is using USB serial.
 - Wi-Fi Live Control prefers the firmware `/events` SSE stream for plant, MIDI, drum, and state updates; HTTP snapshots are kept as a slower fallback/status check.
 - Wi-Fi fallback snapshots use smaller state/plant/note/drum requests instead of the combined `/api/live` response to reduce ESP32 heap and socket pressure.
 - Holds the last good live frame briefly during reconnects so the plant monitor does not appear to freeze and reset on every transient delay.

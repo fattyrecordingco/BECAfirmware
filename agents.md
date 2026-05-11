@@ -14,6 +14,7 @@ Keep BECA stable, universally user-friendly, and easy to compile and flash in Ar
 ## Development Workflow for Agents
 
 - Always identify the ESP32 core version and confirm compatibility (target `2.0.14`).
+- Unless the user explicitly asks otherwise, apply completed changes all the way through the local test path: rebuild the app or firmware artifacts that changed, update the locally runnable app or connected device when feasible, and run the relevant verification so the user can test the actual product experience instead of only source edits.
 - If changing the BLE stack, document the exact library versions used.
 - If touching SSE or web UI, include rate limiting and state-diff strategy.
 - If editing `index.html`, always run `python3 make_index_header.py` and include the updated `index_html.h` in the final changes.

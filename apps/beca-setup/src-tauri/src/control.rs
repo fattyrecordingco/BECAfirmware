@@ -36,6 +36,12 @@ pub struct ControlTarget {
     pub issue: Option<String>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct ControlDiscoveryHints {
+    pub names: Option<Vec<String>>,
+    pub urls: Option<Vec<String>>,
+}
+
 #[derive(Debug, Serialize)]
 pub struct ControlDiscoveryResult {
     pub targets: Vec<ControlTarget>,
@@ -74,13 +80,14 @@ pub struct ControlSnapshot {
 #[tauri::command]
 pub async fn discover_beca_targets(
     state: State<'_, RuntimeState>,
+    hints: Option<ControlDiscoveryHints>,
 ) -> Result<ControlDiscoveryResult, String> {
     let bridge_running = state.bridge_running().await;
     let serial_probe_guard = state.serial_op_lock.try_lock().ok();
     let serial_targets =
         discover_serial_targets(bridge_running, serial_probe_guard.is_some()).await;
     drop(serial_probe_guard);
-    let network_targets = discover_network_targets().await;
+    let network_targets = discover_network_targets(hints).await;
     let targets = merge_targets(serial_targets, network_targets);
 
     {
@@ -90,12 +97,24 @@ pub async fn discover_beca_targets(
 
     let selected_id = {
         let mut selected = state.selected_control_target.lock().await;
-        let keep_current = selected
+        let current = selected
             .as_ref()
             .and_then(|id| targets.iter().find(|target| target.id == *id))
             .map(|target| target.id.clone());
+        let current_ready = selected
+            .as_ref()
+            .and_then(|id| targets.iter().find(|target| target.id == *id))
+            .filter(|target| target.control_ready && preferred_transport(target).is_some())
+            .map(|target| target.id.clone());
+        let ready_target = targets
+            .iter()
+            .find(|target| target.control_ready && preferred_transport(target).is_some())
+            .map(|target| target.id.clone());
 
-        let next = keep_current.or_else(|| targets.first().map(|target| target.id.clone()));
+        let next = current_ready
+            .or(ready_target)
+            .or(current)
+            .or_else(|| targets.first().map(|target| target.id.clone()));
         *selected = next.clone();
         next
     };
@@ -845,7 +864,7 @@ async fn discover_serial_targets(
     targets
 }
 
-async fn discover_network_targets() -> Vec<ControlTarget> {
+async fn discover_network_targets(hints: Option<ControlDiscoveryHints>) -> Vec<ControlTarget> {
     let client = match Client::builder()
         .timeout(Duration::from_millis(NETWORK_SCAN_TIMEOUT_MS))
         .pool_max_idle_per_host(0)
@@ -855,10 +874,10 @@ async fn discover_network_targets() -> Vec<ControlTarget> {
         Err(_) => return Vec::new(),
     };
 
-    let scan_urls = match local_scan_urls() {
-        Ok(urls) => urls,
-        Err(_) => return Vec::new(),
-    };
+    let mut scan_urls = local_scan_urls().unwrap_or_default();
+    scan_urls.extend(hinted_control_urls(hints.as_ref()));
+    scan_urls.sort();
+    scan_urls.dedup();
 
     let gate = Arc::new(Semaphore::new(16));
     let mut tasks = Vec::with_capacity(scan_urls.len());
@@ -880,6 +899,87 @@ async fn discover_network_targets() -> Vec<ControlTarget> {
         }
     }
     found
+}
+
+fn hinted_control_urls(hints: Option<&ControlDiscoveryHints>) -> Vec<String> {
+    let Some(hints) = hints else {
+        return Vec::new();
+    };
+
+    let mut urls = BTreeSet::new();
+    if let Some(raw_urls) = hints.urls.as_ref() {
+        for raw in raw_urls {
+            if let Some(url) = normalize_control_url(raw) {
+                urls.insert(url);
+            }
+        }
+    }
+    if let Some(names) = hints.names.as_ref() {
+        for raw in names {
+            if let Some(name) = normalize_mdns_name(raw) {
+                urls.insert(format!("http://{name}.local"));
+                urls.insert(format!("http://www.{name}.local"));
+            }
+        }
+    }
+
+    urls.into_iter().collect()
+}
+
+fn normalize_control_url(raw: &str) -> Option<String> {
+    let trimmed = raw.trim().trim_end_matches('/');
+    if trimmed.is_empty() {
+        return None;
+    }
+    if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
+        return Some(trimmed.to_string());
+    }
+    if trimmed.contains('.') || trimmed.contains(':') {
+        return Some(format!("http://{trimmed}"));
+    }
+    None
+}
+
+fn normalize_mdns_name(raw: &str) -> Option<String> {
+    let mut name = raw
+        .trim()
+        .trim_start_matches("http://")
+        .trim_start_matches("https://")
+        .trim_start_matches("www.")
+        .trim_end_matches('/')
+        .to_ascii_lowercase();
+    if let Some((host, _)) = name.split_once('/') {
+        name = host.to_string();
+    }
+    name = name.trim_end_matches(".local").to_string();
+
+    let mut clean = String::new();
+    let mut last_dash = false;
+    for ch in name.chars() {
+        if ch.is_ascii_alphanumeric() {
+            clean.push(ch);
+            last_dash = false;
+        } else if (ch == '-' || ch == '_' || ch.is_ascii_whitespace())
+            && !last_dash
+            && !clean.is_empty()
+        {
+            clean.push('-');
+            last_dash = true;
+        }
+        if clean.len() >= 63 {
+            break;
+        }
+    }
+
+    while clean.ends_with('-') {
+        clean.pop();
+    }
+
+    if clean.is_empty() {
+        None
+    } else {
+        Some(clean)
+    }
 }
 
 async fn probe_network_target(client: &Client, base_url: &str) -> anyhow::Result<ControlTarget> {
@@ -1334,6 +1434,24 @@ mod tests {
         });
 
         (format!("http://{}", addr), handle)
+    }
+
+    #[test]
+    fn mdns_hints_match_firmware_hostname_format() {
+        assert_eq!(normalize_mdns_name("beca-aj"), Some("beca-aj".to_string()));
+        assert_eq!(
+            normalize_mdns_name("http://www.beca-aj.local/setup"),
+            Some("beca-aj".to_string())
+        );
+
+        let urls = hinted_control_urls(Some(&ControlDiscoveryHints {
+            names: Some(vec!["BECA AJ".to_string()]),
+            urls: Some(vec!["192.168.1.42".to_string()]),
+        }));
+
+        assert!(urls.contains(&"http://beca-aj.local".to_string()));
+        assert!(urls.contains(&"http://www.beca-aj.local".to_string()));
+        assert!(urls.contains(&"http://192.168.1.42".to_string()));
     }
 
     #[tokio::test]
