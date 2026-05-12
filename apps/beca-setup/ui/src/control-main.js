@@ -1,13 +1,13 @@
 import { invoke } from "@tauri-apps/api/core";
 
 const POLL_INTERVAL_MS = {
-  network: 900,
-  serial: 900,
-  fallback: 900,
-  nativeStream: 10000,
-  stale: 1200,
+  network: 350,
+  serial: 500,
+  fallback: 500,
+  nativeStream: 5000,
+  stale: 750,
   render: 33,
-  error: 1800
+  error: 1200
 };
 const SCOPE_DELTA_EPSILON = 0.0012;
 const SCOPE_FRAME_HEARTBEAT_MS = 84;

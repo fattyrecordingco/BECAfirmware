@@ -1254,6 +1254,7 @@
         const LED_DISPLAY_OUTPUT = 2;
         const LED_DISPLAY_RANDOM = 3;
         const LED_OFF_COLOR = "rgba(0, 200, 83, 0.24)";
+        const CONTROL_INPUT_COMMIT_MS = 85;
         const METER_COLORS = ["#00c853", "#00c853", "#7fd900", "#d8df00", "#ffd400", "#ff9f00", "#ff5a00", "#f12129"];
         const SETTING_COLORS = [
           "#00c853",
@@ -1300,7 +1301,9 @@
           plantPoints: Array.from({ length: 42 }, () => 0),
           scopeValue: 0,
           syncLocked: false,
-          auxReady: true
+          auxReady: true,
+          pendingControlPosts: new Map(),
+          pendingControlTimer: null
         };
 
         const el = {
@@ -1662,9 +1665,38 @@
           });
         }
 
+        function queuePostSet(key, value) {
+          state.pendingControlPosts.set(key, value);
+          if (state.pendingControlTimer !== null) return;
+          state.pendingControlTimer = window.setTimeout(flushPendingPostSets, CONTROL_INPUT_COMMIT_MS);
+        }
+
+        async function flushPendingPostSets() {
+          const entries = Array.from(state.pendingControlPosts.entries());
+          state.pendingControlPosts.clear();
+          state.pendingControlTimer = null;
+          for (const [key, value] of entries) {
+            try {
+              await postSet(key, value, { quiet: true });
+            } catch (error) {}
+          }
+          if (state.pendingControlPosts.size > 0 && state.pendingControlTimer === null) {
+            state.pendingControlTimer = window.setTimeout(flushPendingPostSets, CONTROL_INPUT_COMMIT_MS);
+          }
+        }
+
+        async function commitPostSet(key, value) {
+          state.pendingControlPosts.delete(key);
+          await postSet(key, value);
+        }
+
         function bindRange(input, key, formatter, sink) {
-          input.addEventListener("input", () => sink(formatter(input.value)));
-          input.addEventListener("change", () => postSet(key, formatter(input.value)));
+          input.addEventListener("input", () => {
+            const next = formatter(input.value);
+            sink(next);
+            queuePostSet(key, next);
+          });
+          input.addEventListener("change", () => commitPostSet(key, formatter(input.value)));
         }
 
         function bindPreview(input, formatter, sink) {
@@ -1693,12 +1725,15 @@
           return type.includes("application/json") ? response.json() : response.text();
         }
 
-        async function postSet(key, value) {
+        async function postSet(key, value, options = {}) {
           try {
-            await postForm("/api/set", { key, value });
-            setBanner(`Updated ${key}.`, "ok");
+            const payload = await postForm("/api/set", { key, value });
+            if (payload && typeof payload === "object") {
+              applyStatePayload(payload);
+            }
+            if (!options.quiet) setBanner(`Updated ${key}.`, "ok");
           } catch (error) {
-            setBanner(`Could not update ${key}: ${error.message}`, "error");
+            if (!options.quiet) setBanner(`Could not update ${key}: ${error.message}`, "error");
             throw error;
           }
         }
@@ -1942,6 +1977,42 @@
           renderDrumGrid();
         }
 
+        let fallbackPollTimer = null;
+        let fallbackPolling = false;
+
+        function applyLivePayload(payload) {
+          if (!payload || typeof payload !== "object") return;
+          if (payload.state) applyStatePayload(payload.state);
+          if (payload.plant) addPlantPoint(payload.plant.value || 0);
+          if (payload.notes) applyNotesPayload(payload.notes);
+          if (payload.drum) applyDrumPayload(payload.drum);
+        }
+
+        function stopFallbackPolling() {
+          fallbackPolling = false;
+          if (fallbackPollTimer !== null) {
+            window.clearTimeout(fallbackPollTimer);
+            fallbackPollTimer = null;
+          }
+        }
+
+        function startFallbackPolling() {
+          if (fallbackPolling) return;
+          fallbackPolling = true;
+          const tick = async () => {
+            if (!fallbackPolling) return;
+            try {
+              applyLivePayload(await getJson("/api/live"));
+              setConnection("BECA live", "status-live");
+            } catch (error) {
+              setConnection("Reconnecting...", "status-warn");
+            } finally {
+              if (fallbackPolling) fallbackPollTimer = window.setTimeout(tick, 700);
+            }
+          };
+          tick();
+        }
+
         async function refreshAll() {
           setConnection("Refreshing BECA...", "status-live");
           setBanner("Refreshing live state…");
@@ -1976,18 +2047,31 @@
 
         function setupRealtime() {
           const events = new EventSource("/events");
+          let streamHealthy = false;
+          const streamFallbackTimer = window.setTimeout(() => {
+            if (streamHealthy) return;
+            events.close();
+            startFallbackPolling();
+          }, 1800);
           events.addEventListener("hello", () => {
             setConnection("BECA live", "status-live");
           });
           events.addEventListener("state", (event) => {
             try {
+              streamHealthy = true;
+              window.clearTimeout(streamFallbackTimer);
+              stopFallbackPolling();
               applyStatePayload(JSON.parse(event.data));
             } catch (error) {}
           });
           events.addEventListener("scope", (event) => {
+            streamHealthy = true;
+            window.clearTimeout(streamFallbackTimer);
+            stopFallbackPolling();
             addPlantPoint(event.data);
           });
           events.addEventListener("note", (event) => {
+            streamHealthy = true;
             const [, velRaw, , listRaw] = String(event.data).split("|");
             const list = (listRaw || "")
               .split(",")
@@ -1996,14 +2080,17 @@
             applyNotesPayload({ notes: list, vel: Number(velRaw || 0) });
           });
           events.addEventListener("drum", (event) => {
+            streamHealthy = true;
             const [hit, sel] = String(event.data)
               .split("|")
               .map((value) => Number(value || 0));
             applyDrumPayload({ hit, sel });
           });
           events.onerror = () => {
+            window.clearTimeout(streamFallbackTimer);
+            events.close();
             setConnection("Reconnecting...", "status-warn");
-            setBanner("Live stream interrupted. BECA is reconnecting…", "warn");
+            startFallbackPolling();
           };
         }
 

@@ -73,6 +73,7 @@ That script:
 - bridge connect state is a toggle, not separate connect and stop buttons
 - BECA supports internal clock and plant-triggered clock; plant clock must remain edge-triggered by real plant input
 - live control prefers verified Wi-Fi and falls back to direct serial control when needed
-- Wi-Fi live control uses the firmware `/events` stream for monitor/state updates when available; HTTP polling remains conservative enough for ESP32 core 2.0.14 WebServer while serial MIDI is active
+- Wi-Fi live control uses the firmware `/events` stream for monitor/state updates when available; fallback HTTP snapshots use `/api/live`, short cache windows, and coalesced app adjustments to keep ESP32 core 2.0.14 responsive while serial MIDI is active
+- The bundled bridge sends a lightweight serial-host heartbeat so firmware streams Serial MIDI only when the bridge/control channel is actually draining USB, preventing idle COM-port backpressure from making Wi-Fi control feel frozen
 - if release behavior changes, update the root [README.md](../../README.md) in the same commit
 

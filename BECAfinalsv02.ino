@@ -3,7 +3,7 @@
  * ESP32-PICO-V3 (Arduino "ESP32 Dev Module")
  *
  * Stability + UI smoothness version:
- * - Coexistence: WiFi modem sleep enabled when BLE active
+ * - Coexistence: WiFi modem sleep enabled when BLE is active
  * - SSE: scope throttled + state pushed only when changed
  * - WDT friendly: frequent delay(0)
  *
@@ -165,21 +165,39 @@ extern Preferences prefs;
 extern float restProb;
 extern bool avoidRepeats;
 
+uint32_t gSerialHostActiveUntilMs = 0;
+
+static inline bool serialHostActive(uint32_t now = millis()) {
+  return (int32_t)(now - gSerialHostActiveUntilMs) < 0;
+}
+
+static inline bool serialMidiAllowed(uint32_t now = millis()) {
+  return serialHostActive(now);
+}
+
+static inline bool serialTryWrite(const char* data, size_t len) {
+  if (len == 0) return true;
+  if (Serial.availableForWrite() < (int)len) return false;
+  return Serial.write((const uint8_t*)data, len) == len;
+}
+
 static inline void serialJsonMidiEvent(uint8_t note, uint8_t vel, uint8_t ch, bool on) {
   if (!gSerialJsonTelemetry) return;
+  if (!serialMidiAllowed()) return;
   char line[128];
   int n = snprintf(
     line, sizeof(line),
     "{\"type\":\"midi\",\"note\":%u,\"vel\":%u,\"ch\":%u,\"on\":%u,\"ts\":%lu}\n",
     (unsigned)note, (unsigned)vel, (unsigned)ch, on ? 1u : 0u, (unsigned long)millis()
   );
-  if (n > 0) Serial.write((const uint8_t*)line, (size_t)n);
+  if (n > 0) serialTryWrite(line, (size_t)n);
 }
 
 static inline void serialMidiSend3(uint8_t st, uint8_t d1, uint8_t d2) {
+  if (!serialMidiAllowed()) return;
   char line[24];
   int n = snprintf(line, sizeof(line), "@M %02X %02X %02X\n", st, d1 & 0x7F, d2 & 0x7F);
-  if (n > 0) Serial.write((const uint8_t*)line, (size_t)n);
+  if (n > 0) serialTryWrite(line, (size_t)n);
 }
 
 static inline void midiSendNoteOn(uint8_t note, uint8_t vel, uint8_t ch) {
@@ -2599,7 +2617,9 @@ static inline void transportTick() {
 
 // -------------------- WebServer + SSE --------------------
 WebServer server(80);
-static inline void noteWebActivity() {}
+static inline void noteWebActivity() {
+  // Hook kept so all web handlers consistently mark user-facing activity.
+}
 
 static inline void sendNoCacheHeaders() {
   noteWebActivity();
@@ -2615,6 +2635,7 @@ uint32_t sseConnectedAt = 0;
 uint32_t lastSseScopeMs = 0;
 uint32_t lastSseKeepAliveMs = 0;
 uint32_t lastStatePushMs = 0;
+uint8_t sseBackpressureCount = 0;
 
 // MIDI note grid SSE throttle
 uint32_t lastSseNoteMs = 0;
@@ -2684,21 +2705,30 @@ static inline bool sseCanWrite(size_t need) {
   return avail < 0 || avail >= (int)need;
 }
 
+static inline void sseDropClient() {
+  if (sseConnected) sseClient.stop();
+  sseConnected = false;
+  sseBackpressureCount = 0;
+}
+
 static inline void sseSend(const char* event, const char* data) {
   if (!sseConnected) return;
-  if (!sseClient.connected()) { sseConnected = false; return; }
+  if (!sseClient.connected()) { sseDropClient(); return; }
 
-  const bool mustDeliver = (strcmp(event, "hello") == 0) || (strcmp(event, "state") == 0);
+  const bool isHello = (strcmp(event, "hello") == 0);
   const size_t need = 8 + strlen(event) + 7 + strlen(data) + 2;
-  if (!mustDeliver && !sseCanWrite(need)) {
+  if (!isHello && !sseCanWrite(need)) {
+    if (sseBackpressureCount < 255) sseBackpressureCount++;
+    if (sseBackpressureCount >= 4) sseDropClient();
     return;
   }
 
   const size_t n1 = sseClient.printf("event: %s\n", event);
   const size_t n2 = sseClient.printf("data: %s\n\n", data);
   if (n1 == 0 || n2 == 0) {
-    sseClient.stop();
-    sseConnected = false;
+    sseDropClient();
+  } else {
+    sseBackpressureCount = 0;
   }
   delay(0);
 }
@@ -2722,6 +2752,7 @@ static inline void handleEvents() {
   lastNoteHash = 0;
   lastSseDrumMs = 0;
   lastDrumHash = 0;
+  sseBackpressureCount = 0;
 
   sseClient.println("HTTP/1.1 200 OK");
   sseClient.println("Content-Type: text/event-stream");
@@ -3646,6 +3677,17 @@ static inline void handleApiStateGet() {
   server.send(200, "application/json", buf);
 }
 
+static inline void sendStateJsonResponseAndPush() {
+  sendNoCacheHeaders();
+  char buf[1500];
+  renderStateJson(buf, sizeof(buf), true);
+  server.send(200, "application/json", buf);
+  if (sseConnected && sseClient.connected()) {
+    sseSend("state", buf);
+    lastStatePushMs = millis();
+  }
+}
+
 static inline String buildApiPlantJson() {
   char buf[224];
   snprintf(
@@ -3720,27 +3762,83 @@ static inline void handleApiDrumGet() {
   server.send(200, "application/json", buildApiDrumJson());
 }
 
-static inline String buildApiLiveJson() {
-  char stateBuf[1500];
+static inline size_t renderApiLiveJson(char* out, size_t outLen) {
+  if (outLen == 0) return 0;
+  static char stateBuf[1500];
+  static char plantBuf[224];
+  static char notesBuf[360];
+  static char drumBuf[128];
+
   renderStateJson(stateBuf, sizeof(stateBuf), false);
 
-  String out;
-  out.reserve(2400);
-  out += "{\"state\":";
-  out += stateBuf;
-  out += ",\"plant\":";
-  out += buildApiPlantJson();
-  out += ",\"notes\":";
-  out += buildApiNotesJson();
-  out += ",\"drum\":";
-  out += buildApiDrumJson();
-  out += "}";
-  return out;
+  snprintf(
+    plantBuf, sizeof(plantBuf),
+    "{\"value\":%.4f,\"raw\":%u,\"raw2\":%u,\"connected\":%u,\"plant_auto_mute\":%u,\"ts\":%lu}",
+    (double)gScopePlant,
+    (unsigned)gPlantRaw1,
+    (unsigned)gPlantRaw2,
+    plantJackConnected() ? 1u : 0u,
+    plantAutoMuteActive() ? 1u : 0u,
+    (unsigned long)millis()
+  );
+
+  uint8_t uiNotes[MAX_ACTIVE_NOTES];
+  const uint8_t uiCount = uiCollectHeldNotes(uiNotes, MAX_ACTIVE_NOTES);
+  char notesCsv[196];
+  int n = 0;
+  for (uint8_t i = 0; i < uiCount; ++i) {
+    n += snprintf(
+      notesCsv + n,
+      sizeof(notesCsv) - (size_t)n,
+      "%u%s",
+      (unsigned)uiNotes[i],
+      (i + 1u < uiCount) ? "," : ""
+    );
+    if (n >= (int)sizeof(notesCsv) - 8) break;
+  }
+  if (uiCount == 0) notesCsv[0] = '\0';
+
+  snprintf(
+    notesBuf, sizeof(notesBuf),
+    "{\"held\":%u,\"vel\":%u,\"count\":%u,\"notes\":[%s],\"last\":%u,\"last_vel\":%u,\"ts\":%lu}",
+    uiCount > 0 ? 1u : 0u,
+    (unsigned)lastVel,
+    (unsigned)uiCount,
+    notesCsv,
+    (unsigned)lastNote,
+    (unsigned)lastVel,
+    (unsigned long)millis()
+  );
+
+  snprintf(
+    drumBuf, sizeof(drumBuf),
+    "{\"hit\":%u,\"sel\":%u,\"ts\":%lu}",
+    (unsigned)drumHitMaskNow(),
+    (unsigned)((uint8_t)drumSelMask),
+    (unsigned long)millis()
+  );
+
+  const int written = snprintf(
+    out, outLen,
+    "{\"state\":%s,\"plant\":%s,\"notes\":%s,\"drum\":%s}",
+    stateBuf,
+    plantBuf,
+    notesBuf,
+    drumBuf
+  );
+  if (written < 0) {
+    out[0] = '\0';
+    return 0;
+  }
+  out[outLen - 1] = '\0';
+  return strlen(out);
 }
 
 static inline void handleApiLiveGet() {
   sendNoCacheHeaders();
-  server.send(200, "application/json", buildApiLiveJson());
+  static char buf[2400];
+  renderApiLiveJson(buf, sizeof(buf));
+  server.send(200, "application/json", buf);
 }
 
 static inline void handleApiParamsGet() {
@@ -3775,8 +3873,7 @@ static inline void handleApiSetPost() {
     return;
   }
 
-  pushStateIfChanged(true);
-  handleApiStateGet();
+  sendStateJsonResponseAndPush();
 }
 
 static inline void randomize() {
@@ -4573,8 +4670,15 @@ static inline void handleSerialControlLine(const char *line) {
   if (!line || strncmp(line, "@C ", 3) != 0) return;
   const char *cmd = line + 3;
 
+  gSerialHostActiveUntilMs = millis() + 3000u;
+
   if (strcmp(cmd, "PING") == 0) {
     serialCtrlReply("PING", "{\"ok\":1}");
+    return;
+  }
+
+  if (strcmp(cmd, "SERIAL_HOST") == 0) {
+    serialCtrlReply("SERIAL_HOST", "{\"ok\":1}");
     return;
   }
 
@@ -4596,7 +4700,9 @@ static inline void handleSerialControlLine(const char *line) {
   }
 
   if (strcmp(cmd, "LIVE") == 0) {
-    serialCtrlReply("LIVE", buildApiLiveJson());
+    static char buf[2400];
+    renderApiLiveJson(buf, sizeof(buf));
+    serialCtrlReply("LIVE", String(buf));
     return;
   }
 
@@ -4859,7 +4965,9 @@ static inline void handleSerialControlLine(const char *line) {
 }
 
 static inline void serviceSerialControlCommands() {
+  const uint32_t now = millis();
   while (Serial.available() > 0) {
+    gSerialHostActiveUntilMs = now + 3000u;
     int raw = Serial.read();
     if (raw < 0) break;
     char ch = (char)raw;
@@ -4891,13 +4999,17 @@ static inline void serviceSerialControlCommands() {
   }
 }
 
-static inline bool tryConnectSTA(const String &ssid, const String &pass, uint32_t timeoutMs = 9000) {
+static inline bool tryConnectSTA(const String &ssid, const String &pass, uint32_t timeoutMs = 16000) {
   // Force clean STA start (prevents half-connected states + 0.0.0.0)
   WiFi.disconnect(true, true);
   delay(100);
 
   WiFi.mode(WIFI_STA);
   delay(100);
+  WiFi.persistent(false);
+  WiFi.setAutoReconnect(true);
+  WiFi.setSleep(true);
+  esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
 
   normalizeDeviceName();
   WiFi.setHostname(gDeviceName.c_str());
@@ -4932,7 +5044,7 @@ static inline bool tryConnectSTA(const String &ssid, const String &pass, uint32_
     Serial.print(gDeviceName);
     Serial.println(".local/");
 
-    // IMPORTANT: enable modem sleep only AFTER DHCP is done
+    // Required by ESP32 core 2.0.14 when Wi-Fi and Bluetooth are both active.
     esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
 
     return true;
@@ -5105,18 +5217,25 @@ void setup() {
 
   const bool hadSavedWifi = gStaSsid.length() > 0;
   bool staOK = false;
-  if (gStaSsid.length()) staOK = tryConnectSTA(gStaSsid, gStaPass);
+  if (gStaSsid.length()) {
+    staOK = tryConnectSTA(gStaSsid, gStaPass, 16000);
+    if (!staOK) {
+      Serial.println("@W WIFI BOOT RETRY");
+      delay(500);
+      delay(0);
+      staOK = tryConnectSTA(gStaSsid, gStaPass, 16000);
+    }
+  }
   if (!staOK) startAPPortal();
   setStartupCheck(
     STARTUP_CHECK_NETWORK,
     staOK ? STARTUP_CHECK_OK : (hadSavedWifi ? STARTUP_CHECK_FAIL : STARTUP_CHECK_WARN)
   );
 
-  WiFi.setAutoReconnect(true);
   WiFi.persistent(false);
-
-  // Coexistence-safe
+  WiFi.setAutoReconnect(true);
   WiFi.setSleep(true);
+  esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
 
   gAuxUnlockAtMs = millis() + AUX_STARTUP_LOCK_MS;
   gSynth.setDrumsEnabled(true);
@@ -5275,7 +5394,7 @@ void loop() {
       plantAutoMuteActive() ? 1u : 0u,
       (unsigned long)now
     );
-    if (n > 0) Serial.write((const uint8_t*)line, (size_t)n);
+    if (n > 0) serialTryWrite(line, (size_t)n);
   }
 
   // Process incoming BLE-MIDI realtime clock/messages.
@@ -5350,7 +5469,8 @@ void loop() {
 
   if (outputModeIsSerial() && (millis() - gLastSerialBeaconMs) > SERIAL_MIDI_BEACON_MS) {
     gLastSerialBeaconMs = millis();
-    Serial.println("@I MIDIMODE SERIAL READY");
+    static const char readyLine[] = "@I MIDIMODE SERIAL READY\n";
+    if (serialHostActive()) serialTryWrite(readyLine, sizeof(readyLine) - 1u);
   }
 
   if ((int32_t)(now - gLastSynthUnderrunLogMs) >= 1000) {
@@ -5452,7 +5572,12 @@ void loop() {
       // Keepalive
       if ((int32_t)(now - lastSseKeepAliveMs) >= 2000) {
         lastSseKeepAliveMs = now;
-        if (sseCanWrite(8)) sseClient.print(": ping\n\n");
+        if (sseCanWrite(8)) {
+          sseClient.print(": ping\n\n");
+          sseBackpressureCount = 0;
+        } else {
+          sseDropClient();
+        }
       }
     }
   }

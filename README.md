@@ -187,11 +187,13 @@ Bridge rules:
 
 Live stability rules:
 - the desktop app now reuses its live control HTTP client instead of rebuilding it on every request
-- live snapshots are cached briefly and polled at a conservative rate so the ESP32 web server stays responsive while MIDI is running
+- live snapshots are cached briefly and refreshed at a tighter rate; the fallback path uses one `/api/live` snapshot instead of a four-request snapshot cycle
 - desktop Wi-Fi discovery now treats a valid BECA `/api/info` response as enough to keep Wi-Fi Live Control eligible while Bridge owns USB
 - desktop Wi-Fi discovery also probes the current device-name `.local` address and prefers a ready Wi-Fi target over a USB target that Bridge is occupying
-- desktop Wi-Fi Live Control now prefers the firmware `/events` SSE stream for plant, MIDI, drum, and state updates; HTTP snapshots stay as a slower fallback/status check instead of the primary monitor path
-- desktop Wi-Fi snapshots use smaller state/plant/note/drum requests instead of the large combined `/api/live` response when the SSE stream is unavailable
+- desktop Wi-Fi Live Control now prefers the firmware `/events` SSE stream for plant, MIDI, drum, and state updates; HTTP snapshots stay as a fallback/status check instead of the primary monitor path
+- desktop and browser controls coalesce rapid encoder/range changes and apply returned state immediately, so the device mirrors live adjustments without flooding the ESP32 web server
+- the device-hosted browser UI closes an unhealthy SSE stream and falls back to `/api/live` polling, so the page stays live without browser reconnect churn
+- Serial MIDI output now requires the BECA bridge heartbeat or recent serial control input before streaming `@M` packets; this keeps an idle/unread COM port from starving Wi-Fi control, while the official bridge keeps Serial MIDI active during performance use
 - if Wi-Fi or serial control stalls for a moment, the app keeps the last good live frame while it reconnects instead of dropping immediately into a dead-looking monitor
 - the control page now defaults back to `Setup` until a live target is actually ready
 - the firmware SSE stream sends lightweight keepalives, allows the desktop app to subscribe over Wi-Fi, pushes a full state frame on connect, and drops blocked clients so stale browser sockets reconnect instead of wedging the main loop
@@ -445,6 +447,8 @@ Replace the port with the real device port:
 ```bash
 platformio run -t upload --upload-port COM4
 ```
+
+The PlatformIO target uses [tools/platformio_post_upload_reset.py](./tools/platformio_post_upload_reset.py) to briefly reopen the serial port after flashing. This mirrors opening Serial Monitor on CH340 ESP32 boards that run the sketch after upload but do not bring Wi-Fi/HTTP back cleanly until the USB serial lines are released.
 
 ## Release Workflow
 

@@ -13,7 +13,7 @@ use std::sync::{
     Arc,
 };
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 #[derive(Debug, Parser)]
 #[command(name = "beca-bridge")]
@@ -170,8 +170,15 @@ fn run_bridge_session(
 ) -> Result<()> {
     let mut reader = BufReader::new(port);
     let mut line = String::new();
+    let mut next_heartbeat = Instant::now();
 
     while running.load(Ordering::SeqCst) {
+        if Instant::now() >= next_heartbeat {
+            let _ = reader.get_mut().write_all(b"@C SERIAL_HOST\n");
+            let _ = reader.get_mut().flush();
+            next_heartbeat = Instant::now() + Duration::from_millis(1000);
+        }
+
         line.clear();
         match reader.read_line(&mut line) {
             Ok(0) => continue,

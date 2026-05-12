@@ -78,6 +78,7 @@ Named baseline for this cycle:
 - Lists MIDI output destinations.
 - Starts bundled native `beca-bridge` process.
 - Auto-reconnects on serial disconnect.
+- Sends a lightweight serial-host heartbeat while running so firmware only streams Serial MIDI when USB is actively drained; this protects Wi-Fi live control from idle COM-port backpressure.
 - Supports `Test Note` to verify MIDI routing.
 - Includes an optional `MicroFreak mode` toggle for direct Arturia MicroFreak note routing over the serial bridge.
 - Restores the last selected bridge routing + MicroFreak toggles on next launch.
@@ -86,11 +87,13 @@ Named baseline for this cycle:
 
 5. **Live Control**
 - Reuses one native HTTP client for desktop live control instead of rebuilding the transport for each poll.
-- Keeps a short-lived cached live snapshot and polls conservatively so UI refreshes stay smooth without hammering USB or Wi-Fi.
+- Keeps a short-lived cached live snapshot and uses rate-limited state diffs so UI refreshes stay smooth without hammering USB or Wi-Fi.
 - Wi-Fi discovery keeps a target eligible after a valid BECA `/api/info` response, even when Bridge owns USB and deeper state probes are slow.
 - Wi-Fi discovery probes the current device-name `.local` address and automatically selects a ready Wi-Fi target when Bridge is using USB serial.
-- Wi-Fi Live Control prefers the firmware `/events` SSE stream for plant, MIDI, drum, and state updates; HTTP snapshots are kept as a slower fallback/status check.
-- Wi-Fi fallback snapshots use smaller state/plant/note/drum requests instead of the combined `/api/live` response to reduce ESP32 heap and socket pressure.
+- Wi-Fi Live Control prefers the firmware `/events` SSE stream for plant, MIDI, drum, and state updates; HTTP snapshots are kept as a fallback/status check.
+- Wi-Fi fallback snapshots use the combined `/api/live` response to avoid four sequential HTTP round trips when the SSE stream is unavailable.
+- Rapid on-screen encoder and browser range changes are coalesced before sending so live control stays responsive without event flooding.
+- The firmware-hosted control page closes an unhealthy SSE stream and falls back to `/api/live` polling, which keeps the page usable on conservative browser or socket stacks without reconnect churn.
 - Holds the last good live frame briefly during reconnects so the plant monitor does not appear to freeze and reset on every transient delay.
 - Defaults back to `Setup` until a control-ready target exists, with one always-visible device/status strip above both views.
 - Matches the setup/control 575x842 frame sizing and keeps the 8-leaf LED mirror orientation stable in active color states.

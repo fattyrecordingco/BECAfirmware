@@ -799,6 +799,7 @@
       const PLANT_RENDER_MS = 33;
       const PLANT_BLEND_LIVE = 0.42;
       const PLANT_RENDER_EPSILON = 0.0012;
+      const MAX_ADJUSTMENT_BATCH_STEPS = 12;
 
         const state = {
           selectedSettingId: "sensitivity",
@@ -1825,9 +1826,13 @@
         renderMidi();
       }
 
-      async function applyAdjustmentStep(direction) {
+      async function applyAdjustmentBatch(steps) {
+        const count = Math.min(Math.abs(steps), MAX_ADJUSTMENT_BATCH_STEPS);
+        if (!count) return;
+        const direction = steps > 0 ? 1 : -1;
+
         if (state.volumeModeActive) {
-          const next = clamp((state.live.master ?? 0.25) + direction * 0.01, 0, 1);
+          const next = clamp((state.live.master ?? 0.25) + direction * count * 0.01, 0, 1);
           state.live.master = next;
           state.live.led_display_mode = LED_DISPLAY_VOLUME;
           state.live.encoder_led_count = clamp(Math.round(next * LED_SLOT_COUNT), 1, LED_SLOT_COUNT);
@@ -1841,8 +1846,11 @@
           setOutputMode("aux out");
           await postSet("outputmode", "aux out", { refreshState: false });
         }
-        const nextValue = setting.step(direction);
-        applyOptimisticSettingValue(setting.id, nextValue);
+        let nextValue = setting.read();
+        for (let i = 0; i < count; i += 1) {
+          nextValue = setting.step(direction);
+          applyOptimisticSettingValue(setting.id, nextValue);
+        }
         await setting.write(nextValue);
       }
 
@@ -1851,9 +1859,13 @@
         state.flushingAdjustments = true;
         runExclusive(async () => {
           while (state.pendingAdjustment !== 0) {
-            const step = state.pendingAdjustment > 0 ? 1 : -1;
-            state.pendingAdjustment -= step;
-            await applyAdjustmentStep(step);
+            const batch = clamp(
+              state.pendingAdjustment,
+              -MAX_ADJUSTMENT_BATCH_STEPS,
+              MAX_ADJUSTMENT_BATCH_STEPS
+            );
+            state.pendingAdjustment -= batch;
+            await applyAdjustmentBatch(batch);
           }
         }).catch((error) => {
           console.error("Adjustment failed", error);

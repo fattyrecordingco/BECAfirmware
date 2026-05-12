@@ -13,10 +13,10 @@ use tauri::State;
 use tokio::sync::Semaphore;
 
 const NETWORK_SCAN_TIMEOUT_MS: u64 = 2_500;
-const CONTROL_HTTP_TIMEOUT_MS: u64 = 6_000;
-const SNAPSHOT_REFRESH_MS_NETWORK: u64 = 900;
-const SNAPSHOT_REFRESH_MS_SERIAL: u64 = 900;
-const SNAPSHOT_REFRESH_MS_FALLBACK: u64 = 900;
+const CONTROL_HTTP_TIMEOUT_MS: u64 = 5_000;
+const SNAPSHOT_REFRESH_MS_NETWORK: u64 = 350;
+const SNAPSHOT_REFRESH_MS_SERIAL: u64 = 500;
+const SNAPSHOT_REFRESH_MS_FALLBACK: u64 = 500;
 const SNAPSHOT_STALE_GRACE_MS: u64 = 8_000;
 const SNAPSHOT_ERROR_BACKOFF_MS: u64 = 1_200;
 
@@ -637,43 +637,16 @@ async fn snapshot_over_network_with_client(
 )> {
     let empty_query = BTreeMap::new();
     let empty_form = BTreeMap::new();
-    let state = network_request_with_client(
+    let live = network_request_with_client(
         client,
         base_url,
         "GET",
-        "/api/state",
+        "/api/live",
         &empty_query,
         &empty_form,
     )
     .await?;
-    let plant = network_request_with_client(
-        client,
-        base_url,
-        "GET",
-        "/api/plant",
-        &empty_query,
-        &empty_form,
-    )
-    .await?;
-    let notes = network_request_with_client(
-        client,
-        base_url,
-        "GET",
-        "/api/notes",
-        &empty_query,
-        &empty_form,
-    )
-    .await?;
-    let drum = network_request_with_client(
-        client,
-        base_url,
-        "GET",
-        "/api/drum",
-        &empty_query,
-        &empty_form,
-    )
-    .await?;
-    Ok((state, plant, notes, drum))
+    split_live_snapshot_response(live)
 }
 
 async fn snapshot_over_serial(
