@@ -233,6 +233,10 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
+          if [ "${BECA_SIGNED_RELEASE:-}" != "true" ]; then
+            unset APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID KEYCHAIN_PASSWORD
+            export APPLE_SIGNING_IDENTITY="-"
+          fi
           log_file="$(mktemp)"
           if npm run tauri build 2>&1 | tee "${log_file}"; then
             exit 0
