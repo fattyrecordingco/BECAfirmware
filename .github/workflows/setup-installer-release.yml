@@ -32,6 +32,7 @@ jobs:
       KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
       WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
       WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+      BECA_SIGNED_RELEASE: ${{ vars.BECA_SIGNED_RELEASE }}
 
     steps:
       - name: Checkout
@@ -51,7 +52,11 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE) -or [string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE_PASSWORD)) {
+          if ($env:BECA_SIGNED_RELEASE -ne "true") {
+            "### Windows signing" >> $env:GITHUB_STEP_SUMMARY
+            "" >> $env:GITHUB_STEP_SUMMARY
+            "BECA_SIGNED_RELEASE is not true. This run will publish unsigned beta installers." >> $env:GITHUB_STEP_SUMMARY
+          } elseif ([string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE) -or [string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE_PASSWORD)) {
             "### Windows signing" >> $env:GITHUB_STEP_SUMMARY
             "" >> $env:GITHUB_STEP_SUMMARY
             "WINDOWS_CERTIFICATE secrets are not configured. This run will publish unsigned beta installers." >> $env:GITHUB_STEP_SUMMARY
@@ -65,16 +70,22 @@ jobs:
         run: |
           set -euo pipefail
           missing=0
-          for name in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD KEYCHAIN_PASSWORD APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
-            if [ -z "${!name:-}" ]; then
-              missing=1
-            fi
-          done
+          if [ "${BECA_SIGNED_RELEASE:-}" != "true" ]; then
+            missing=1
+          else
+            for name in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD KEYCHAIN_PASSWORD APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+              if [ -z "${!name:-}" ]; then
+                missing=1
+              fi
+            done
+          fi
           {
             echo "### macOS signing"
             echo
-            if [ "${missing}" -eq 1 ]; then
-              echo "Apple Developer ID/notarization secrets are not configured. This run will publish unsigned beta installers."
+            if [ "${BECA_SIGNED_RELEASE:-}" != "true" ]; then
+              echo "BECA_SIGNED_RELEASE is not true. This run will publish unsigned beta installers."
+            elif [ "${missing}" -eq 1 ]; then
+              echo "Apple Developer ID/notarization secrets are incomplete. This run will publish unsigned beta installers."
             else
               echo "Apple signing and notarization secrets detected."
             fi
@@ -99,14 +110,23 @@ jobs:
         run: |
           set -euo pipefail
           missing=0
-          for name in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD KEYCHAIN_PASSWORD APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
-            if [ -z "${!name:-}" ]; then
-              missing=1
-            fi
-          done
+          if [ "${BECA_SIGNED_RELEASE:-}" != "true" ]; then
+            missing=1
+          else
+            for name in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD KEYCHAIN_PASSWORD APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+              if [ -z "${!name:-}" ]; then
+                missing=1
+              fi
+            done
+          fi
           if [ "${missing}" -eq 1 ]; then
             echo "Skipping macOS signing/notarization for unsigned beta build."
             echo "APPLE_SIGNING_IDENTITY=-" >> "${GITHUB_ENV}"
+            echo "APPLE_CERTIFICATE=" >> "${GITHUB_ENV}"
+            echo "APPLE_CERTIFICATE_PASSWORD=" >> "${GITHUB_ENV}"
+            echo "APPLE_ID=" >> "${GITHUB_ENV}"
+            echo "APPLE_PASSWORD=" >> "${GITHUB_ENV}"
+            echo "APPLE_TEAM_ID=" >> "${GITHUB_ENV}"
             exit 0
           fi
           echo "${APPLE_CERTIFICATE}" | base64 --decode > certificate.p12
@@ -237,7 +257,7 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE) -or [string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE_PASSWORD)) {
+          if ($env:BECA_SIGNED_RELEASE -ne "true" -or [string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE) -or [string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE_PASSWORD)) {
             Write-Host "Skipping Windows signing for unsigned beta build."
             exit 0
           }

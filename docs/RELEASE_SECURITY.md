@@ -53,6 +53,7 @@ lintian BECA_0.1.7_amd64.deb || true
 
 These are optional for unsigned beta artifacts and required for trusted production installers.
 
+- `BECA_SIGNED_RELEASE`: repository variable. Set to `true` only when real Windows and Apple signing credentials are configured.
 - `WINDOWS_CERTIFICATE`: base64-encoded Windows code-signing `.pfx`
 - `WINDOWS_CERTIFICATE_PASSWORD`: password for the `.pfx`
 - `APPLE_CERTIFICATE`: base64-encoded Developer ID Application `.p12`
