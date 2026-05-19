@@ -98,56 +98,28 @@ The project is pinned to these known-good versions:
 
 BECA is open source under the [MIT License](./LICENSE). The open-source license lets the code be shared and built publicly; it is separate from Windows code-signing and Apple Developer ID certificates.
 
-Download from the GitHub repository website:
+Start here:
 
-1. Open https://github.com/fattyrecordingco/BECAfirmware
+1. Read the full [BECA First Launch Guide](./docs/user/READ_BEFORE_FIRST_LAUNCH.md).
 2. Open the [installers](./installers) folder.
-3. Choose your OS folder:
-   - [installers/windows](./installers/windows) -> `BECA_*_x64-setup.exe`
-   - [installers/macos](./installers/macos) -> `BECA_*.dmg`
-   - [installers/linux](./installers/linux) -> `BECA_*.AppImage` or `.deb`
-4. Click the installer file, then use GitHub's download button.
-5. Read [Read Before First Launch](./docs/user/READ_BEFORE_FIRST_LAUNCH.md) before opening BECA.
+3. Download the installer for your computer.
+4. Install BECA.
+5. Restart if a USB serial driver was installed or updated.
+6. Open BECA, connect the device by USB, then flash `Latest Stable`.
 
-You can also use the GitHub Releases page:
+Installer files:
 
-- https://github.com/fattyrecordingco/BECAfirmware/releases
-- choose the newest `setup-v*` release
+- Windows x64: [installers/windows/BECA_0.1.7_x64-setup.exe](./installers/windows/BECA_0.1.7_x64-setup.exe)
+- macOS Apple Silicon: [installers/macos/BECA_0.1.7_aarch64.dmg](./installers/macos/BECA_0.1.7_aarch64.dmg)
+- macOS Intel: [installers/macos/BECA_0.1.7_x64.dmg](./installers/macos/BECA_0.1.7_x64.dmg)
+- Linux AppImage: [installers/linux/BECA_0.1.7_amd64.AppImage](./installers/linux/BECA_0.1.7_amd64.AppImage)
+- Linux Debian package: [installers/linux/BECA_0.1.7_amd64.deb](./installers/linux/BECA_0.1.7_amd64.deb)
 
-Current beta note: until Windows and Apple signing certificates are configured, CI can publish unsigned beta installers. Unsigned builds are useful for testing the app package, but they are not the same as trusted production installers. Do not disable OS security protections to run BECA; for normal macOS double-click installation from a download, the DMG should be signed and notarized.
+On the GitHub website, click the installer file, then use the download button.
+
+Current beta note: these installers may be unsigned until Windows and Apple signing certificates are configured. Unsigned builds are useful for testing, but they are not trusted production installers. Do not disable OS security protections to run BECA; for normal public use, use signed Windows builds and signed/notarized macOS builds.
 
 The app can flash the newest stable firmware from the release manifest. A source checkout is only needed for development or manual PlatformIO flashing.
-
-### Windows
-
-Use the installer:
-- GitHub Release asset: `BECA_*_x64-setup.exe`
-- repo mirror when present: [installers/windows](./installers/windows)
-
-Install flow:
-1. run the installer
-2. allow bundled USB serial driver installers when prompted
-3. restart Windows if any driver was installed or updated
-4. open `BECA` from Windows Search or Start Menu
-5. if the device is not detected, install the correct USB serial driver
-
-Common drivers:
-- CP210x: https://www.silabs.com/developers/usb-to-uart-bridge-vcp-drivers
-- CH340/CH341: https://www.wch-ic.com/downloads/CH341SER_EXE.html
-
-### macOS
-
-If a DMG is published for the release:
-1. open the DMG
-2. drag `BECA` into `Applications`
-3. read `Read Before First Launch`
-4. open it from `Applications`
-
-Official macOS release builds should be signed and notarized. Unsigned beta DMGs may be blocked by Gatekeeper after download; verify the checksum and use a signed/notarized build for normal users instead of disabling OS security.
-
-### Linux
-
-Use the published AppImage or `.deb` from the release, or the local mirror at [installers/linux](./installers/linux). Linux usually includes CH340/CH341 and CP210x kernel drivers already; if the serial port is permission-blocked, add your user to `dialout` or `uucp`, then log out and back in.
 
 ## License
 

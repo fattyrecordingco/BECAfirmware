@@ -5,9 +5,9 @@ If you are browsing the GitHub repository website, open:
 `installers/`
 
 Use the folder for your OS:
-- `windows/` -> `BECA_*_x64-setup.exe`
-- `macos/` -> `BECA_*.dmg`
-- `linux/` -> `BECA_*.AppImage` (or `.deb`)
+- `windows/` -> `BECA_0.1.7_x64-setup.exe`
+- `macos/` -> `BECA_0.1.7_aarch64.dmg` for Apple Silicon or `BECA_0.1.7_x64.dmg` for Intel
+- `linux/` -> `BECA_0.1.7_amd64.AppImage` or `BECA_0.1.7_amd64.deb`
 
 Click the installer file on GitHub, then use the download button. Read `docs/user/READ_BEFORE_FIRST_LAUNCH.md` before opening the app.
 
