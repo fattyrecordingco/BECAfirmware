@@ -375,11 +375,12 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          if [ -z "$(git status --porcelain -- installers)" ]; then
+          git add -A -f installers
+
+          if git diff --cached --quiet -- installers; then
             echo "No installer mirror changes."
             exit 0
           fi
 
-          git add -A -f installers
           git commit -m "chore(setup): sync installer mirror (windows/macos/linux)"
           git push origin HEAD:master
