@@ -106,6 +106,7 @@ jobs:
           done
           if [ "${missing}" -eq 1 ]; then
             echo "Skipping macOS signing/notarization for unsigned beta build."
+            echo "APPLE_SIGNING_IDENTITY=-" >> "${GITHUB_ENV}"
             exit 0
           fi
           echo "${APPLE_CERTIFICATE}" | base64 --decode > certificate.p12
