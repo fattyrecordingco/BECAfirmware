@@ -19,4 +19,3 @@
 
   MessageBox MB_ICONINFORMATION|MB_OK "BECA installation is complete. Restart this computer before first use if any USB serial driver was installed or updated."
 !macroend
-

@@ -6,4 +6,3 @@ Read first:
 - [Read Before First Launch](../../docs/user/READ_BEFORE_FIRST_LAUNCH.md)
 
 After installing USB serial drivers, restart Windows before opening BECA.
-
