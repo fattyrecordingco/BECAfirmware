@@ -39,5 +39,6 @@ The desktop app flashes only release firmware built for the ESP32 Arduino core `
 
 ## 5. Security Notes
 
-Official BECA release installers are signed or notarized where the OS supports it. If Windows SmartScreen or macOS Gatekeeper reports a problem, verify you downloaded the newest `setup-v0.1.7` release from the official BECA repository and compare the published SHA256 checksum. Do not disable OS security features.
+BECA is open source under the MIT License. That license allows the code to be shared and built publicly, but it does not replace Windows code-signing or Apple Developer ID notarization.
 
+Official BECA production installers should be signed or notarized where the OS supports it. Current beta installers may be unsigned until those certificates are configured. If Windows SmartScreen or macOS Gatekeeper reports a problem, verify you downloaded the newest `setup-v0.1.7` build from the official BECA repository and compare the published SHA256 checksum. Do not disable OS security features.

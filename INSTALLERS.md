@@ -1,6 +1,6 @@
 # BECA Installers (All OS)
 
-If you downloaded the `master` ZIP, open:
+If you are browsing the GitHub repository website, open:
 
 `installers/`
 
@@ -9,8 +9,15 @@ Use the folder for your OS:
 - `macos/` -> `BECA_*.dmg`
 - `linux/` -> `BECA_*.AppImage` (or `.deb`)
 
+Click the installer file on GitHub, then use the download button. Read `docs/user/READ_BEFORE_FIRST_LAUNCH.md` before opening the app.
+
 Current app baseline in repo config:
 - `0.1.7` (`apps/beca-setup/src-tauri/tauri.conf.json`)
+
+Current beta note:
+- installers may be unsigned until Windows and Apple signing certificates are configured
+- unsigned installers are for beta testing only
+- do not disable OS security protections to run a blocked download
 
 If an OS folder is empty, pull latest published setup release assets into this mirror:
 

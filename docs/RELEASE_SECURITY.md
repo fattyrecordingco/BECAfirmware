@@ -2,6 +2,8 @@
 
 Use this for `setup-v0.1.7` and later BECA desktop releases.
 
+BECA source is MIT licensed. The open-source license does not replace platform trust requirements: Windows SmartScreen reputation still depends on code signing, and macOS normal download installs require Developer ID signing plus notarization.
+
 ## Windows
 
 Sign and verify the Windows setup executable and MSI with a real code-signing certificate:
@@ -49,6 +51,8 @@ lintian BECA_0.1.7_amd64.deb || true
 
 ## Required CI Secrets
 
+These are optional for unsigned beta artifacts and required for trusted production installers.
+
 - `WINDOWS_CERTIFICATE`: base64-encoded Windows code-signing `.pfx`
 - `WINDOWS_CERTIFICATE_PASSWORD`: password for the `.pfx`
 - `APPLE_CERTIFICATE`: base64-encoded Developer ID Application `.p12`
@@ -57,4 +61,3 @@ lintian BECA_0.1.7_amd64.deb || true
 - `APPLE_ID`: Apple ID email for notarization
 - `APPLE_PASSWORD`: app-specific password for notarization
 - `APPLE_TEAM_ID`: Apple Developer Team ID
-

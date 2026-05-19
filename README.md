@@ -96,14 +96,25 @@ The project is pinned to these known-good versions:
 
 ## Install The BECA App
 
-Download the app from the GitHub Releases page for this repository:
+BECA is open source under the [MIT License](./LICENSE). The open-source license lets the code be shared and built publicly; it is separate from Windows code-signing and Apple Developer ID certificates.
+
+Download from the GitHub repository website:
+
+1. Open https://github.com/fattyrecordingco/BECAfirmware
+2. Open the [installers](./installers) folder.
+3. Choose your OS folder:
+   - [installers/windows](./installers/windows) -> `BECA_*_x64-setup.exe`
+   - [installers/macos](./installers/macos) -> `BECA_*.dmg`
+   - [installers/linux](./installers/linux) -> `BECA_*.AppImage` or `.deb`
+4. Click the installer file, then use GitHub's download button.
+5. Read [Read Before First Launch](./docs/user/READ_BEFORE_FIRST_LAUNCH.md) before opening BECA.
+
+You can also use the GitHub Releases page:
 
 - https://github.com/fattyrecordingco/BECAfirmware/releases
 - choose the newest `setup-v*` release
-- Windows users should download `BECA_*_x64-setup.exe`
-- macOS users should download `BECA_*.dmg` when published
-- Linux users should download `BECA_*.AppImage` or `.deb` when published
-- read [Read Before First Launch](./docs/user/READ_BEFORE_FIRST_LAUNCH.md) before opening BECA
+
+Current beta note: until Windows and Apple signing certificates are configured, CI can publish unsigned beta installers. Unsigned builds are useful for testing the app package, but they are not the same as trusted production installers. Do not disable OS security protections to run BECA; for normal macOS double-click installation from a download, the DMG should be signed and notarized.
 
 The app can flash the newest stable firmware from the release manifest. A source checkout is only needed for development or manual PlatformIO flashing.
 
@@ -132,11 +143,15 @@ If a DMG is published for the release:
 3. read `Read Before First Launch`
 4. open it from `Applications`
 
-Official macOS release builds should be signed and notarized. If macOS reports a problem, verify the release download and checksum instead of disabling OS security.
+Official macOS release builds should be signed and notarized. Unsigned beta DMGs may be blocked by Gatekeeper after download; verify the checksum and use a signed/notarized build for normal users instead of disabling OS security.
 
 ### Linux
 
 Use the published AppImage or `.deb` from the release, or the local mirror at [installers/linux](./installers/linux). Linux usually includes CH340/CH341 and CP210x kernel drivers already; if the serial port is permission-blocked, add your user to `dialout` or `uucp`, then log out and back in.
+
+## License
+
+BECA is released under the [MIT License](./LICENSE).
 
 ## First-Time Setup In The App
 

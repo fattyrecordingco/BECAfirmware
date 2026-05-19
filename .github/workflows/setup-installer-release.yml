@@ -47,25 +47,38 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Require Windows signing secrets
+      - name: Report Windows signing mode
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE) -or [string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE_PASSWORD)) {
-            throw "WINDOWS_CERTIFICATE and WINDOWS_CERTIFICATE_PASSWORD secrets are required for setup-v0.1.7 release builds."
+            "### Windows signing" >> $env:GITHUB_STEP_SUMMARY
+            "" >> $env:GITHUB_STEP_SUMMARY
+            "WINDOWS_CERTIFICATE secrets are not configured. This run will publish unsigned beta installers." >> $env:GITHUB_STEP_SUMMARY
+          } else {
+            "Windows signing certificate detected. Installers will be signed after bundling." >> $env:GITHUB_STEP_SUMMARY
           }
 
-      - name: Require macOS signing and notarization secrets
+      - name: Report macOS signing mode
         if: runner.os == 'macOS'
         shell: bash
         run: |
           set -euo pipefail
+          missing=0
           for name in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD KEYCHAIN_PASSWORD APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
             if [ -z "${!name:-}" ]; then
-              echo "${name} secret is required for setup-v0.1.7 release builds."
-              exit 1
+              missing=1
             fi
           done
+          {
+            echo "### macOS signing"
+            echo
+            if [ "${missing}" -eq 1 ]; then
+              echo "Apple Developer ID/notarization secrets are not configured. This run will publish unsigned beta installers."
+            else
+              echo "Apple signing and notarization secrets detected."
+            fi
+          } >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Install Linux app dependencies
         if: runner.os == 'Linux'
@@ -85,6 +98,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          missing=0
+          for name in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD KEYCHAIN_PASSWORD APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+            if [ -z "${!name:-}" ]; then
+              missing=1
+            fi
+          done
+          if [ "${missing}" -eq 1 ]; then
+            echo "Skipping macOS signing/notarization for unsigned beta build."
+            exit 0
+          fi
           echo "${APPLE_CERTIFICATE}" | base64 --decode > certificate.p12
           security create-keychain -p "${KEYCHAIN_PASSWORD}" build.keychain
           security default-keychain -s build.keychain
@@ -188,6 +211,10 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE) -or [string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE_PASSWORD)) {
+            Write-Host "Skipping Windows signing for unsigned beta build."
+            exit 0
+          }
           New-Item -ItemType Directory -Force certificate | Out-Null
           Set-Content -Path certificate\certificate.base64 -Value $env:WINDOWS_CERTIFICATE
           certutil -decode certificate\certificate.base64 certificate\certificate.pfx
