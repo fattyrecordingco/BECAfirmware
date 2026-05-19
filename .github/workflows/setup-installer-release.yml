@@ -198,11 +198,37 @@ jobs:
           chmod +x apps/beca-setup/src-tauri/binaries/beca-flasher
           chmod +x apps/beca-setup/src-tauri/binaries/espflash
 
-      - name: Build Tauri bundle
+      - name: Build Tauri bundle (Windows)
+        if: runner.os == 'Windows'
         working-directory: apps/beca-setup
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npm run tauri build
+
+      - name: Build Tauri bundle (macOS/Linux)
+        if: runner.os != 'Windows'
+        working-directory: apps/beca-setup
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          log_file="$(mktemp)"
+          if npm run tauri build 2>&1 | tee "${log_file}"; then
+            exit 0
+          fi
+          tail_file="$(mktemp)"
+          tail -n 120 "${log_file}" > "${tail_file}" || true
+          escaped_tail="$(sed -e 's/%/%25/g' -e 's/\r/%0D/g' -e 's/\n/%0A/g' "${tail_file}")"
+          echo "::error title=Tauri bundle failed::${escaped_tail}"
+          {
+            echo "### Tauri bundle failure"
+            echo
+            echo '```text'
+            cat "${tail_file}"
+            echo '```'
+          } >> "${GITHUB_STEP_SUMMARY}" || true
+          exit 1
 
       - name: Sign Windows installers
         if: runner.os == 'Windows'
