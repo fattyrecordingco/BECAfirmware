@@ -218,7 +218,10 @@ jobs:
             exit 0
           fi
           tail_file="$(mktemp)"
-          tail -n 120 "${log_file}" > "${tail_file}" || true
+          grep -Ei '(^error|error:|failed|failure|panicked|caused by|not found|no such file|exit status|could not)' "${log_file}" | tail -n 40 > "${tail_file}" || true
+          if [ ! -s "${tail_file}" ]; then
+            tail -n 40 "${log_file}" > "${tail_file}" || true
+          fi
           escaped_tail="$(sed -e 's/%/%25/g' -e 's/\r/%0D/g' -e 's/\n/%0A/g' "${tail_file}")"
           echo "::error title=Tauri bundle failed::${escaped_tail}"
           {
