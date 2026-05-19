@@ -117,7 +117,7 @@ if (!layout.includes("[]")) {
   throw new Error(`Visible horizontal overflow detected: ${layout}`);
 }
 
-run(["snapshot", "-i"], { allowFailure: true });
+run(["snapshot"], { allowFailure: true });
 run(["errors"], { allowFailure: true });
 run(["console"], { allowFailure: true });
 

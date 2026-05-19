@@ -23,6 +23,15 @@ jobs:
         os: [windows-latest, macos-latest, ubuntu-22.04]
 
     runs-on: ${{ matrix.os }}
+    env:
+      APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+      WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+      WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
 
     steps:
       - name: Checkout
@@ -38,6 +47,26 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Require Windows signing secrets
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE) -or [string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE_PASSWORD)) {
+            throw "WINDOWS_CERTIFICATE and WINDOWS_CERTIFICATE_PASSWORD secrets are required for setup-v0.1.7 release builds."
+          }
+
+      - name: Require macOS signing and notarization secrets
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD KEYCHAIN_PASSWORD APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+            if [ -z "${!name:-}" ]; then
+              echo "${name} secret is required for setup-v0.1.7 release builds."
+              exit 1
+            fi
+          done
+
       - name: Install Linux app dependencies
         if: runner.os == 'Linux'
         run: |
@@ -50,6 +79,26 @@ jobs:
             libudev-dev \
             librsvg2-dev \
             patchelf
+
+      - name: Configure macOS signing and notarization
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "${APPLE_CERTIFICATE}" | base64 --decode > certificate.p12
+          security create-keychain -p "${KEYCHAIN_PASSWORD}" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "${KEYCHAIN_PASSWORD}" build.keychain
+          security set-keychain-settings -t 3600 -u build.keychain
+          security import certificate.p12 -k build.keychain -P "${APPLE_CERTIFICATE_PASSWORD}" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "${KEYCHAIN_PASSWORD}" build.keychain
+          CERT_INFO="$(security find-identity -v -p codesigning build.keychain | grep "Developer ID Application" | head -n 1)"
+          CERT_ID="$(echo "${CERT_INFO}" | awk -F'"' '{print $2}')"
+          if [ -z "${CERT_ID}" ]; then
+            echo "Developer ID Application identity not found."
+            exit 1
+          fi
+          echo "APPLE_SIGNING_IDENTITY=${CERT_ID}" >> "${GITHUB_ENV}"
 
       - name: Install JS dependencies
         working-directory: apps/beca-setup
@@ -129,7 +178,31 @@ jobs:
         working-directory: apps/beca-setup
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_SIGNING_IDENTITY: ${{ env.APPLE_SIGNING_IDENTITY }}
         run: npm run tauri build
+
+      - name: Sign Windows installers
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force certificate | Out-Null
+          Set-Content -Path certificate\certificate.base64 -Value $env:WINDOWS_CERTIFICATE
+          certutil -decode certificate\certificate.base64 certificate\certificate.pfx
+          $securePassword = ConvertTo-SecureString -String $env:WINDOWS_CERTIFICATE_PASSWORD -Force -AsPlainText
+          Import-PfxCertificate -FilePath certificate\certificate.pfx -CertStoreLocation Cert:\CurrentUser\My -Password $securePassword | Out-Null
+          $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Recurse -Filter signtool.exe |
+            Where-Object { $_.FullName -match "\\x64\\signtool.exe$" } |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1 -ExpandProperty FullName
+          if (-not $signtool) { throw "signtool.exe not found. Install Windows SDK on the runner." }
+          $files = Get-ChildItem target\release\bundle -Recurse -Include *.exe,*.msi
+          foreach ($file in $files) {
+            & $signtool sign /fd SHA256 /td SHA256 /tr http://timestamp.digicert.com /a $file.FullName
+            & $signtool verify /pa /v $file.FullName
+          }
 
       - name: Upload installer artifacts
         uses: actions/upload-artifact@v4
@@ -173,7 +246,7 @@ jobs:
           set -euo pipefail
 
           artifact_root="${RUNNER_TEMP}/beca-setup-artifacts"
-          mirror_root="${GITHUB_WORKSPACE}/apps/beca-setup/dist-installer"
+          mirror_root="${GITHUB_WORKSPACE}/installers"
           staged_root="${RUNNER_TEMP}/beca-setup-staged-mirror"
 
           rm -rf "${staged_root}"
@@ -207,11 +280,15 @@ jobs:
             exit 1
           fi
 
-          rm -rf "${mirror_root}/windows" "${mirror_root}/macos" "${mirror_root}/linux"
           mkdir -p "${mirror_root}/windows" "${mirror_root}/macos" "${mirror_root}/linux"
+          find "${mirror_root}/windows" "${mirror_root}/macos" "${mirror_root}/linux" \
+            -maxdepth 1 -type f ! -name '.gitkeep' ! -name 'README.md' -delete
           cp -a "${staged_root}/windows/." "${mirror_root}/windows/"
           cp -a "${staged_root}/macos/." "${mirror_root}/macos/"
           cp -a "${staged_root}/linux/." "${mirror_root}/linux/"
+          (cd "${mirror_root}/windows" && find . -maxdepth 1 -type f ! -name '.gitkeep' ! -name 'README.md' -printf '%P\0' | sort -z | xargs -0 -r sha256sum > SHA256SUMS)
+          (cd "${mirror_root}/macos" && find . -maxdepth 1 -type f ! -name '.gitkeep' ! -name 'README.md' -printf '%P\0' | sort -z | xargs -0 -r sha256sum > SHA256SUMS)
+          (cd "${mirror_root}/linux" && find . -maxdepth 1 -type f ! -name '.gitkeep' ! -name 'README.md' -printf '%P\0' | sort -z | xargs -0 -r sha256sum > SHA256SUMS)
           touch "${mirror_root}/windows/.gitkeep" "${mirror_root}/macos/.gitkeep" "${mirror_root}/linux/.gitkeep"
 
       - name: Commit installer mirror updates
@@ -221,11 +298,11 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          if git diff --quiet -- apps/beca-setup/dist-installer; then
+          if git diff --quiet -- installers; then
             echo "No installer mirror changes."
             exit 0
           fi
 
-          git add -A -f apps/beca-setup/dist-installer
+          git add -A -f installers
           git commit -m "chore(setup): sync installer mirror (windows/macos/linux)"
           git push origin HEAD:master

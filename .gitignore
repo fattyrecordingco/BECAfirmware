@@ -42,6 +42,15 @@ apps/beca-setup/dist-installer/linux/*
 !apps/beca-setup/dist-installer/windows/.gitkeep
 !apps/beca-setup/dist-installer/macos/.gitkeep
 !apps/beca-setup/dist-installer/linux/.gitkeep
+installers/windows/*
+installers/macos/*
+installers/linux/*
+!installers/windows/.gitkeep
+!installers/macos/.gitkeep
+!installers/linux/.gitkeep
+!installers/windows/README.md
+!installers/macos/README.md
+!installers/linux/README.md
 
 # App runtime files
 *.zip

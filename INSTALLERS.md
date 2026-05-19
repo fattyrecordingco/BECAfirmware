@@ -2,7 +2,7 @@
 
 If you downloaded the `master` ZIP, open:
 
-`apps/beca-setup/dist-installer/`
+`installers/`
 
 Use the folder for your OS:
 - `windows/` -> `BECA_*_x64-setup.exe`
@@ -10,12 +10,12 @@ Use the folder for your OS:
 - `linux/` -> `BECA_*.AppImage` (or `.deb`)
 
 Current app baseline in repo config:
-- `0.1.5` (`apps/beca-setup/src-tauri/tauri.conf.json`)
+- `0.1.7` (`apps/beca-setup/src-tauri/tauri.conf.json`)
 
 If an OS folder is empty, pull latest published setup release assets into this mirror:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File tools/sync_setup_installers.ps1 -Tag setup-v0.1.5 -Clean -RequireAllPlatforms
+powershell -ExecutionPolicy Bypass -File tools/sync_setup_installers.ps1 -Tag setup-v0.1.7 -Clean -RequireAllPlatforms
 ```
 
 Repository automation:

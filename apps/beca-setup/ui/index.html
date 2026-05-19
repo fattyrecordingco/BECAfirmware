@@ -147,6 +147,23 @@
         <button id="btn-export" type="button">export</button>
         <pre id="log-view"></pre>
       </div>
+
+      <section id="first-launch-panel" class="first-launch-panel support-hidden" aria-labelledby="first-launch-title">
+        <div class="first-launch-sheet">
+          <h2 id="first-launch-title">read before first launch</h2>
+          <ul>
+            <li>Install USB serial drivers when BECA is not detected: CH340/CH341 or CP210x.</li>
+            <li>Restart the computer after driver installation before connecting BECA again.</li>
+            <li>Use a USB data cable, not a charge-only cable.</li>
+            <li>Flash the latest stable firmware before the first performance session.</li>
+            <li>Use one live control surface at a time while the MIDI bridge is running.</li>
+          </ul>
+          <div class="first-launch-actions">
+            <a class="setup-button" href="https://github.com/fattyrecordingco/BECAfirmware/blob/master/docs/user/READ_BEFORE_FIRST_LAUNCH.md" target="_blank" rel="noreferrer">full manual</a>
+            <button id="btn-first-launch-read" class="setup-button setup-button-solid" type="button">I have read this</button>
+          </div>
+        </div>
+      </section>
     </main>
 
     <script type="module" src="./src/main.js"></script>

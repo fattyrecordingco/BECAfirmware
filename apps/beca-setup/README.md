@@ -58,12 +58,12 @@ npm run release:windows
 
 That script:
 1. builds the Tauri app
-2. refreshes `dist-installer/windows/` with the current installer and portable executable
+2. refreshes `../../installers/windows/` with the current installer and portable executable
 
 ## Output Locations
 
 - portable app: `target/release/beca-setup.exe`
-- synced Windows artifacts: `dist-installer/windows/`
+- synced Windows artifacts: `../../installers/windows/`
 - NSIS installer: `target/release/bundle/nsis/`
 - MSI: `target/release/bundle/msi/`
 

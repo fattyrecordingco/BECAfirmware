@@ -1,0 +1,10 @@
+#!/bin/sh
+set -e
+
+echo "BECA installed."
+echo "If BECA cannot access the USB serial port, add your user to the serial group and log out/in:"
+echo "  sudo usermod -aG dialout $SUDO_USER"
+echo "Some distributions use the 'uucp' group instead of 'dialout'."
+echo "Read /usr/share/doc/beca/READ_BEFORE_FIRST_LAUNCH.md if it is present in your package, or use docs/user/READ_BEFORE_FIRST_LAUNCH.md from the release."
+
+exit 0

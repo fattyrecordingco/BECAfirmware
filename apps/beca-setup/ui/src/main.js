@@ -37,6 +37,8 @@ const el = {
   btnOpenControl: document.querySelector("#btn-open-control"),
   btnOpenSetup: document.querySelector("#btn-open-setup"),
   btnRefreshControl: document.querySelector("#btn-refresh-control"),
+  firstLaunchPanel: document.querySelector("#first-launch-panel"),
+  btnFirstLaunchRead: document.querySelector("#btn-first-launch-read"),
   deviceSelect: document.querySelector("#device-select"),
   selectedTargetStatus: document.querySelector("#selected-target-status"),
   targetName: document.querySelector("#target-name"),
@@ -65,6 +67,7 @@ const state = {
 
 const VIEW_STORAGE_KEY = "beca-active-screen";
 const BRIDGE_PREFS_STORAGE_KEY = "beca-bridge-prefs-v1";
+const FIRST_LAUNCH_STORAGE_KEY = "beca-read-before-first-launch-v1";
 const SETUP_FRAME_WIDTH = 575;
 const SETUP_FRAME_HEIGHT = 842;
 const SETUP_SCALE_SAFETY_PX = 2;
@@ -140,6 +143,18 @@ function syncSetupTopIcons(screenName) {
   el.btnOpenSetup.classList.toggle("setup-top-icon-muted", !setupActive);
   el.btnOpenSetup.disabled = setupActive;
   el.btnOpenSetup.setAttribute("aria-current", setupActive ? "page" : "false");
+}
+
+function showFirstLaunchPanelIfNeeded() {
+  if (!el.firstLaunchPanel || window.localStorage.getItem(FIRST_LAUNCH_STORAGE_KEY) === "1") {
+    return;
+  }
+  el.firstLaunchPanel.classList.remove("support-hidden");
+}
+
+function acknowledgeFirstLaunchPanel() {
+  window.localStorage.setItem(FIRST_LAUNCH_STORAGE_KEY, "1");
+  el.firstLaunchPanel?.classList.add("support-hidden");
 }
 
 function isTextEntryTarget(target) {
@@ -1045,6 +1060,7 @@ el.btnOpenSetup?.addEventListener("click", () => {
   switchScreen("setup");
 });
 el.btnRefreshControl.addEventListener("click", refreshControlSurfacePage);
+el.btnFirstLaunchRead?.addEventListener("click", acknowledgeFirstLaunchPanel);
 el.deviceSelect.addEventListener("change", (event) => {
   chooseTarget(event.target.value, { forceReload: true }).catch((err) =>
     addLog(`Device selection failed: ${err}`)
@@ -1090,6 +1106,7 @@ window.visualViewport?.addEventListener("resize", setSetupScale);
 
 async function init() {
   setSetupScale();
+  showFirstLaunchPanelIfNeeded();
   switchScreen("setup");
   setBridgeUi(false);
   resetWifiSection();

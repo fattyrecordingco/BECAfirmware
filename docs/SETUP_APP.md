@@ -6,9 +6,10 @@
 
 For complete user instructions (Windows/macOS/Linux install, DAW setup, and BECA control page usage), use:
 - `README.md` sections `10` through `16`
+- `docs/user/READ_BEFORE_FIRST_LAUNCH.md` before first app launch
 
 Current setup app version baseline in this branch:
-- `0.1.4`
+- `0.1.7`
 
 ## Final architecture choice
 
@@ -33,7 +34,7 @@ Current setup app version baseline in this branch:
 
 - Windows installer (`.exe` / NSIS bundle)
 - macOS disk image (`.dmg`)
-- Linux installer bundle is temporarily paused while CI packaging is stabilized.
+- Linux AppImage and `.deb` bundles from CI.
 - Embedded firmware flasher flow (no Arduino IDE required)
 - Embedded native bridge binary (no Python/pip install path)
 - Hidden logs with expandable diagnostics panel and export zip
@@ -156,6 +157,7 @@ Notes:
 4. App release branch: `official-app-updates`.
 5. Publish BECA release tag as `setup-vx.y.z` to trigger `.github/workflows/setup-installer-release.yml`.
 6. Keep firmware and app releases separate so manifest lookup remains stable.
+7. Sync release assets into the top-level `installers/` mirror for the beta package.
 
 ## Local development
 
@@ -196,8 +198,7 @@ Logs are written to the app data folder:
 
 - Prefer installer package (`BECA_*_x64-setup.exe`) for end users.
 - Portable mode must ship `BECA.exe`, `WebView2Loader.dll`, and `binaries/` together.
-- If WebView2 runtime is missing, install:
-  - https://go.microsoft.com/fwlink/p/?LinkId=2124703
+- The NSIS installer embeds the WebView2 bootstrapper and checks for a minimum WebView2 runtime.
 
 ## Firmware manifest troubleshooting
 

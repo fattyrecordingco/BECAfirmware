@@ -2,7 +2,7 @@ param(
   [string]$Repo = "fattyrecordingco/BECAfirmware",
   [string]$TagPrefix = "setup-v",
   [string]$Tag = "",
-  [string]$OutputRoot = "apps/beca-setup/dist-installer",
+  [string]$OutputRoot = "installers",
   [switch]$Clean,
   [switch]$RequireAllPlatforms
 )
@@ -36,7 +36,7 @@ foreach ($dir in $platformDirs.Values) {
 if ($Clean) {
   foreach ($dir in $platformDirs.Values) {
     Get-ChildItem -Path $dir -File -ErrorAction SilentlyContinue |
-      Where-Object { $_.Name -ne ".gitkeep" } |
+      Where-Object { $_.Name -ne ".gitkeep" -and $_.Name -ne "README.md" } |
       Remove-Item -Force -ErrorAction SilentlyContinue
   }
 }
@@ -82,6 +82,21 @@ foreach ($asset in $release.assets) {
     Platform = $platform
     File     = $destination
     SizeMB   = [math]::Round(($asset.size / 1MB), 2)
+  }
+}
+
+foreach ($platform in $platformDirs.Keys) {
+  $dir = $platformDirs[$platform]
+  $files = Get-ChildItem -Path $dir -File -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -ne ".gitkeep" -and $_.Name -ne "README.md" -and $_.Name -ne "SHA256SUMS" } |
+    Sort-Object Name
+  $sumPath = Join-Path $dir "SHA256SUMS"
+  if ($files.Count -gt 0) {
+    $lines = foreach ($file in $files) {
+      $hash = (Get-FileHash -Algorithm SHA256 -Path $file.FullName).Hash.ToLowerInvariant()
+      "$hash  $($file.Name)"
+    }
+    Set-Content -Path $sumPath -Value $lines -Encoding ascii
   }
 }
 

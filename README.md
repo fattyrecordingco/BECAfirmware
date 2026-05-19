@@ -13,7 +13,7 @@ The old browser page on the device is now a fallback and recovery path, not the 
 
 ## Current Release Baseline
 
-- app: `setup-v0.1.5`
+- app: `setup-v0.1.7`
 - firmware release tag: `firmware-v1.0.9`
 - primary branch for release-ready source: `master`
 - firmware build target: ESP32 Arduino core `2.0.14`
@@ -103,6 +103,7 @@ Download the app from the GitHub Releases page for this repository:
 - Windows users should download `BECA_*_x64-setup.exe`
 - macOS users should download `BECA_*.dmg` when published
 - Linux users should download `BECA_*.AppImage` or `.deb` when published
+- read [Read Before First Launch](./docs/user/READ_BEFORE_FIRST_LAUNCH.md) before opening BECA
 
 The app can flash the newest stable firmware from the release manifest. A source checkout is only needed for development or manual PlatformIO flashing.
 
@@ -110,13 +111,14 @@ The app can flash the newest stable firmware from the release manifest. A source
 
 Use the installer:
 - GitHub Release asset: `BECA_*_x64-setup.exe`
-- repo mirror when present: [apps/beca-setup/dist-installer/windows](./apps/beca-setup/dist-installer/windows)
+- repo mirror when present: [installers/windows](./installers/windows)
 
 Install flow:
 1. run the installer
-2. open `BECA` from Windows Search or Start Menu
-3. if Windows asks for WebView2, install it and reopen the app
-4. if the device is not detected, install the correct USB serial driver
+2. allow bundled USB serial driver installers when prompted
+3. restart Windows if any driver was installed or updated
+4. open `BECA` from Windows Search or Start Menu
+5. if the device is not detected, install the correct USB serial driver
 
 Common drivers:
 - CP210x: https://www.silabs.com/developers/usb-to-uart-bridge-vcp-drivers
@@ -127,12 +129,14 @@ Common drivers:
 If a DMG is published for the release:
 1. open the DMG
 2. drag `BECA` into `Applications`
-3. open it from `Applications`
-4. if Gatekeeper blocks first launch, right-click and choose `Open`
+3. read `Read Before First Launch`
+4. open it from `Applications`
+
+Official macOS release builds should be signed and notarized. If macOS reports a problem, verify the release download and checksum instead of disabling OS security.
 
 ### Linux
 
-Linux can be built from source. Packaged Linux installers may be added in future releases, but the main maintained packaged path today is Windows.
+Use the published AppImage or `.deb` from the release, or the local mirror at [installers/linux](./installers/linux). Linux usually includes CH340/CH341 and CP210x kernel drivers already; if the serial port is permission-blocked, add your user to `dialout` or `uucp`, then log out and back in.
 
 ## First-Time Setup In The App
 
@@ -454,7 +458,7 @@ The PlatformIO target uses [tools/platformio_post_upload_reset.py](./tools/platf
 
 ### Desktop release
 
-The Windows packaging path is:
+The local Windows packaging path is:
 
 ```bash
 platformio run
@@ -465,7 +469,11 @@ npm run release:windows
 That workflow:
 - syncs the current firmware binary into the app bundle
 - builds the BECA desktop app
-- refreshes [apps/beca-setup/dist-installer/windows](./apps/beca-setup/dist-installer/windows)
+- refreshes [installers/windows](./installers/windows)
+
+The cross-platform release path is the GitHub `Build Setup Installer` workflow triggered by `setup-v*`; it builds Windows, macOS, and Linux bundles and mirrors them into [installers](./installers).
+
+Release signing, notarization, checksum, and malware-scan commands are in [docs/RELEASE_SECURITY.md](./docs/RELEASE_SECURITY.md).
 
 ### Versioning
 
@@ -485,6 +493,7 @@ That workflow:
 - [apps/beca-setup/ui/index.html](./apps/beca-setup/ui/index.html): setup workspace shell
 - [tools/bridge](./tools/bridge): native MIDI bridge
 - [tools/flasher](./tools/flasher): flash and backup helpers
+- [installers](./installers): local mirror for launch-ready app installers
 - [ableton](./ableton): optional Ableton Live and Max for Live support files
 - [docs](./docs): architecture notes that support this README
 

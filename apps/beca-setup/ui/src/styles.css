@@ -603,6 +603,55 @@ button {
   width: min(100%, 330px);
 }
 
+.first-launch-panel {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(246, 244, 239, 0.92);
+}
+
+.first-launch-sheet {
+  width: min(520px, calc(100vw - 48px));
+  border: var(--border-width) solid var(--accent);
+  border-radius: var(--frame-radius);
+  background: var(--panel);
+  color: var(--accent);
+  padding: 20px;
+  display: grid;
+  gap: 14px;
+}
+
+.first-launch-sheet h2 {
+  margin: 0;
+  font-family: var(--display);
+  font-size: 24px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: 0;
+  text-transform: lowercase;
+}
+
+.first-launch-sheet ul {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted-text);
+  font-size: var(--type-control);
+  line-height: 1.45;
+}
+
+.first-launch-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2);
+}
+
+.first-launch-actions a {
+  text-decoration: none;
+}
+
 .setup-row-connect,
 .setup-row-firmware,
 .setup-row-name,

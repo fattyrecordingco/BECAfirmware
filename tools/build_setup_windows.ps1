@@ -44,7 +44,7 @@ try {
 
   npm run tauri build
 
-  $dest = "$shortPath\apps\beca-setup\dist-installer\windows"
+  $dest = "$shortPath\installers\windows"
   New-Item -ItemType Directory -Force $dest | Out-Null
   $destBinaries = "$dest\binaries"
   New-Item -ItemType Directory -Force $destBinaries | Out-Null
