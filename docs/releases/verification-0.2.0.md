@@ -12,7 +12,7 @@ Local Windows checks, 11 September 2026. Firmware remains on ESP32 Arduino core 
 - Both Windows EXE and MSI built. The NSIS installer completed with exit code 0 and installed app version 0.2.0 plus the firmware resources. Its installed EXE differs from the standalone build only by Tauri's three-byte NSIS bundle marker.
 - The installed app restored Performance, connected its saved LoopBe route, and showed live plant/MIDI readings. Setup showed the included firmware and sole MIDI split editor.
 - Installing the included firmware from the installed app succeeded on the ESP32-PICO-V3. The app stopped its bridge, wrote the two firmware regions without the NVS gap, rebooted, retained the device name, and automatically reconnected the saved MIDI route.
-- Ableton Live 12 Suite's MIDI settings list **LoopBe Internal MIDI** as an enabled input. That is the port's real name on this computer. A Windows port named BECA requires the documented virtual-cable setup or licensed branded driver.
+- Ableton Live 12 Suite received the installed app's live LoopBe stream and captured a clip containing 54 notes, MIDI pitches 77–99 and velocities 63–95. The test set is saved locally under `.beca-cache/BECA-0.2.0-MIDI-check Project/`. **LoopBe Internal MIDI** is the port's real name on this computer. A Windows port named BECA requires the documented virtual-cable setup or licensed branded driver.
 
 The installed-app test exposed a long subnet scan blocking USB startup. USB candidates now bypass that sweep; firmware and MIDI output loading run before control discovery. Network-only discovery prioritizes supplied addresses/names and has an eight-second budget; unfinished tasks are cancelled.
 
@@ -23,6 +23,20 @@ The installed-app test exposed a long subnet scan blocking USB startup. USB cand
 - Windows MSI: `2f715b1a603cc47e2bbc794dd3bdd599d7ad23ba547802e55fc713ab783700f8`
 
 GitHub rebuilds have their own hashes, published in the release's SHA256SUMS. Do not compare a downloaded CI installer against these local build hashes.
+
+## Published artifacts
+
+[GitHub Actions run 34595602806](https://github.com/fattyrecordingco/BECAfirmware/actions/runs/34595602806) passed firmware, native tests on Windows/Linux/both Mac architectures, Windows browser/recovery regressions and every installer build. The [0.2.0 prerelease](https://github.com/fattyrecordingco/BECAfirmware/releases/tag/setup-v0.2.0) was published from commit `1dcb81cd38f02fec3422c8c1041aee33141a8b26` on 11 September 2026.
+
+All six installers, both manual formats, firmware image and manifest were downloaded from the published release and matched SHA256SUMS. The downloaded Windows setup EXE completed installation with exit code 0; its app restored the saved MIDI route on launch. Its included firmware matches the release image's SHA256.
+
+The published app then installed that exact included firmware on the connected unit and automatically resumed MIDI. A direct USB regression against this published image passed all 13 presets with original settings restored, 40 bounded plant samples (ADC1 0–976, energy 0.1653–0.3259), maximum observed response 13.9 ms and no captured firmware errors.
+
+- Published Windows setup EXE: `1ef322e0bf051d7ee7e418cabc96529a97c92c4f4065103daaed15f33cfd47e9`
+- Installed published app: `8b170ebc23ed93351f497a0b16630232e6db25db75791f7cfedc52aabf0ddea8`
+- Published firmware 1.1.0: `2d001a249e2e3348c2511841ad87113b513da8c8cb30f9e44725b183adde361b`
+
+The published Windows installer is unsigned. Mac builds use an ad-hoc signature and have no Apple notarization. Successful CI compilation does not replace Mac/Linux device and DAW runtime testing.
 
 ## Limits
 
