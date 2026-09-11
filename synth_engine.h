@@ -5,6 +5,10 @@
 
 #include "drum_engine.h"
 
+#ifndef BECA_EXTENDED_SOUNDS
+#define BECA_EXTENDED_SOUNDS 1
+#endif
+
 namespace beca {
 
 enum SynthFilterType : uint8_t {
@@ -40,7 +44,8 @@ struct SynthParams {
 
 class SynthEngine {
  public:
-  static constexpr uint8_t kPresetCount = 6;
+  static constexpr uint8_t kPresetCount = BECA_EXTENDED_SOUNDS ? 13 : 6;
+  static constexpr uint8_t kRawSinePreset = 12;
 
   SynthEngine();
 
@@ -58,10 +63,11 @@ class SynthEngine {
   void drumHit(uint8_t part, uint8_t vel);
   void allDrumsOff();
   void setDrumsEnabled(bool enabled);
+  void setSensorFrequency(uint16_t raw, bool connected);
 
   void setParams(const SynthParams& params);
   void getParams(SynthParams& out) const;
-  void loadPreset(uint8_t presetIndex);
+  void loadPreset(uint8_t presetIndex, bool keepMaster = false);
   void resetPreset();
 
   bool triggerTestChord(uint32_t durationMs = 2000);
@@ -117,8 +123,10 @@ class SynthEngine {
 
   void handleEvent(const Event& e, const SynthParams& p);
   void renderBlock(const SynthParams& p);
+  void renderSensorSine(const SynthParams& p);
+  void prepareRenderMode(const SynthParams& p);
   float osc(uint8_t waveform, float phase) const;
-  Voice* allocVoice(uint8_t note, bool monoMode);
+  Voice* allocVoice(uint8_t note, bool monoMode, uint8_t maxVoices);
   void applyFilterConfig(const SynthParams& p);
   void sanitizeParams(SynthParams& p) const;
 
@@ -133,6 +141,10 @@ class SynthEngine {
   mutable portMUX_TYPE paramMux_;
   SynthParams paramsSlots_[2];
   volatile uint8_t activeParamSlot_;
+  float sensorHz_;
+  float sensorPhase_;
+  float sensorGain_;
+  bool rawModeActive_;
 
   portMUX_TYPE eventMux_;
   Event eventQueue_[kEventQueueSize];

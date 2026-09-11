@@ -3,14 +3,15 @@
 mod control;
 
 use anyhow::{anyhow, Context};
-use beca_bridge::dependency::{resolve_bridge_runtime, BridgeRuntimeInput};
 use beca_bridge::list_midi_outputs as bridge_list_midi_outputs;
+use beca_bridge::routing::MidiRoute;
+use beca_bridge::session::BridgeSession;
 use beca_flasher::flash::{
     download_firmware, flash_firmware as run_flash, FlashCommandConfig, FlashTool,
 };
 use beca_flasher::{
     backup_nvs, detect_beca_ports, fetch_latest_manifest, parse_manifest, resolve_flash_tool,
-    restore_nvs, select_best_port, FirmwareManifest,
+    restore_nvs, FirmwareManifest,
 };
 use chrono::Utc;
 use control::{
@@ -23,12 +24,10 @@ use serde_json::Value;
 use std::fs::{self, File};
 use std::io::{ErrorKind, Read, Write};
 use std::path::{Path, PathBuf};
-use std::process::Stdio;
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::fs as tokio_fs;
-use tokio::io::{AsyncBufReadExt, BufReader};
-use tokio::process::{Child, Command};
+use tokio::process::Command;
 use tokio::sync::Mutex;
 use tracing::{error, info};
 use zip::write::SimpleFileOptions;
@@ -57,7 +56,7 @@ pub(crate) struct CachedControlError {
 }
 
 struct RuntimeState {
-    bridge_child: Mutex<Option<Child>>,
+    bridge_session: Mutex<Option<BridgeSession>>,
     serial_op_lock: Mutex<()>,
     manifest_cache: Mutex<Option<FirmwareManifest>>,
     latest_backup: Mutex<Option<PathBuf>>,
@@ -80,7 +79,7 @@ impl Default for RuntimeState {
             .unwrap_or_else(|_| Client::new());
 
         Self {
-            bridge_child: Mutex::new(None),
+            bridge_session: Mutex::new(None),
             serial_op_lock: Mutex::new(()),
             manifest_cache: Mutex::new(None),
             latest_backup: Mutex::new(None),
@@ -98,22 +97,22 @@ impl Default for RuntimeState {
 
 impl RuntimeState {
     pub(crate) async fn bridge_running(&self) -> bool {
-        let mut lock = self.bridge_child.lock().await;
-        let Some(child) = lock.as_mut() else {
-            return false;
-        };
-
-        match child.try_wait() {
-            Ok(Some(_)) => {
-                *lock = None;
-                false
-            }
-            Ok(None) => true,
-            Err(err) => {
-                error!("failed to inspect bridge child state: {}", err);
-                true
-            }
-        }
+        self.bridge_session
+            .lock()
+            .await
+            .as_ref()
+            .is_some_and(|session| session.status().running)
+    }
+    pub(crate) async fn bridge_for_port(&self, port: &str) -> Option<BridgeSession> {
+        self.bridge_session
+            .lock()
+            .await
+            .as_ref()
+            .filter(|session| {
+                let status = session.status();
+                status.running && status.serial_port.eq_ignore_ascii_case(port)
+            })
+            .cloned()
     }
 }
 
@@ -122,6 +121,7 @@ struct DeviceDetectionResult {
     port_name: Option<String>,
     description: String,
     fixes: Vec<String>,
+    ports: Vec<beca_flasher::serial_detect::BecaPort>,
 }
 
 #[derive(Debug, Serialize)]
@@ -142,11 +142,6 @@ struct BridgeEvent {
     event: String,
     state: String,
     detail: String,
-}
-
-#[derive(Debug, Serialize)]
-struct BridgeStatus {
-    running: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -192,43 +187,47 @@ async fn ensure_bridge_not_running(state: &State<'_, RuntimeState>) -> Result<()
 }
 
 async fn stop_bridge_child(state: &RuntimeState) -> Result<bool, String> {
-    let mut lock = state.bridge_child.lock().await;
-    let Some(mut child) = lock.take() else {
+    let mut guard = state.bridge_session.lock().await;
+    let Some(session) = guard.as_ref().cloned() else {
         return Ok(false);
     };
-
-    match child.try_wait().map_err(err_to_string)? {
-        Some(_) => return Ok(true),
-        None => {}
-    }
-
-    if let Err(err) = child.kill().await {
-        match child.try_wait().map_err(err_to_string)? {
-            Some(_) => return Ok(true),
-            None => return Err(err_to_string(err)),
-        }
-    }
-
-    let _ = child.wait().await;
+    tokio::task::spawn_blocking(move || session.stop())
+        .await
+        .map_err(err_to_string)?
+        .map_err(err_to_string)?;
+    *guard = None;
     Ok(true)
 }
 
 #[tauri::command]
 async fn detect_beca_device() -> Result<DeviceDetectionResult, String> {
-    let ports = detect_beca_ports();
-    let candidate = select_best_port(&ports).filter(|port| port.likely_beca);
+    let ports: Vec<_> = detect_beca_ports()
+        .into_iter()
+        .filter(|port| port.likely_beca)
+        .collect();
+    let candidate = if ports.len() == 1 {
+        ports.first().cloned()
+    } else {
+        None
+    };
 
     let response = if let Some(port) = candidate {
         DeviceDetectionResult {
             port_name: Some(port.port_name),
             description: port.description,
             fixes: vec![],
+            ports,
         }
     } else {
         DeviceDetectionResult {
             port_name: None,
             description: String::new(),
-            fixes: default_fix_suggestions(),
+            fixes: if ports.len() > 1 {
+                vec!["Several USB devices found. Choose your BECA port below before installing firmware.".into()]
+            } else {
+                default_fix_suggestions()
+            },
+            ports,
         }
     };
 
@@ -236,20 +235,52 @@ async fn detect_beca_device() -> Result<DeviceDetectionResult, String> {
 }
 
 #[tauri::command]
-async fn list_firmware_versions(
-    app: AppHandle,
-    state: State<'_, RuntimeState>,
-) -> Result<Vec<FirmwareOption>, String> {
-    let manifest = load_manifest(&app, &state).await.map_err(err_to_string)?;
+async fn list_firmware_versions(app: AppHandle) -> Result<Vec<FirmwareOption>, String> {
+    let (manifest, _) = bundled_firmware(&app)?;
     let latest = manifest
         .latest_stable_for_hardware(HARDWARE_ID)
         .ok_or_else(|| format!("No stable firmware found for {HARDWARE_ID}"))?;
 
-    Ok(vec![FirmwareOption {
-        version: LATEST_STABLE_FIRMWARE.to_string(),
-        label: format!("Latest Stable {} (recommended)", latest.version),
-        default: true,
-    }])
+    Ok(vec![
+        FirmwareOption {
+            version: "bundled".to_string(),
+            label: format!("Included {} · works offline", latest.version),
+            default: true,
+        },
+        FirmwareOption {
+            version: LATEST_STABLE_FIRMWARE.to_string(),
+            label: "Latest stable from GitHub · internet required".to_string(),
+            default: false,
+        },
+    ])
+}
+
+fn bundled_firmware(app: &AppHandle) -> Result<(FirmwareManifest, PathBuf), String> {
+    let directory = app
+        .path()
+        .resource_dir()
+        .map_err(err_to_string)?
+        .join("resources/firmware");
+    let directory = if directory.exists() {
+        directory
+    } else {
+        #[cfg(debug_assertions)]
+        {
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources/firmware")
+        }
+        #[cfg(not(debug_assertions))]
+        {
+            return Err(
+                "Included firmware is missing. Reinstall the complete BECA installer.".into(),
+            );
+        }
+    };
+    let raw =
+        fs::read_to_string(directory.join("firmware-manifest.json")).map_err(err_to_string)?;
+    Ok((
+        parse_manifest(&raw).map_err(err_to_string)?,
+        directory.join("beca-merged.bin"),
+    ))
 }
 
 #[tauri::command]
@@ -259,14 +290,24 @@ async fn flash_firmware(
     serial_port: String,
     firmware_version: String,
 ) -> Result<(), String> {
-    if !firmware_version.eq_ignore_ascii_case(LATEST_STABLE_FIRMWARE) {
-        return Err("This app can only flash the latest stable BECA firmware.".to_string());
+    if !firmware_version.eq_ignore_ascii_case(LATEST_STABLE_FIRMWARE)
+        && firmware_version != "bundled"
+    {
+        return Err("Choose included firmware or the latest stable release.".to_string());
     }
 
     ensure_bridge_not_running(&state).await?;
     let _serial_guard = state.serial_op_lock.lock().await;
     emit_flash_progress(&app, 10, "Loading latest stable firmware manifest...");
-    let manifest = load_manifest(&app, &state).await.map_err(err_to_string)?;
+    let (manifest, included) = if firmware_version == "bundled" {
+        let (manifest, path) = bundled_firmware(&app)?;
+        (manifest, Some(path))
+    } else {
+        (
+            load_manifest(&app, &state).await.map_err(err_to_string)?,
+            None,
+        )
+    };
     let firmware = manifest
         .latest_stable_for_hardware(HARDWARE_ID)
         .ok_or_else(|| format!("No stable firmware found for {HARDWARE_ID}"))?
@@ -274,9 +315,24 @@ async fn flash_firmware(
 
     emit_flash_progress(&app, 30, "Downloading latest stable firmware binary...");
     let cache_dir = app_data_dir(&app)?.join("cache").join("firmware");
-    let binary_path = download_firmware(&firmware, &cache_dir)
-        .await
-        .map_err(err_to_string)?;
+    let binary_path = if let Some(path) = included {
+        emit_flash_progress(&app, 30, "Verifying included firmware...");
+        beca_flasher::flash::verify_sha256(&path, &firmware.merged_bin_sha256)
+            .await
+            .map_err(err_to_string)?;
+        tokio_fs::create_dir_all(&cache_dir)
+            .await
+            .map_err(err_to_string)?;
+        let destination = cache_dir.join("beca-included-merged.bin");
+        tokio_fs::copy(path, &destination)
+            .await
+            .map_err(err_to_string)?;
+        destination
+    } else {
+        download_firmware(&firmware, &cache_dir)
+            .await
+            .map_err(err_to_string)?
+    };
 
     emit_flash_progress(&app, 65, "Preparing flash tool...");
     let (tool, tool_path) = resolve_flash_tool_for_app(&app).await?;
@@ -392,7 +448,7 @@ async fn backup_settings(
         115200,
         &backup_path,
         "0x9000",
-        "0x6000",
+        "0x5000",
     )
     .await
     .map_err(err_to_string)?;
@@ -577,78 +633,114 @@ async fn start_bridge(
     microfreak_mode: bool,
     secondary_midi_port: Option<String>,
     secondary_microfreak_mode: bool,
+    routes: Option<Vec<MidiRoute>>,
 ) -> Result<(), String> {
-    let bridge_path = resolve_binary_for_app(&app, "beca-bridge").map_err(err_to_string)?;
-    let secondary_midi_port = secondary_midi_port
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty());
-
-    if secondary_midi_port
-        .as_deref()
-        .is_some_and(|port| port.eq_ignore_ascii_case(&midi_port))
-    {
-        return Err("Primary and mirrored MIDI outputs must be different devices.".to_string());
-    }
-
-    let decision = resolve_bridge_runtime(&BridgeRuntimeInput {
-        bundled_native_bridge_exists: bridge_path.exists(),
-        embedded_python_exists: false,
-        python_binary_wheels_available: false,
-    });
-
-    if decision.mode == "unsupported" {
-        return Err(decision.reason);
-    }
-
+    let _serial_guard = state.serial_op_lock.lock().await;
     stop_bridge_child(state.inner()).await?;
-
-    let mut cmd = Command::new(&bridge_path);
-    cmd.arg("run")
-        .arg("--serial-port")
-        .arg(serial_port)
-        .arg("--midi-port")
-        .arg(midi_port);
-
-    if microfreak_mode {
-        cmd.arg("--microfreak-mode");
+    let mut default_routes = vec![MidiRoute::full("primary", &midi_port, microfreak_mode)];
+    if let Some(port) = secondary_midi_port.filter(|p| !p.trim().is_empty()) {
+        if port == midi_port {
+            return Err("Choose distinct outputs or edit the MIDI splits in Performance.".into());
+        }
+        default_routes.push(MidiRoute::full("mirror", &port, secondary_microfreak_mode));
     }
-    if let Some(port) = secondary_midi_port {
-        cmd.arg("--secondary-midi-port").arg(port);
-    }
-    if secondary_microfreak_mode {
-        cmd.arg("--secondary-microfreak-mode");
-    }
-
-    cmd.arg("--baud")
-        .arg("115200")
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    cmd.kill_on_drop(true);
-    apply_background_process_flags(&mut cmd);
-
-    let mut child = cmd
-        .spawn()
-        .with_context(|| format!("failed to launch bridge at {}", bridge_path.display()))
-        .map_err(err_to_string)?;
-
-    if let Some(stdout) = child.stdout.take() {
-        spawn_bridge_stream_reader(app.clone(), stdout, "stdout");
-    }
-
-    if let Some(stderr) = child.stderr.take() {
-        spawn_bridge_stream_reader(app.clone(), stderr, "stderr");
-    }
-
-    *state.bridge_child.lock().await = Some(child);
-    emit_bridge_event(&app, "status", "connected", "Bridge process started");
+    let routes = routes.unwrap_or(default_routes);
+    let event_app = app.clone();
+    let published = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let events_ready = published.clone();
+    let session = tokio::task::spawn_blocking(move || -> anyhow::Result<BridgeSession> {
+        let session = BridgeSession::start(serial_port.clone(), routes, move |event| {
+            if events_ready.load(std::sync::atomic::Ordering::Acquire) {
+                let _ = event_app.emit("bridge-status", event);
+            }
+        })?;
+        let configure = (|| -> anyhow::Result<()> {
+            let current = session.serial(&serial_port, "@C STATE", "STATE", 2500)?;
+            let mode = current["outputmode"].as_u64().unwrap_or(0);
+            if mode == 2 {
+                let params = session.serial(&serial_port, "@C PARAMS", "PARAMS", 2500)?;
+                if params["output_modes"].as_array().map_or(0, Vec::len) < 4 {
+                    return Err(anyhow!(
+                        "Update firmware to use Aux and Serial MIDI together."
+                    ));
+                }
+            }
+            let next = if mode >= 2 { 3 } else { 1 };
+            let result = session.serial(
+                &serial_port,
+                &format!("@C SET outputmode {next}"),
+                "SET",
+                2500,
+            )?;
+            if result["ok"] == false || result["ok"] == 0 {
+                return Err(anyhow!(result["err"]
+                    .as_str()
+                    .unwrap_or("Output change rejected")
+                    .to_string()));
+            }
+            Ok(())
+        })();
+        if let Err(error) = configure {
+            let _ = session.stop();
+            return Err(error);
+        }
+        Ok(session)
+    })
+    .await
+    .map_err(err_to_string)?
+    .map_err(err_to_string)?;
+    *state.bridge_session.lock().await = Some(session);
+    // Discovery must see the shared owner before it receives the connected event.
+    published.store(true, std::sync::atomic::Ordering::Release);
+    emit_bridge_event(
+        &app,
+        "status",
+        "connected",
+        "USB MIDI and live controls share one connection.",
+    );
     Ok(())
 }
 
 #[tauri::command]
-async fn bridge_status(state: State<'_, RuntimeState>) -> Result<BridgeStatus, String> {
-    Ok(BridgeStatus {
-        running: state.bridge_running().await,
-    })
+async fn bridge_status(state: State<'_, RuntimeState>) -> Result<Value, String> {
+    Ok(state
+        .bridge_session
+        .lock()
+        .await
+        .as_ref()
+        .map(|session| serde_json::to_value(session.status()).unwrap_or_default())
+        .unwrap_or_else(|| serde_json::json!({"running":false,"connected":false,"routes":[]})))
+}
+
+#[tauri::command]
+async fn update_bridge_routes(
+    state: State<'_, RuntimeState>,
+    routes: Vec<MidiRoute>,
+) -> Result<Value, String> {
+    let session = state
+        .bridge_session
+        .lock()
+        .await
+        .clone()
+        .ok_or("Start the MIDI bridge first.")?;
+    tokio::task::spawn_blocking(move || session.update_routes(routes))
+        .await
+        .map_err(err_to_string)?
+        .map_err(err_to_string)
+}
+
+#[tauri::command]
+async fn panic_bridge(state: State<'_, RuntimeState>) -> Result<Value, String> {
+    let session = state
+        .bridge_session
+        .lock()
+        .await
+        .clone()
+        .ok_or("Start the MIDI bridge first.")?;
+    tokio::task::spawn_blocking(move || session.panic())
+        .await
+        .map_err(err_to_string)?
+        .map_err(err_to_string)
 }
 
 #[tauri::command]
@@ -662,9 +754,13 @@ async fn stop_bridge(app: AppHandle, state: State<'_, RuntimeState>) -> Result<(
 #[tauri::command]
 async fn send_test_note(
     app: AppHandle,
+    state: State<'_, RuntimeState>,
     midi_port: String,
     secondary_midi_port: Option<String>,
 ) -> Result<(), String> {
+    if state.bridge_running().await {
+        return Err("While the bridge is live, play the plant or use its routed MIDI. Stop the bridge to send the setup test chord.".into());
+    }
     let bridge_path = resolve_binary_for_app(&app, "beca-bridge").map_err(err_to_string)?;
     let secondary_midi_port = secondary_midi_port
         .map(|value| value.trim().to_string())
@@ -860,35 +956,6 @@ fn apply_background_process_flags(cmd: &mut Command) {
     {
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
-}
-
-fn spawn_bridge_stream_reader<R>(app: AppHandle, reader: R, source: &str)
-where
-    R: tokio::io::AsyncRead + Unpin + Send + 'static,
-{
-    let source_name = source.to_string();
-    tokio::spawn(async move {
-        let mut lines = BufReader::new(reader).lines();
-        while let Ok(Some(line)) = lines.next_line().await {
-            if let Ok(value) = serde_json::from_str::<Value>(&line) {
-                if let Some(obj) = value.as_object() {
-                    let event = obj
-                        .get("event")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("status");
-                    let state = obj
-                        .get("state")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("running");
-                    let detail = obj.get("detail").and_then(|v| v.as_str()).unwrap_or("");
-                    emit_bridge_event(&app, event, state, detail);
-                    continue;
-                }
-            }
-
-            emit_bridge_event(&app, "log", &source_name, &line);
-        }
-    });
 }
 
 pub(crate) fn run_serial_command_json(
@@ -1550,31 +1617,6 @@ fn init_logging(app: &AppHandle, state: &RuntimeState) -> anyhow::Result<()> {
     Ok(())
 }
 
-#[cfg(target_os = "windows")]
-fn cleanup_stale_bridge_processes_on_startup() {
-    let output = std::process::Command::new("taskkill")
-        .args(["/IM", "beca-bridge.exe", "/F", "/T"])
-        .output();
-
-    match output {
-        Ok(result) if result.status.success() => {
-            info!("cleaned up stale BECA bridge processes on startup");
-        }
-        Ok(result) => {
-            let stderr = String::from_utf8_lossy(&result.stderr);
-            if !stderr.to_ascii_lowercase().contains("not found") {
-                info!("stale bridge cleanup skipped: {}", stderr.trim());
-            }
-        }
-        Err(err) => {
-            info!("stale bridge cleanup unavailable: {}", err);
-        }
-    }
-}
-
-#[cfg(not(target_os = "windows"))]
-fn cleanup_stale_bridge_processes_on_startup() {}
-
 fn err_to_string<E: std::fmt::Display>(err: E) -> String {
     err.to_string()
 }
@@ -1589,7 +1631,7 @@ pub fn run() {
             if let Err(err) = init_logging(&app_handle, state.inner()) {
                 eprintln!("logging init failed: {err}");
             }
-            cleanup_stale_bridge_processes_on_startup();
+            // The embedded bridge closes with the app; other bridge processes are user-owned.
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -1611,6 +1653,8 @@ pub fn run() {
             forget_wifi_credentials,
             reboot_device,
             bridge_status,
+            update_bridge_routes,
+            panic_bridge,
             start_bridge,
             stop_bridge,
             send_test_note,

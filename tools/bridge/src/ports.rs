@@ -18,6 +18,9 @@ pub struct MidiOutPort {
     pub name: String,
 }
 
+#[cfg(unix)]
+pub const APP_MIDI_PORT: &str = "BECA (virtual MIDI)";
+
 pub fn list_serial_ports() -> Vec<SerialPortSummary> {
     let mut ports = vec![];
     for p in available_ports().unwrap_or_default() {
@@ -57,6 +60,18 @@ pub fn list_midi_outputs() -> Result<Vec<MidiOutPort>> {
                 .port_name(&port)
                 .unwrap_or_else(|_| format!("MIDI Port {idx}")),
         })
-        .collect();
+        .collect::<Vec<_>>();
+    #[cfg(unix)]
+    let ports = {
+        let mut ports = ports;
+        ports.insert(
+            0,
+            MidiOutPort {
+                id: usize::MAX,
+                name: APP_MIDI_PORT.into(),
+            },
+        );
+        ports
+    };
     Ok(ports)
 }

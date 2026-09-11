@@ -60,3 +60,4 @@ installers/linux/*
 .pio/
 .pioenvs/
 .piolibdeps/
+apps/beca-setup/src-tauri/resources/firmware/

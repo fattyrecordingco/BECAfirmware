@@ -84,10 +84,25 @@ pub async fn discover_beca_targets(
 ) -> Result<ControlDiscoveryResult, String> {
     let bridge_running = state.bridge_running().await;
     let serial_probe_guard = state.serial_op_lock.try_lock().ok();
-    let serial_targets =
+    let mut serial_targets =
         discover_serial_targets(bridge_running, serial_probe_guard.is_some()).await;
+    for target in &mut serial_targets {
+        if let Some(port) = target.serial_port.as_deref() {
+            if let Some(session) = state.bridge_for_port(port).await {
+                let session_state = session.status();
+                target.serial_ready = session_state.connected;
+                target.control_ready = session_state.connected;
+                target.issue = session_state.issue;
+            }
+        }
+    }
     drop(serial_probe_guard);
-    let network_targets = discover_network_targets(hints).await;
+    // USB discovery must not wait for a subnet sweep, including on a blank unit.
+    let network_targets = if serial_targets.is_empty() {
+        discover_network_targets(hints).await
+    } else {
+        Vec::new()
+    };
     let targets = merge_targets(serial_targets, network_targets);
 
     {
@@ -261,7 +276,7 @@ async fn build_selection_status(
                         " Wi-Fi control at {url} can take over automatically when available."
                     ));
                 }
-                detail.push_str(" Stop Bridge first if you need direct serial control.");
+                detail.push_str(" The app bridge shares USB with live controls.");
                 detail
             }
             _ => target
@@ -787,10 +802,8 @@ async fn discover_serial_targets(
         };
 
         if bridge_running {
-            target.issue = Some(
-                "Bridge is running and owns USB serial. Live Control can continue over Wi-Fi; stop Bridge for offline USB control."
-                    .to_string(),
-            );
+            target.issue =
+                Some("Checking the USB connection shared by MIDI and live controls.".to_string());
         } else if serial_probe_allowed {
             let port_name = port.port_name.clone();
             if let Ok(info) = tokio::task::spawn_blocking(move || {
@@ -815,7 +828,7 @@ async fn discover_serial_targets(
                 target.issue = None;
             }
 
-            if let Some(url) = target.network_url.clone() {
+            if let Some(url) = target.network_url.clone().filter(|_| !target.serial_ready) {
                 match probe_network_control(&url).await {
                     Ok(()) => {
                         target.network_ready = true;
@@ -847,30 +860,36 @@ async fn discover_network_targets(hints: Option<ControlDiscoveryHints>) -> Vec<C
         Err(_) => return Vec::new(),
     };
 
-    let mut scan_urls = local_scan_urls().unwrap_or_default();
-    scan_urls.extend(hinted_control_urls(hints.as_ref()));
-    scan_urls.sort();
-    scan_urls.dedup();
+    let mut scan_urls = hinted_control_urls(hints.as_ref());
+    scan_urls.push("http://beca.local".into());
+    scan_urls.push("http://192.168.4.1".into());
+    scan_urls.extend(local_scan_urls().unwrap_or_default());
+    let mut seen = BTreeSet::new();
+    scan_urls.retain(|url| seen.insert(url.clone()));
 
     let gate = Arc::new(Semaphore::new(16));
-    let mut tasks = Vec::with_capacity(scan_urls.len());
+    let mut tasks = tokio::task::JoinSet::new();
 
     for url in scan_urls {
         let client = client.clone();
         let gate = gate.clone();
-        tasks.push(tokio::spawn(async move {
+        tasks.spawn(async move {
             let permit = gate.acquire_owned().await.ok()?;
             let _permit = permit;
             probe_network_target(&client, &url).await.ok()
-        }));
+        });
     }
 
     let mut found = Vec::new();
-    for task in tasks {
-        if let Ok(Some(target)) = task.await {
-            found.push(target);
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(8);
+    loop {
+        match tokio::time::timeout_at(deadline, tasks.join_next()).await {
+            Ok(Some(Ok(Some(target)))) => found.push(target),
+            Ok(Some(_)) => continue,
+            _ => break,
         }
     }
+    tasks.abort_all();
     found
 }
 
@@ -1252,13 +1271,17 @@ async fn serial_json_command(
     expected_tag: &str,
     timeout_ms: u64,
 ) -> anyhow::Result<Value> {
-    if state.bridge_running().await {
-        return Err(anyhow!(
-            "Bridge is running and owns the serial port. Stop Bridge or use Wi-Fi live control."
-        ));
-    }
-
     let _serial_guard = state.serial_op_lock.lock().await;
+    if let Some(session) = state.bridge_for_port(serial_port).await {
+        let port = serial_port.to_string();
+        let command = command.to_string();
+        let tag = expected_tag.to_string();
+        return tokio::task::spawn_blocking(move || {
+            session.serial(&port, &command, &tag, timeout_ms)
+        })
+        .await
+        .context("shared bridge control task failed")?;
+    }
 
     let port = serial_port.to_string();
     let command = command.to_string();

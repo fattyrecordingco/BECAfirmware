@@ -38,6 +38,16 @@ BLEMIDI_CREATE_INSTANCE("BECA BLE-MIDI", MIDI);
 #include "logo_svg.h"
 #include "index_html.h"
 #include "synth_engine.h"
+#include "timing_utils.h"
+#include "output_modes.h"
+
+#ifndef BECA_IDLE_LIGHT_EFFECTS
+#define BECA_IDLE_LIGHT_EFFECTS 1
+#endif
+
+#ifndef BECA_LIVE_PRESETS
+#define BECA_LIVE_PRESETS 1
+#endif
 
 extern const char SETUP_HTML[] PROGMEM;
 
@@ -94,7 +104,6 @@ uint8_t gBrightness = 154;
 
 // -------------------- BLE-MIDI --------------------
 volatile bool gMidiConnected = false;
-enum OutputMode : uint8_t { OUTPUT_BLE = 0, OUTPUT_SERIAL = 1, OUTPUT_AUX = 2 };
 volatile uint8_t gOutputMode = OUTPUT_BLE;
 enum OutputChangeSource : uint8_t {
   OUTPUT_CHANGE_USER = 0,
@@ -134,9 +143,9 @@ uint32_t gLastSynthUnderrunLogMs = 0;
 uint32_t gLastBleKickMs = 0;
 const uint32_t BLE_KICK_INTERVAL_MS = 2500; // kick advertise every 2.5s when not connected
 
-static inline bool outputModeIsAux() { return gOutputMode == OUTPUT_AUX; }
+static inline bool outputModeIsAux() { return outputHasAux(gOutputMode); }
 static inline bool outputModeIsBle() { return gOutputMode == OUTPUT_BLE; }
-static inline bool outputModeIsSerial() { return gOutputMode == OUTPUT_SERIAL; }
+static inline bool outputModeIsSerial() { return outputHasSerial(gOutputMode); }
 static inline bool ioMuteManualActive() { return gIoMuted; }
 static inline bool plantAutoMuteActive() { return gPlantAutoMuted; }
 static inline bool ioMuteActive() { return gIoMuted || gPlantAutoMuted; }
@@ -193,32 +202,34 @@ static inline void serialJsonMidiEvent(uint8_t note, uint8_t vel, uint8_t ch, bo
   if (n > 0) serialTryWrite(line, (size_t)n);
 }
 
-static inline void serialMidiSend3(uint8_t st, uint8_t d1, uint8_t d2) {
-  if (!serialMidiAllowed()) return;
+static inline bool serialMidiSend3(uint8_t st, uint8_t d1, uint8_t d2) {
+  if (!serialMidiAllowed()) return false;
   char line[24];
   int n = snprintf(line, sizeof(line), "@M %02X %02X %02X\n", st, d1 & 0x7F, d2 & 0x7F);
-  if (n > 0) serialTryWrite(line, (size_t)n);
+  return n > 0 && serialTryWrite(line, (size_t)n);
 }
 
 static inline void midiSendNoteOn(uint8_t note, uint8_t vel, uint8_t ch) {
   uint8_t status = 0x90 | ((ch - 1) & 0x0F);
   serialJsonMidiEvent(note, vel, ch, true);
-  if (outputModeIsAux() || ioMuteActive()) return;
+  if (gOutputMode == OUTPUT_AUX || ioMuteActive()) return;
   if (midiOutIsSerial()) serialMidiSend3(status, note, vel);
   else if (outputModeIsBle() && gMidiConnected) MIDI.sendNoteOn(note, vel, ch);
 }
 
-static inline void midiSendNoteOff(uint8_t note, uint8_t vel, uint8_t ch) {
+static inline bool midiSendNoteOff(uint8_t note, uint8_t vel, uint8_t ch) {
   uint8_t status = 0x80 | ((ch - 1) & 0x0F);
+  if (gOutputMode == OUTPUT_AUX || ioMuteActive()) return true;
+  if (midiOutIsSerial()) {
+    if (!serialMidiSend3(status, note, vel)) return false;
+  } else if (outputModeIsBle() && gMidiConnected) MIDI.sendNoteOff(note, vel, ch);
   serialJsonMidiEvent(note, vel, ch, false);
-  if (outputModeIsAux() || ioMuteActive()) return;
-  if (midiOutIsSerial()) serialMidiSend3(status, note, vel);
-  else if (outputModeIsBle() && gMidiConnected) MIDI.sendNoteOff(note, vel, ch);
+  return true;
 }
 
 static inline void midiSendControlChange(uint8_t cc, uint8_t val, uint8_t ch) {
   uint8_t status = 0xB0 | ((ch - 1) & 0x0F);
-  if (outputModeIsAux() || ioMuteActive()) return;
+  if (gOutputMode == OUTPUT_AUX || ioMuteActive()) return;
   if (midiOutIsSerial()) serialMidiSend3(status, cc, val);
   else if (outputModeIsBle() && gMidiConnected) MIDI.sendControlChange(cc, val, ch);
 }
@@ -231,7 +242,7 @@ static inline void allNotesOffBothTransports() {
 }
 
 static inline void allNotesOffCurrentTransport() {
-  if (outputModeIsAux()) return;
+  if (gOutputMode == OUTPUT_AUX) return;
   for (uint8_t ch = 1; ch <= 16; ++ch) midiSendControlChange(123, 0, ch);
 }
 
@@ -256,7 +267,7 @@ struct NoteOff {
   uint32_t tOff;
   bool     on;
 };
-NoteOff offQ[16];
+NoteOff offQ[32];
 
 struct UiHeldNote {
   uint8_t  note;
@@ -332,6 +343,7 @@ static inline const char* outputModeName(uint8_t mode) {
     case OUTPUT_BLE: return "BLE";
     case OUTPUT_SERIAL: return "SERIAL";
     case OUTPUT_AUX: return "AUX";
+    case OUTPUT_SERIAL_AUX: return "SERIAL_AUX";
     default: return "BLE";
   }
 }
@@ -408,7 +420,10 @@ static inline void setupJackInputs() {
 
 static inline uint8_t nextOutputModeForCycle() {
   if (outputModeIsBle()) return auxSwitchReady() ? OUTPUT_AUX : OUTPUT_SERIAL;
-  if (outputModeIsAux()) return OUTPUT_SERIAL;
+  if (gOutputMode == OUTPUT_AUX) return OUTPUT_SERIAL;
+#if BECA_DUAL_OUTPUT
+  if (gOutputMode == OUTPUT_SERIAL && auxSwitchReady()) return OUTPUT_SERIAL_AUX;
+#endif
   return OUTPUT_BLE;
 }
 
@@ -483,10 +498,10 @@ static inline void applyPlantAutoMute(bool muteOn) {
 }
 
 static inline bool setOutputMode(uint8_t mode, OutputChangeSource source = OUTPUT_CHANGE_USER) {
-  uint8_t next = (uint8_t)constrain((int)mode, 0, 2);
+  uint8_t next = (uint8_t)constrain((int)mode, 0, (int)OUTPUT_MODE_MAX);
   if (source == OUTPUT_CHANGE_USER) {
     gAuxJackAutoActive = false;
-    if (next != OUTPUT_AUX) {
+    if (!outputHasAux(next)) {
       gAuxJackPreviousOutput = next;
       if (auxJackConnected()) gAuxJackAutoSuppressed = true;
     } else {
@@ -494,7 +509,7 @@ static inline bool setOutputMode(uint8_t mode, OutputChangeSource source = OUTPU
     }
   }
 
-  if (next == OUTPUT_AUX && !auxSwitchReady()) {
+  if (outputHasAux(next) && !auxSwitchReady()) {
     Serial.printf("@I AUX LOCKED %lu ms\n", (unsigned long)auxSwitchWaitMs());
     return false;
   }
@@ -507,11 +522,12 @@ static inline bool setOutputMode(uint8_t mode, OutputChangeSource source = OUTPU
   for (auto &q : offQ) q.on = false;
   for (auto &q : uiNoteQ) q.on = false;
 
-  if (outputModeIsAux() && next != OUTPUT_AUX) {
+  if (outputModeIsAux() && !outputHasAux(next)) {
     stopAuxAudio();
   }
 
   gOutputMode = next;
+  if (outputModeIsSerial()) gLastSerialBeaconMs = 0;
   normalizeEncoderSetting();
 
   if (outputModeIsAux()) {
@@ -546,20 +562,20 @@ static inline void onBleMidiDisconnect() {
   if (outputModeIsBle()) bleKickAdvertising();
 }
 
-static inline void queueNoteOff(uint8_t note, uint8_t ch, uint16_t durMs) {
+static inline bool queueNoteOff(uint8_t note, uint8_t ch, uint16_t durMs) {
   uint32_t t = millis() + durMs;
   for (auto &q : offQ) {
-    if (!q.on) { q.note = note; q.ch = ch; q.tOff = t; q.on = true; return; }
+    if (!q.on) { q.note = note; q.ch = ch; q.tOff = t; q.on = true; return true; }
   }
-  // if full, drop (better than blocking)
+  // Reserve before Note On so queue pressure cannot leave an untracked note.
+  return false;
 }
 
 static inline void serviceNoteOffs() {
   uint32_t now = millis();
   for (auto &q : offQ) {
     if (q.on && (int32_t)(now - q.tOff) >= 0) {
-      midiSendNoteOff(q.note, 0, q.ch);
-      q.on = false;
+      if (midiSendNoteOff(q.note, 0, q.ch)) q.on = false;
     }
   }
 }
@@ -679,7 +695,8 @@ enum LedDisplayMode : uint8_t {
   LED_DISPLAY_SETTING = 0,
   LED_DISPLAY_VOLUME,
   LED_DISPLAY_OUTPUT,
-  LED_DISPLAY_RANDOM
+  LED_DISPLAY_RANDOM,
+  LED_DISPLAY_EFFECT
 };
 LedDisplayMode gLedDisplayTransientMode = LED_DISPLAY_SETTING;
 uint32_t gLedDisplayTransientUntilMs = 0;
@@ -820,7 +837,7 @@ static inline void logStartupCheckSummary();
 enum Mode { MODE_NOTE = 0, MODE_ARP = 1, MODE_CHORD = 2, MODE_DRUM = 3 };
 Mode gMode = MODE_CHORD;
 
-static inline bool drumsAllowedForCurrentOutput() { return !outputModeIsAux(); }
+static inline bool drumsAllowedForCurrentOutput() { return gOutputMode != OUTPUT_AUX; }
 static inline void enforceAuxDrumGuard() {
   if (!drumsAllowedForCurrentOutput() && gMode == MODE_DRUM) {
     gMode = MODE_NOTE;
@@ -959,9 +976,9 @@ static inline void sendMelodic(uint8_t note, uint8_t vel = 96, uint8_t ch = 1, u
 
   if (outputModeIsAux()) {
     gSynth.noteOn(note, vel, gateMs);
-  } else if (midiOutReady()) {
+  }
+  if (midiOutReady() && queueNoteOff(note, ch, gateMs)) {
     midiSendNoteOn(note, vel, ch);
-    queueNoteOff(note, ch, gateMs);
   }
   triggerVisual(note, vel);
   activeAdd(note);
@@ -982,9 +999,8 @@ static inline void sendDrum(uint8_t note, uint8_t vel = 110, uint16_t gateMs = 6
   }
 
   uiQueueHeldNote(note, gateMs);
-  if (midiOutReady()) {
+  if (midiOutReady() && queueNoteOff(note, DRUM_CH, gateMs)) {
     midiSendNoteOn(note, vel, DRUM_CH);
-    queueNoteOff(note, DRUM_CH, gateMs);
   }
   triggerVisual(note, vel);
   activeAdd(note);
@@ -1107,7 +1123,7 @@ static inline void captureRuntimeState(RuntimeStateBlob& out) {
   memset(&out, 0, sizeof(out));
   out.magic = RUNTIME_STATE_MAGIC;
   out.version = RUNTIME_STATE_VER;
-  out.outputmode = (uint8_t)constrain((int)gOutputMode, 0, 2);
+  out.outputmode = (uint8_t)constrain((int)gOutputMode, 0, (int)OUTPUT_MODE_MAX);
   out.io_muted = ioMuteManualActive() ? 1 : 0;
   out.daw_sync = gDawSyncEnabled ? 1 : 0;
   out.mode = (uint8_t)gMode;
@@ -1136,7 +1152,7 @@ static inline void captureRuntimeState(RuntimeStateBlob& out) {
 static inline bool runtimeStateValid(const RuntimeStateBlob& in) {
   if (in.magic != RUNTIME_STATE_MAGIC) return false;
   if (in.version != RUNTIME_STATE_VER) return false;
-  if (in.outputmode > 2) return false;
+  if (in.outputmode > OUTPUT_MODE_MAX) return false;
   if (in.mode > 3) return false;
   if (in.clock > 1) return false;
   if (in.scale > 14) return false;
@@ -1184,7 +1200,7 @@ static inline void applyRuntimeState(const RuntimeStateBlob& in, bool applyOutpu
   gNoteLengthIndex = (uint8_t)constrain((int)in.note_length, 0, (int)NOTE_LENGTH_COUNT - 1);
   drumSelMask = in.drumsel;
   applyDawSyncEnabled(in.daw_sync != 0);
-  if (applyOutputMode) gOutputMode = (uint8_t)constrain((int)in.outputmode, 0, 2);
+  if (applyOutputMode) gOutputMode = (uint8_t)constrain((int)in.outputmode, 0, (int)OUTPUT_MODE_MAX);
   if (applyMute) gIoMuted = in.io_muted ? 1 : 0;
   gSynth.setParams(in.synth);
   enforceAuxDrumGuard();
@@ -1211,7 +1227,7 @@ static inline void saveRuntimeStateNow() {
   }
   prefs.putBytes("rt_state", &snap, sizeof(snap));
   prefs.putUChar("outputmode", snap.outputmode);
-  prefs.putUChar("midimode", snap.outputmode == OUTPUT_SERIAL ? 1 : 0);  // legacy compatibility
+  prefs.putUChar("midimode", outputHasSerial(snap.outputmode) ? 1 : 0);  // legacy compatibility
   prefs.putUChar("encset", (uint8_t)gEncoderSetting);
   prefs.putUChar("encvol", gEncoderVolumeMode ? 1u : 0u);
   prefs.end();
@@ -1274,7 +1290,7 @@ void fxPaletteWave() {
   static uint16_t phase = 0;
   phase = (uint16_t)(phase + 2 + (visSpeed >> 5));
 
-  const uint8_t level = (uint8_t)(noteEnergy * visIntensity);
+  const uint8_t level = (uint8_t)(max(noteEnergy, 0.12f) * visIntensity);
   for (int i = 0; i < LED_COUNT; ++i) {
     const uint8_t sample = sin8(phase + i * 32);
     const uint8_t idx = (uint8_t)(sample + (lastNote % 12) * 4);
@@ -1297,13 +1313,13 @@ void fxCometTrails() {
   static uint16_t head = 0; head = (head + 1 + (visSpeed >> 6)) % (LED_COUNT * 6);
   int pos = head / 6;
   CRGB c = ColorFromPalette(currentPalette(), (millis() / 5 + lastNote * 3),
-                            (uint8_t)(noteEnergy * visIntensity), LINEARBLEND);
+                            (uint8_t)(max(noteEnergy, 0.12f) * visIntensity), LINEARBLEND);
   leds[pos] += c;
 }
 
 void fxJuggle() {
   fadeToBlackBy(leds, LED_COUNT, 28);
-  uint8_t v = (uint8_t)(noteEnergy * visIntensity);
+  uint8_t v = (uint8_t)(max(noteEnergy, 0.12f) * visIntensity);
   for (uint8_t d = 0; d < 3; d++) {
     uint8_t pos = beatsin8(10 + d * 3 + (visSpeed >> 5), 0, LED_COUNT - 1);
     leds[pos] += ColorFromPalette(currentPalette(), (d * 85 + lastNote * 2), v, LINEARBLEND);
@@ -1314,7 +1330,7 @@ void fxGlitterVeil() {
   for (int i = 0; i < LED_COUNT; i++) {
     leds[i] = ColorFromPalette(currentPalette(),
                                (i * 32 + millis() / (8 + (255 - visSpeed) / 12)),
-                               (uint8_t)(noteEnergy * visIntensity), LINEARBLEND);
+                               (uint8_t)(max(noteEnergy, 0.12f) * visIntensity), LINEARBLEND);
   }
   addGlitter(22, (uint8_t)(50 + (visIntensity >> 2)));
 }
@@ -1333,20 +1349,20 @@ void fxNeonBars() {
   for (int i = 0; i < bars; i++) {
     uint8_t idx = (i * 255 / LED_COUNT + (lastNote % 12) * 6);
     leds[i] = ColorFromPalette(currentPalette(), idx,
-                               (uint8_t)(noteEnergy * visIntensity), LINEARBLEND);
+                               (uint8_t)(max(noteEnergy, 0.12f) * visIntensity), LINEARBLEND);
   }
 }
 
 void fxSparkleMist() {
   fadeToBlackBy(leds, LED_COUNT, 26);
-  uint8_t v = (uint8_t)(noteEnergy * visIntensity);
+  uint8_t v = (uint8_t)(max(noteEnergy, 0.12f) * visIntensity);
   leds[random8(LED_COUNT)] += ColorFromPalette(currentPalette(),
                                                (millis() / (7 + (255 - visSpeed) / 10) + lastNote * 5),
                                                v, LINEARBLEND);
 }
 
 void fxSplitFade() {
-  uint8_t v = (uint8_t)(noteEnergy * visIntensity);
+  uint8_t v = (uint8_t)(max(noteEnergy, 0.12f) * visIntensity);
   int mid = LED_COUNT / 2;
   for (int i = 0; i < mid; i++)
     leds[i] = ColorFromPalette(currentPalette(),
@@ -1650,8 +1666,13 @@ static inline void renderOutputInfoLeds() {
     CRGB::Black
   };
 
+  static const CRGB kCombinedPattern[LED_COUNT] = {
+    CRGB(0, 200, 83), CRGB(0, 200, 83), CRGB(0, 196, 154), CRGB(0, 196, 154),
+    CRGB(110, 44, 255), CRGB(110, 44, 255), CRGB::Black, CRGB::Black
+  };
   const CRGB* pattern = kBlePattern;
-  if (outputModeIsSerial()) pattern = kSerialPattern;
+  if (outputModeIsSerial() && outputModeIsAux()) pattern = kCombinedPattern;
+  else if (outputModeIsSerial()) pattern = kSerialPattern;
   else if (outputModeIsAux()) pattern = kAuxPattern;
   for (uint8_t i = 0; i < LED_COUNT; ++i) {
     leds[i] = pattern[i];
@@ -1685,6 +1706,20 @@ static inline void renderLEDs() {
       break;
     case LED_DISPLAY_RANDOM:
       renderRandomInfoLeds();
+      break;
+    case LED_DISPLAY_EFFECT:
+      switch (fxMode) {
+        case FX_PALETTE_WAVE: fxPaletteWave(); break;
+        case FX_SOFT_SWEEP: fxSoftSweep(); break;
+        case FX_COMET_TRAILS: fxCometTrails(); break;
+        case FX_JUGGLE: fxJuggle(); break;
+        case FX_GLITTER_VEIL: fxGlitterVeil(); break;
+        case FX_QUIET_FIRE: fxQuietFire(); break;
+        case FX_NEON_BARS: fxNeonBars(); break;
+        case FX_SPARKLE_MIST: fxSparkleMist(); break;
+        case FX_SPLIT_FADE: fxSplitFade(); break;
+        default: fxGradientFlow(); break;
+      }
       break;
     case LED_DISPLAY_SETTING:
     default:
@@ -1850,6 +1885,9 @@ static inline LedDisplayMode currentLedDisplayMode(uint32_t nowMs) {
       (int32_t)(gLedDisplayTransientUntilMs - nowMs) > 0) {
     return gLedDisplayTransientMode;
   }
+#if BECA_IDLE_LIGHT_EFFECTS
+  if ((int32_t)(gEncoderNavUntilMs - nowMs) <= 0) return LED_DISPLAY_EFFECT;
+#endif
   return LED_DISPLAY_SETTING;
 }
 
@@ -2293,6 +2331,7 @@ static inline void samplePlant(float &fDeg, float &fOct, uint8_t &velOut, float 
   float raw2 = (PLANT2_PIN == PLANT1_PIN) ? raw1 : analogRead(PLANT2_PIN);
   gPlantRaw1 = (uint16_t)constrain((int)raw1, 0, 4095);
   gPlantRaw2 = (uint16_t)constrain((int)raw2, 0, 4095);
+  gSynth.setSensorFrequency(gPlantRaw1, plantJackConnected() && !ioMuteActive());
 
   if (!plantJackConnected()) {
     resetPlantTrackingToRaw(raw1, raw2);
@@ -3121,8 +3160,12 @@ static inline bool parseOutputModeArg(const String& in, uint8_t& outMode) {
   if (v == "BLE")    { outMode = OUTPUT_BLE; return true; }
   if (v == "SERIAL") { outMode = OUTPUT_SERIAL; return true; }
   if (v == "AUX" || v == "AUX OUT" || v == "AUX_OUT") { outMode = OUTPUT_AUX; return true; }
+#if BECA_DUAL_OUTPUT
+  if (v == "SERIAL_AUX" || v == "SERIAL+AUX" || v == "SERIAL + AUX") { outMode = OUTPUT_SERIAL_AUX; return true; }
+#endif
   if (v.length() && isDigit(v[0])) {
-    int m = constrain(v.toInt(), 0, 2);
+    int m = v.toInt();
+    if (m < 0 || m > OUTPUT_MODE_MAX || v != String(m)) return false;
     outMode = (uint8_t)m;
     return true;
   }
@@ -3155,7 +3198,7 @@ static inline void handleApiOutputModePost() {
     server.send(400, "application/json", "{\"ok\":0,\"err\":\"mode required\"}");
     return;
   }
-  if (next == OUTPUT_AUX && !auxSwitchReady()) {
+  if (outputHasAux(next) && !auxSwitchReady()) {
     char buf[128];
     snprintf(
       buf, sizeof(buf),
@@ -3398,7 +3441,19 @@ static inline String buildApiParamsJson() {
     if (i) json += ",";
     json += "\""; json += NOTE_LENGTH_LABELS[i]; json += "\"";
   }
-  json += "],\"output_modes\":[\"BLE\",\"SERIAL\",\"AUX OUT\"]";
+#if BECA_DUAL_OUTPUT
+  json += "],\"output_modes\":[\"BLE MIDI\",\"Serial MIDI\",\"Aux audio\",\"Serial MIDI + Aux\"]";
+#else
+  json += "],\"output_modes\":[\"BLE MIDI\",\"Serial MIDI\",\"Aux audio\"]";
+#endif
+  json += ",\"aux_drums\":false,\"midi_drums\":true,\"led_effects\":[";
+  for (uint8_t i=0; i<FX_COUNT; ++i) { if(i) json += ","; json += "\""; json += EFFECT_NAMES[i]; json += "\""; }
+  json += "],\"led_palettes\":[";
+  for (uint8_t i=0; i<NUM_BUILTIN+NUM_CUSTOM; ++i) { if(i) json += ","; json += "\""; json += i<NUM_BUILTIN ? BUILTIN_NAMES[i] : CUSTOM_NAMES[i-NUM_BUILTIN]; json += "\""; }
+  json += "]";
+#if BECA_LIVE_PRESETS
+  json += ",\"live_preset\":true";
+#endif
   json += ",\"synth_presets\":[";
   for (uint8_t i = 0; i < beca::SynthEngine::kPresetCount; ++i) {
     if (i) json += ",";
@@ -3466,6 +3521,9 @@ static inline bool applyParamByKey(const String& keyIn, const String& valueIn, S
   key.toLowerCase();
   clearLedDisplayTransient();
 
+  if (key == "fx" || key == "pal" || key == "bright" || key == "vs" || key == "vi") {
+    gEncoderVolumeMode = false; gEncoderNavUntilMs = 0; clearLedDisplayTransient();
+  }
   if (key == "bpm") {
     bpm = (uint16_t)constrain(value.toInt(), 20, 240);
     recalcTransport(false);
@@ -3598,7 +3656,7 @@ static inline bool applyParamByKey(const String& keyIn, const String& valueIn, S
       err = "invalid output mode";
       return false;
     }
-    if (next == OUTPUT_AUX && !auxSwitchReady()) {
+    if (outputHasAux(next) && !auxSwitchReady()) {
       err = "aux not ready";
       return false;
     }
@@ -3629,9 +3687,13 @@ static inline bool applyParamByKey(const String& keyIn, const String& valueIn, S
   beca::SynthParams p;
   gSynth.getParams(p);
   bool synthTouched = false;
-  if (key == "preset") {
+  if (key == "preset"
+#if BECA_LIVE_PRESETS
+      || key == "preset_live"
+#endif
+  ) {
     const uint8_t idx = (uint8_t)constrain(value.toInt(), 0, (int)beca::SynthEngine::kPresetCount - 1);
-    gSynth.loadPreset(idx);
+    gSynth.loadPreset(idx, key == "preset_live");
     gSynth.getParams(p);
     synthTouched = true;
   } else if (key == "preset_reset") {
@@ -3923,6 +3985,14 @@ const uint32_t WIFI_RECONNECT_MS = 5000;
 const uint32_t WIFI_RESET_MS = 30000;
 const uint32_t WIFI_RESET_COOLDOWN_MS = 60000;
 const uint32_t MDNS_RETRY_MS = 10000;
+#ifndef BECA_AUTO_RECOVERY
+#define BECA_AUTO_RECOVERY 1
+#endif
+enum PortalRecoveryState : uint8_t { RECOVERY_WAIT, RECOVERY_CONNECTING, RECOVERY_PAUSED, RECOVERY_READY };
+PortalRecoveryState gPortalRecoveryState = RECOVERY_WAIT;
+uint8_t gPortalRecoveryAttempts = 0;
+uint32_t gPortalRecoveryAtMs = 0;
+uint32_t gPortalRecoveryStartedMs = 0;
 char gSerialCtrlBuf[192];
 uint16_t gSerialCtrlLen = 0;
 bool gSerialCtrlCollect = false;
@@ -4044,6 +4114,48 @@ static inline void serviceMDNS(uint32_t now) {
 }
 
 static inline void maintainWiFi(uint32_t now) {
+#if BECA_AUTO_RECOVERY
+  // Retry saved credentials after a failed boot without blocking the music loop.
+  if (setupPortalActive() && gStaSsid.length() > 0) {
+    if (wifiReady()) {
+      dns.stop();
+      WiFi.softAPdisconnect(false);
+      WiFi.mode(WIFI_STA);
+      gIsSta = true;
+      gPortalRecoveryState = RECOVERY_READY;
+      gWifiLastError = "";
+      gWifiLastHint = "";
+      Serial.println("@I WIFI RECOVERED");
+    } else if (gPortalRecoveryState == RECOVERY_CONNECTING) {
+      if ((uint32_t)(now - gPortalRecoveryStartedMs) < 15000u) return;
+      const bool authFailed = gLastStaDisconnectReason == WIFI_REASON_AUTH_FAIL ||
+        gLastStaDisconnectReason == WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT ||
+        gLastStaDisconnectReason == WIFI_REASON_HANDSHAKE_TIMEOUT;
+      WiFi.disconnect(false, false);
+      WiFi.mode(WIFI_AP);
+      gIsSta = false;
+      gPortalRecoveryState = (authFailed || gPortalRecoveryAttempts >= 5) ? RECOVERY_PAUSED : RECOVERY_WAIT;
+      gPortalRecoveryAtMs = now + min(300000u, 30000u << min((int)gPortalRecoveryAttempts, 4));
+      gWifiLastError = wifiFailureMessage(gLastStaDisconnectReason);
+      if (gPortalRecoveryState == RECOVERY_PAUSED) {
+        gWifiLastHint = "Automatic retries paused. Check the 2.4GHz network and password in Setup; USB control remains available.";
+      }
+      return;
+    } else if (gPortalRecoveryState == RECOVERY_WAIT && (int32_t)(now - gPortalRecoveryAtMs) >= 0) {
+      gPortalRecoveryAttempts++;
+      gPortalRecoveryStartedMs = now;
+      gPortalRecoveryState = RECOVERY_CONNECTING;
+      WiFi.mode(WIFI_AP_STA);
+      WiFi.setAutoReconnect(false);
+      WiFi.setHostname(gDeviceName.c_str());
+      WiFi.begin(gStaSsid.c_str(), gStaPass.c_str());
+      Serial.printf("@I WIFI RECOVERY ATTEMPT %u/5\n", gPortalRecoveryAttempts);
+      return;
+    } else {
+      return;
+    }
+  }
+#endif
   if (!gIsSta || gStaSsid.length() == 0) return;
   static uint32_t lastCheckMs = 0;
   if ((int32_t)(now - lastCheckMs) < (int32_t)WIFI_CHECK_MS) return;
@@ -4687,6 +4799,11 @@ static inline void handleSerialControlLine(const char *line) {
     return;
   }
 
+  if (strcmp(cmd, "LEDS") == 0) {
+    String json = "{\"display\":" + String((uint8_t)currentLedDisplayMode(millis())) + ",\"effect\":" + String((uint8_t)fxMode) + ",\"rgb\":[";
+    for (uint8_t i=0; i<LED_COUNT; ++i) { if(i) json += ","; json += "[" + String(leds[i].r) + "," + String(leds[i].g) + "," + String(leds[i].b) + "]"; }
+    json += "]}"; serialCtrlReply("LEDS", json); return;
+  }
   if (strcmp(cmd, "WIFI_INFO") == 0) {
     serialCtrlReply("WIFI_INFO", buildApiInfoJson());
     return;
@@ -5064,6 +5181,9 @@ static inline bool tryConnectSTA(const String &ssid, const String &pass, uint32_
 
 static inline void startAPPortal() {
   gIsSta = false;
+  gPortalRecoveryState = RECOVERY_WAIT;
+  gPortalRecoveryAttempts = 0;
+  gPortalRecoveryAtMs = millis() + 30000u;
   normalizeDeviceName();
   if (gStaSsid.length() == 0 && gWifiLastError.length() == 0) {
     gWifiLastError = "No Wi-Fi saved yet.";
@@ -5193,13 +5313,13 @@ void setup() {
   }
   setStartupCheck(STARTUP_CHECK_SESSION, hasBootState ? STARTUP_CHECK_OK : STARTUP_CHECK_WARN);
 
-  if (storedOutput > 2) {
+  if (storedOutput > OUTPUT_MODE_MAX) {
     storedOutput = legacyMidiMode;
   }
-  const bool bootOutputStabilized = (storedOutput == OUTPUT_AUX);
-  uint8_t bootOutput = (uint8_t)constrain((int)storedOutput, 0, 2);
-  if (bootOutput == OUTPUT_AUX) {
-    bootOutput = (legacyMidiMode == 1) ? OUTPUT_SERIAL : OUTPUT_BLE;
+  const bool bootOutputStabilized = outputHasAux(storedOutput);
+  uint8_t bootOutput = (uint8_t)constrain((int)storedOutput, 0, (int)OUTPUT_MODE_MAX);
+  if (outputHasAux(bootOutput)) {
+    bootOutput = outputHasSerial(bootOutput) || legacyMidiMode == 1 ? OUTPUT_SERIAL : OUTPUT_BLE;
     Serial.printf("@I BOOT MIDI STABILIZE MODE %s (AUX unlock in %lu ms)\n",
                   outputModeName(bootOutput), (unsigned long)AUX_STARTUP_LOCK_MS);
   }
@@ -5208,7 +5328,7 @@ void setup() {
   gEncoderSetting = (EncoderSettingId)storedEncoderSetting;
   normalizeEncoderSetting();
   gEncoderVolumeMode = storedEncoderVolumeMode;
-  setStartupCheck(STARTUP_CHECK_OUTPUT, bootOutput <= OUTPUT_AUX ? STARTUP_CHECK_OK : STARTUP_CHECK_FAIL);
+  setStartupCheck(STARTUP_CHECK_OUTPUT, bootOutput <= OUTPUT_MODE_MAX ? STARTUP_CHECK_OK : STARTUP_CHECK_FAIL);
 
   Serial.printf("@I RESET %s crash_count=%u\n", resetReasonName(resetReason), (unsigned)gCrashCount);
   if (gDeviceName.length() == 0) gDeviceName = "beca-" + shortChipId();
@@ -5436,12 +5556,8 @@ void loop() {
         uint8_t maxCatch = 4;
         do {
           uint32_t base = T.stepMs;
-          uint32_t swingAdd = 0;
-
           T.swingOdd = !T.swingOdd;
-          if (swingPct && T.swingOdd) swingAdd = (base * swingPct) / 100;
-
-          T.nextTickMs += base + swingAdd;
+          T.nextTickMs += beca::swungStepMs(base, swingPct, T.swingOdd);
           transportTick();
 
           if (--maxCatch == 0) break;

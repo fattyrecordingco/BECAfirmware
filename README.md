@@ -11,10 +11,56 @@ The current product workflow is desktop-first:
 
 The old browser page on the device is now a fallback and recovery path, not the primary user interface.
 
-## Current Release Baseline
+## Release 0.2.0 — first installation and music workflow
 
-- app: `setup-v0.1.7`
-- firmware release tag: `firmware-v1.0.9`
+Start with the [full manual and first-unit quick start](docs/user/BECA_MANUAL.md), also bundled inside Setup and available as [standalone HTML](docs/user/BECA_MANUAL.html). A blank unit can be flashed offline using the included firmware 1.1.0. Bootloader, partition table and boot data are included; the app verifies SHA256 and skips the settings partition. WebView2/USB driver installation may still need internet on a new Windows computer.
+
+**MIDI routing is in Setup only.** Splits persist and can start automatically on app launch/USB connection. Stop suspends reconnection for the current session; the automatic-connection checkbox persists across launches. Missing destinations are never silently replaced. MIDI status polls every 2 seconds, idle output discovery every 5 seconds and USB enumeration every 3 seconds; requests do not overlap and unchanged state does not rerender the editor. Draft fields remain protected during polling.
+
+Mac/Linux can create a native **BECA (virtual MIDI)** source using the existing MIDI library. Windows needs a configured virtual MIDI cable such as a loopMIDI port named BECA. The CH340/CP210x USB hardware does not enumerate as class-compliant MIDI. Commercial driver redistribution and production signing need publisher licensing/credentials. See the manual before shipping units or claiming a fully driverless setup.
+
+## Performance and recovery
+
+The desktop **Performance** view exposes the musical, synth, timing, LED controls in six open groups, with a separate MIDI percussion section. Sliders send while moving, with latest-value coalescing, serialized requests, state differences and a 20-write/second ceiling. Changes to multiple controls are sequential, not an atomic scene. State snapshots run at 500 ms and synth reconciliation at 2 seconds while visible; active edits are protected from stale responses. Switching from Control disposes its stream.
+
+AUX adds **Dewdrop Glass, Moon Garden, Moss Bells, Firefly Pluck, Bubble Reed, Pollen Drift**, and **Raw Sensor Sine**, preserving existing preset indices. These are synthesized textures; pads suit longer note lengths. Raw Sensor Sine maps ADC1 directly to Hz (440 → 440 Hz), bypassing scale, sensitivity, tempo, envelopes, filters, detune, drums and effects. Master volume and short amplitude fades apply. Phase is preserved with no pitch glide; zero/reported disconnect becomes silent. Sampling normally runs every 8 ms and audio blocks are 128 samples at 44.1 kHz, plus DMA/scheduling latency. ADC counts are a sonification mapping, not an acoustic recording. Plant jack detection remains disabled by default, so unplugged electrodes may not be identified.
+
+The **local diagnostic assistant** checks freshness, frozen timestamps when supplied, invalid values, ADC rails and recent variation. Failed reads retry after 2/5/15/30 seconds, then pause for Reconnect. Failed parameter writes are not replayed. This uses deterministic local rules, not a trained AI or plant-health diagnosis. It does not alter sensitivity, credentials or firmware automatically. Quiet does not mean unhealthy.
+
+Firmware now retries saved Wi-Fi after a failed startup without blocking the loop, retaining the setup AP until recovery. It permits five attempts per boot with increasing intervals and pauses early on authentication failure. Successful recovery closes the AP. Existing station reconnect and USB fallback remain. Recovery never erases credentials or repeatedly reboots. No software can guarantee every error will never recur; regression checks cover the implemented fixes.
+
+Feature flags: `BECA_EXTENDED_SOUNDS=0` restores six presets; `BECA_AUTO_RECOVERY=0` disables added startup Wi-Fi retries (both default to 1). Frontend `VITE_BECA_PERFORMANCE_PAGE=false` omits Performance. Core 2.0.14 and BLE libraries are unchanged. Live audio fixes cover repeated master loss at high drive, held envelope edits, bounded voice allocation/retirement and audio-task ownership of drum-kit updates. A gain lookup removes per-sample square roots.
+
+Research and remaining priorities: [firmware review](docs/research/firmware-review.md), [Ableton instrument plan](docs/research/ableton-instrument-plan.md). The proposed Ableton instrument has not been implemented in this run.
+
+### Playable Performance interface
+
+Performance now has an instrument deck using BECA's green/white palette, existing logo, fixed eight-leaf motif and typography, without decorative gradients. The leaf meter and recent 24-second scope show measured plant energy; note chips show observed MIDI, not an audio waveform or a simulated performance. The pinned live strip keeps volume, tempo, output mode and mute available while scrolling. **Focus controls** brings the six open parameter groups forward; **Sound playground** returns to exploration.
+
+- **XY expression:** Tone / bite controls logarithmic cutoff and resonance; Space / echo controls delay time and mix; Drift / grit controls detune and drive. Pointer capture supports drags outside the pad, arrow keys adjust it, and Shift makes smaller moves. The pad is inactive for Raw Sensor Sine because that mode bypasses these parameters.
+- **Mutate sound:** a depth slider controls bounded timbre exploration. Tempo, key, sensitivity, routing, mute and master volume remain under the performer's control. **Undo gesture** restores the timbre before the last pad gesture, mutation or variation recall. Switching presets clears that undo point.
+- **Pocket variations A–D:** Save captures all sound parameters after pending edits have been acknowledged. Recall restores timbre without altering master volume or musical transport. Slots persist on this computer, validate stored values, and exclude credentials and connection settings. Replace explicitly overwrites a slot. Raw sine stays separate from timbre variations.
+- **Precise controls:** enter a number and press Enter, Escape cancels an unfinished entry, Shift + arrows adjusts a slider by one step, and double-click resets a slider to its loaded value. Unfocused **M** toggles mute; **1–4** recall saved variations. Shortcuts do not intercept typing in controls.
+- **Live presets:** `BECA_LIVE_PRESETS=1` (default) advertises `live_preset: true` in `/api/params` and accepts `preset_live` through `/api/set` or serial `SET`. This publishes the new preset with the existing master volume in one synth parameter update. Legacy `preset` behavior stays compatible; apps on older firmware use that supported command and explain that its factory volume applies. `BECA_LIVE_PRESETS=0` omits the new command/capability.
+
+The deck adds no network stream or rendering loop. Parameter feedback is coalesced into animation frames, signal history is bounded, and unchanged text/values are retained. Existing serialized writes remain capped at 20/s, snapshots at 500 ms and synth reconciliation at 2 s. Muting takes priority over queued timbre changes after the current request completes. Multi-parameter gestures and variation recall still travel as sequential commands; this is not sample-accurate DAW automation. Reduced-motion preferences suppress transitions. Disconnects disable the pad, numeric controls and actions until fresh state returns.
+
+See [interaction design and verification](docs/research/performance-interaction.md). Run `python tools/verify_device.py COM4 --exercise-live-presets` to verify all live presets preserve master level while muted and restore the original settings afterward.
+
+### Connection troubleshooting and checks
+
+On Windows, `./tools/build_firmware.ps1` uses PlatformIO Core 6.2.0 in a project-local Python environment and a private package cache under `%LOCALAPPDATA%/BECA-build`. Its short path avoids Xtensa include-path limits in deep OneDrive folders. Use `./tools/build_firmware.ps1 -UploadPort COM4` to build and flash the selected device. This also avoids different IDE/Core versions replacing shared SCons files during a build; ESP32 core remains pinned to 2.0.14. `python tools/verify_device.py COM4` checks the live protocol/data; add `--exercise-audio` to temporarily test AUX presets and restore settings afterward.
+
+Additional regression fixes preserve tempo across swung step pairs, let each embedded drum envelope finish its decay, and reject nonfinite DSP values. The existing AUX drum guard remains enabled. MIDI note-offs now retain their queue entry until serial transmission succeeds, and a Note On reserves its release entry first. SSE's last-sent snapshot still needs a dedicated transport pass.
+
+- ASK4 Wireless (802.1x) uses PEAP enterprise authentication. The current SSID/password form supports personal networks; enterprise setup needs a login identity and trusted certificate settings. Do not repeatedly submit enterprise credentials through this form. BECA sees the local ASK4 enterprise broadcast on 2.4 GHz, but cannot use 5 GHz-only networks.
+- Managed Wi-Fi may require device registration or isolate local clients. USB remains available for diagnosis. After recovery pauses, correct the network settings and use Reconnect.
+- In `apps/beca-setup`, run `node --test scripts/health-check.mjs` and `npm run test:ui`. See [audio regression checks](tests/audio/README.md). Compile firmware using `platformio run`.
+
+## Published Release Baseline
+
+- app: `setup-v0.2.0`
+- firmware release tag: `setup-v0.2.0 (firmware 1.1.0)`
 - primary branch for release-ready source: `master`
 - firmware build target: ESP32 Arduino core `2.0.14`
 
@@ -109,11 +155,11 @@ Start here:
 
 Installer files:
 
-- Windows x64: [installers/windows/BECA_0.1.7_x64-setup.exe](./installers/windows/BECA_0.1.7_x64-setup.exe)
-- macOS Apple Silicon: [installers/macos/BECA_0.1.7_aarch64.dmg](./installers/macos/BECA_0.1.7_aarch64.dmg)
-- macOS Intel: [installers/macos/BECA_0.1.7_x64.dmg](./installers/macos/BECA_0.1.7_x64.dmg)
-- Linux AppImage: [installers/linux/BECA_0.1.7_amd64.AppImage](./installers/linux/BECA_0.1.7_amd64.AppImage)
-- Linux Debian package: [installers/linux/BECA_0.1.7_amd64.deb](./installers/linux/BECA_0.1.7_amd64.deb)
+- Windows x64: [installers/windows/BECA_0.2.0_x64-setup.exe](./installers/windows/BECA_0.2.0_x64-setup.exe)
+- macOS Apple Silicon: [installers/macos/BECA_0.2.0_aarch64.dmg](./installers/macos/BECA_0.2.0_aarch64.dmg)
+- macOS Intel: [installers/macos/BECA_0.2.0_x64.dmg](./installers/macos/BECA_0.2.0_x64.dmg)
+- Linux AppImage: [installers/linux/BECA_0.2.0_amd64.AppImage](./installers/linux/BECA_0.2.0_amd64.AppImage)
+- Linux Debian package: [installers/linux/BECA_0.2.0_amd64.deb](./installers/linux/BECA_0.2.0_amd64.deb)
 
 On the GitHub website, click the installer file, then use the download button.
 
@@ -166,12 +212,12 @@ On the `MIDI bridge` section:
 2. optionally choose a second mirrored output
 3. click `connect bridge`
 4. when connected, the button changes to `disconnect bridge`
-5. use `send test note` to verify routing
+5. use `send test note` before starting the bridge; use the plant while it is live
 
 Bridge rules:
 - the bridge owns the serial port while running
 - stop the bridge before Wi-Fi setup or any direct serial maintenance
-- while the bridge is running, live Control uses Wi-Fi when BECA is online; if BECA is offline and USB is occupied by the bridge, the app shows the target as not ready instead of leaving a stale control surface on screen
+- MIDI and live USB controls share one persistent native serial connection. Wi-Fi control remains available when connected. Stop separate CLI bridges or Serial Monitor before starting the app bridge.
 - the app now reflects bridge state on launch, so it should not come up lying about whether bridge is running
 - the app now stops the bridge automatically when the desktop window exits
 - the last bridge routing and MicroFreak toggle choices are restored on the next launch
@@ -493,3 +539,19 @@ Release signing, notarization, checksum, and malware-scan commands are in [docs/
 - if setup or control behavior changes, update this README in the same change
 - if you touch the device web fallback `index.html`, regenerate `index_html.h`
 
+
+## Live splits, combined output and device lights
+
+Choose **Serial MIDI + Aux** in Performance or Control to hear BECA's synth through the device while sending melodic MIDI to the computer. Starting the app bridge preserves an active Aux path by choosing this combined mode. Existing modes keep their values: BLE=0, Serial=1, Aux=2, combined=3. Aux keeps its startup cooldown; on reboot the firmware begins in MIDI until Aux is selected again.
+
+Open **Setup > MIDI routing**. Add up to eight splits, choose each destination, input channel (All or 1-16), output channel (Keep or 1-16), inclusive source note range (0-127), and transpose (-48 to +48). Ranges apply before transposition; out-of-range transposed notes are dropped. Splits may layer the same notes or divide the keyboard. Channel controls and pitch bend follow the input-channel filter, independently of note ranges; use separate output channels for independent instruments. MicroFreak mode removes channel-10 percussion and maps melodic notes to channel 1 unless an explicit output channel overrides it.
+
+**Apply splits** validates and updates the running bridge without reopening USB. Newly needed MIDI ports must open successfully before the previous routing is replaced. Held notes are released during changes, stopping, or detected USB loss. **Release MIDI notes** clears routed notes; Aux continues separately. Draft edits survive status refreshes. Applied splits are saved locally and the bridge starts only when requested. If a MIDI destination disappears, refresh outputs and select an available destination; the bridge reports the failure instead of silently selecting another instrument.
+
+**MIDI drums** has its own channel-10 part switches. Use Drums playing mode or a rhythm mode that generates percussion, and route channel 10 to a drum instrument. Aux has no enabled drum engine, so the ineffective drum-kit selector is removed and this section is hidden in Aux-only mode. Combined mode can send percussion over MIDI; its Aux engine continues to synthesize melodic parts.
+
+**Device lights** uses the firmware's actual effect and palette names. The selected animation now runs when encoder information is idle. Turning the physical encoder still shows its setting/volume feedback; changing light settings in Performance immediately returns to the effect. All ten effects retain a small ambient brightness at low plant energy. Logical LED frames are available on demand through `@C LEDS` for diagnostics; no extra LED stream is broadcast.
+
+Feature flags: `BECA_DUAL_OUTPUT=0` removes combined output; `BECA_IDLE_LIGHT_EFFECTS=0` restores persistent encoder-status LEDs. Both default to 1. The core remains 2.0.14 with BLE-MIDI 2.2.0, MIDI Library 5.0.2 and NimBLE-Arduino 1.4.3. No BLE library change is required.
+
+Control writes remain coalesced and serialized at at most 20 per second; snapshots run at 2 Hz and synth reconciliation at 0.5 Hz. Bridge status polls at 0.5 Hz while the app is running, so saved routing can connect even while the DAW is foreground; activity events are capped at 2 Hz. The USB worker frames partial reads, keeps MIDI flowing during command replies, bounds queues, cancels disconnected/expired requests, and retries a verified USB handshake. This is soft real-time control, not a sample-accurate DAW automation clock. Details and test evidence: [live routing verification](docs/research/live-routing-verification.md).

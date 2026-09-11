@@ -9,9 +9,15 @@ It is the primary user-facing product for:
 - Serial MIDI bridge management
 - diagnostics export
 
-Firmware flashing is intentionally locked to the latest stable release listed in the published firmware manifest. Older releases and ad hoc workspace builds are for developer-only PlatformIO flows, not the shipped setup app.
+The app offers included, checksum-verified firmware for offline first installation and the latest stable release from GitHub. A release build must stage firmware with `tools/release/prepare_release.py` before bundling. Blank ESP32 boards need the complete merged image; the flasher preserves the NVS settings gap.
 
 ## Run In Development
+
+The new **Performance** view exposes all musical controls together. Input events send coalesced updates through serialized reads/writes, capped at 20 writes/second. State snapshots run at 500 ms and full synth reconciliation at 2 seconds while visible. Active edits are protected from older responses. Install matching firmware for the expanded preset menu.
+
+Its local diagnostic assistant explains stale/invalid/clipped/quiet readings and retries snapshots with bounded backoff; it does not infer plant health or alter music/firmware. Use Reconnect after retries pause. Build with `VITE_BECA_PERFORMANCE_PAGE=false` to omit this page. Run `node --test scripts/health-check.mjs` for diagnostics tests; Performance behavior/accessibility is included in `npm run test:ui`.
+
+Performance includes a measured plant display, pinned essentials, three XY mappings, bounded mutation with Undo, a firmware-backed soundscape browser and four locally saved timbre variations. **Focus controls** exposes all parameter groups; numeric entries, fine keyboard adjustments and slider resets support precise edits. M toggles mute and 1–4 recall variations when not typing. The new firmware `preset_live` capability preserves master volume atomically when browsing sounds; legacy firmware keeps its original preset behavior. Raw sine disables bypassed timbre gestures. See the [complete interaction notes](../../docs/research/performance-interaction.md) and [root usage guide](../../README.md#playable-performance-interface).
 
 ```bash
 cd apps/beca-setup
@@ -77,3 +83,10 @@ That script:
 - The bundled bridge sends a lightweight serial-host heartbeat so firmware streams Serial MIDI only when the bridge/control channel is actually draining USB, preventing idle COM-port backpressure from making Wi-Fi control feel frozen
 - if release behavior changes, update the root [README.md](../../README.md) in the same commit
 
+
+
+### Editable MIDI splits and Aux together
+
+Setup contains the only **MIDI routing** editor: up to eight saved splits, Apply, Start/Stop, Release MIDI notes and automatic reconnection. The native `BridgeSession` owns USB and serves MIDI and control requests together. Select **Serial MIDI + Aux** for both outputs. Drum controls are separate and labelled MIDI channel 10; Aux's inactive drum-kit selector is removed. Performance stays dedicated to playing.
+
+Troubleshooting: close separate serial monitors/CLI bridges before opening the app bridge. Wi-Fi provisioning, reboot and flashing still require stopping it. A missing MIDI destination preserves existing routes during Apply; an active send failure stops the bridge with an error. See the root README and `docs/research/live-routing-verification.md` for verification and latency limits.

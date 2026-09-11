@@ -32,7 +32,7 @@ async function expectNoVisibleHorizontalOverflow(page, selector) {
   expect(overflow).toEqual([]);
 }
 
-test("setup panel keeps the same instrument-frame geometry", async ({ page }) => {
+test("Setup and routing remain readable and scroll on smaller screens", async ({ page }) => {
   await page.goto("/");
   await expect(page.locator(".setup-frame")).toBeVisible();
   await expect(page.locator(".vite-error-overlay, #webpack-dev-server-client-overlay")).toHaveCount(0);
@@ -41,9 +41,8 @@ test("setup panel keeps the same instrument-frame geometry", async ({ page }) =>
 
   const frame = await page.locator(".setup-frame").boundingBox();
   const viewport = page.viewportSize();
-  expect(frame.width / frame.height).toBeCloseTo(575 / 842, 1);
   expect(frame.width).toBeLessThanOrEqual(viewport.width);
-  expect(frame.height).toBeLessThanOrEqual(viewport.height);
+  expect(frame.height).toBeGreaterThan(500);
 
   await expectNoVisibleHorizontalOverflow(page, ".setup-frame");
 });
@@ -139,7 +138,10 @@ test("ui source does not use gradients", async () => {
   const files = [
     resolve(uiRoot, "index.html"),
     resolve(uiRoot, "control.html"),
-    resolve(uiRoot, "src", "styles.css")
+    resolve(uiRoot, "src", "styles.css"),
+    resolve(uiRoot, "src", "performance.css"),
+    resolve(uiRoot, "src", "performance-instrument.css"),
+    resolve(uiRoot, "src", "midi-routing.css")
   ];
   const source = files.map((file) => readFileSync(file, "utf8")).join("\n");
   expect(source).not.toMatch(/(?:linear|radial|conic)-gradient|gradient\(/i);

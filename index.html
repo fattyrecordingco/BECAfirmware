@@ -1246,7 +1246,7 @@
     <script>
       (() => {
         const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
-        const OUTPUT_LABELS = ["BLE", "SERIAL", "AUX OUT"];
+        const OUTPUT_LABELS = ["BLE", "SERIAL", "AUX OUT", "SERIAL + AUX"];
         const CLOCK_LABELS = ["Internal", "Plant"];
         const LED_SLOT_COUNT = 8;
         const LED_DISPLAY_SETTING = 0;
@@ -1274,7 +1274,8 @@
         const OUTPUT_PATTERNS = [
           ["#00c8ff", null, "#00c8ff", null, "#00c8ff", null, "#00c8ff", null],
           ["#6e2cff", "#00c49a", "#00c853", "#00c853", "#ffd400", "#ffd400", "#ff5a00", "#f12129"],
-          ["#00c853", "#00c853", null, null, null, null, null, null]
+          ["#00c853", "#00c853", null, null, null, null, null, null],
+          ["#00c853", "#00c853", "#00c49a", "#00c49a", "#6e2cff", "#6e2cff", null, null]
         ];
         const RANDOM_PATTERN = ["#6e2cff", null, "#00c853", null, "#ffd400", null, "#ff5a00", null];
         const DRUM_PARTS = [
@@ -1906,7 +1907,8 @@
           el.norepButton.classList.toggle("is-active", Boolean(runtime.nr));
           el.norepButton.textContent = runtime.nr ? "No repeat ON" : "Keep notes moving";
 
-          updateSegmented(el.outputGroup, runtime.outputmode, state.auxReady ? null : 2);
+          updateSegmented(el.outputGroup, runtime.outputmode);
+          el.outputGroup.querySelectorAll("button").forEach((button, index) => { button.disabled = !state.auxReady && index >= 2; });
           updateSegmented(el.clockGroup, runtime.clock);
 
           renderLedStack();

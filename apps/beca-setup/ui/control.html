@@ -759,7 +759,7 @@
       const MODE_LABELS = ["notes", "arpeggio", "chords", "drums"];
       const SCALE_LABELS = ["maj", "min", "dorian", "lyd", "mix", "pent min", "pent maj", "harm min", "phryg", "whole", "maj7", "min7", "dom7", "sus2", "sus4"];
       const NOTE_LENGTHS = ["1/32", "1/16t", "1/16", "1/8t", "1/8", "1/4", "1/2", "1/1"];
-      const OUTPUTS = ["ble", "aux out", "serial"];
+      const OUTPUTS = ["ble", "aux out", "serial", "serial+aux"];
       const TIME_SIGNATURES = ["1-1", "2-2", "2-4", "3-4", "4-4", "5-4", "7-4", "6-8", "9-8", "12-8", "4-8", "4-16", "8-32"];
       const LED_SLOT_COUNT = 8;
       const LED_DISPLAY_SETTING = 0;
@@ -793,7 +793,8 @@
       const OUTPUT_PATTERNS = {
         ble: ["#00c8ff", null, "#00c8ff", null, "#00c8ff", null, "#00c8ff", null],
         serial: ["#6e2cff", "#00c49a", "#00c853", "#00c853", "#ffd400", "#ffd400", "#ff5a00", "#f12129"],
-        "aux out": ["#00c853", "#00c853", null, null, null, null, null, null]
+        "aux out": ["#00c853", "#00c853", null, null, null, null, null, null],
+        "serial+aux": ["#00c853", "#00c853", "#00c49a", "#00c49a", "#6e2cff", "#6e2cff", null, null]
       };
       const RANDOM_PATTERN = ["#6e2cff", null, "#00c853", null, "#ffd400", null, "#ff5a00", null];
       const PLANT_RENDER_MS = 33;
@@ -904,6 +905,7 @@
         if (text === "0" || (numericFallback === 0 && !text)) return "ble";
         if (text === "1" || (numericFallback === 1 && !text)) return "serial";
         if (text === "2" || (numericFallback === 2 && !text)) return "aux out";
+        if (text === "3" || text === "serial aux" || text === "serial+aux" || numericFallback === 3) return "serial+aux";
         if (text === "aux" || text === "aux out") return "aux out";
         if (text === "ble" || text === "serial") return text;
         if (numericFallback === 0) return "ble";
@@ -913,7 +915,7 @@
       }
 
       function isAuxOutput() {
-        return normalizeOutputModeToken(state.live.outputmode, Number(state.live.outputmode)) === "aux out";
+        return ["aux out", "serial+aux"].includes(normalizeOutputModeToken(state.live.outputmode, Number(state.live.outputmode)));
       }
 
       function getSynthPresetNames() {
@@ -1517,7 +1519,7 @@
           const option = document.createElement("button");
           option.type = "button";
           option.className = "output-option";
-          option.textContent = output;
+          option.textContent = output === "serial+aux" ? "serial + aux" : output;
           option.addEventListener("click", () => {
             runExclusive(async () => {
               if (normalizeOutputModeToken(state.live.outputmode, Number(state.live.outputmode)) === output) {

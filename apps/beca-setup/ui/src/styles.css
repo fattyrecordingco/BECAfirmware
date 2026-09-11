@@ -286,6 +286,36 @@ button {
   color: var(--accent);
 }
 
+/* Setup grows with routing; the playing surfaces keep their instrument frames. */
+[data-screen-view="setup"] { overflow-y: auto; align-items: start; padding-bottom: 68px; }
+.setup-viewport { width: min(1120px, 100%); height: auto; max-height: none; display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; }
+.setup-frame { width: 100%; height: auto; min-height: 740px; transform: none; overflow: visible; }
+.setup-music { min-width: 0; }
+.setup-music .midi-routing { margin-top: 0; }
+.setup-guide { border: 2px solid var(--accent); border-radius: 20px; padding: 20px; background: white; }
+.setup-guide h2 { font: 800 18px var(--display); margin: 0; }
+.setup-guide p, .setup-guide a { font-size: 12px; line-height: 1.65; }
+.setup-guide a { color: var(--accent); font-weight: 700; }
+.setup-port-picker { grid-column: 1 / -1; font-size: 11px; }
+.setup-port-picker[hidden] { display: none; }
+.setup-port-picker select { width: 100%; margin-top: 6px; }
+.midi-auto { display: flex; gap: 8px; align-items: center; font-size: 11px; line-height: 1.5; }
+.midi-auto input { width: 20px; height: 20px; flex-shrink: 0; accent-color: var(--accent); }
+@media (min-width: 960px) {
+  .setup-viewport { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+}
+.setup-music .midi-route { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.setup-music .midi-route-port { grid-column: 1 / -1; }
+.setup-music .midi-route-name { grid-column: 2 / -1; }
+.setup-music .midi-route-note_min { grid-column: 1; }
+.setup-music .midi-routing-heading { display: block; }
+.setup-music .midi-routing-heading button { margin-top: 10px; }
+.setup-status-box { white-space: normal !important; overflow-wrap: anywhere; text-align: center; }
+.manual-dialog { width: min(1000px, 94vw); height: 90dvh; border: 2px solid var(--accent); border-radius: 18px; padding: 12px; background: var(--bg); }
+.manual-dialog[open] { display: flex; flex-direction: column; gap: 10px; }
+.manual-dialog > button { align-self: flex-end; }
+.manual-dialog iframe { flex: 1; min-height: 0; width: 100%; border: 0; }
+
 .setup-logo svg {
   display: block;
   width: 100%;
@@ -747,6 +777,25 @@ button {
 .setup-row-bridge .setup-bridge-status {
   margin-top: 0;
 }
+
+.setup-frame .setup-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.setup-frame .setup-row .setup-copy { grid-column: 1 / -1; grid-row: auto; }
+.setup-frame .setup-copy p { max-width: none; font-size: 11px; line-height: 1.5; }
+.setup-frame .setup-row #connect-status,
+.setup-frame .setup-row #firmware-select,
+.setup-frame .setup-row #wifi-ssid { grid-column: 1; }
+.setup-frame .setup-row #btn-scan,
+.setup-frame .setup-row #btn-flash,
+.setup-frame .setup-row #wifi-pass { grid-column: 2; }
+.setup-frame .setup-row #port-chip,
+.setup-frame .setup-row #port-fixes,
+.setup-frame .setup-row progress,
+.setup-frame .setup-row #flash-status,
+.setup-frame .setup-row .setup-input-wide,
+.setup-frame .setup-row .setup-inline-note,
+.setup-frame .setup-row .setup-button-wide,
+.setup-frame .setup-row .setup-action-row,
+.setup-frame .setup-row #wifi-status { grid-column: 1 / -1; }
 
 .support-hidden {
   position: absolute !important;

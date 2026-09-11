@@ -1,6 +1,6 @@
 # Release Security Checklist
 
-Use this for `setup-v0.1.7` and later BECA desktop releases.
+Use this for `setup-v0.2.0` and later BECA desktop releases.
 
 BECA source is MIT licensed. The open-source license does not replace platform trust requirements: Windows SmartScreen reputation still depends on code signing, and macOS normal download installs require Developer ID signing plus notarization.
 
@@ -9,8 +9,8 @@ BECA source is MIT licensed. The open-source license does not replace platform t
 Sign and verify the Windows setup executable and MSI with a real code-signing certificate:
 
 ```powershell
-$installer = "installers\windows\BECA_0.1.7_x64-setup.exe"
-$msi = "installers\windows\BECA_0.1.7_x64_en-US.msi"
+$installer = "installers\windows\BECA_0.2.0_x64-setup.exe"
+$msi = "installers\windows\BECA_0.2.0_x64_en-US.msi"
 
 signtool sign /fd SHA256 /td SHA256 /tr http://timestamp.digicert.com /a $installer
 signtool sign /fd SHA256 /td SHA256 /tr http://timestamp.digicert.com /a $msi
@@ -31,10 +31,10 @@ Build with a Developer ID Application certificate and notarization credentials c
 ```bash
 security find-identity -v -p codesigning
 codesign --verify --deep --strict --verbose=2 "BECA.app"
-xcrun notarytool submit "installers/macos/BECA_0.1.7.dmg" --keychain-profile "BECA-notary" --wait
-xcrun stapler staple "installers/macos/BECA_0.1.7.dmg"
-spctl -a -vv --type open "installers/macos/BECA_0.1.7.dmg"
-shasum -a 256 "installers/macos/BECA_0.1.7.dmg"
+xcrun notarytool submit "installers/macos/BECA_0.2.0.dmg" --keychain-profile "BECA-notary" --wait
+xcrun stapler staple "installers/macos/BECA_0.2.0.dmg"
+spctl -a -vv --type open "installers/macos/BECA_0.2.0.dmg"
+shasum -a 256 "installers/macos/BECA_0.2.0.dmg"
 ```
 
 ## Linux
@@ -43,10 +43,10 @@ Publish checksums and a detached signature:
 
 ```bash
 cd installers/linux
-sha256sum BECA_0.1.7_amd64.AppImage BECA_0.1.7_amd64.deb > SHA256SUMS
+sha256sum BECA_0.2.0_amd64.AppImage BECA_0.2.0_amd64.deb > SHA256SUMS
 gpg --armor --detach-sign SHA256SUMS
-dpkg-deb --info BECA_0.1.7_amd64.deb
-lintian BECA_0.1.7_amd64.deb || true
+dpkg-deb --info BECA_0.2.0_amd64.deb
+lintian BECA_0.2.0_amd64.deb || true
 ```
 
 ## Required CI Secrets

@@ -37,7 +37,7 @@ jobs:
       - name: Install build dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install platformio esptool
+          pip install platformio==6.2.0 esptool==5.2.0
 
       - name: Resolve release metadata
         id: meta
@@ -84,6 +84,7 @@ jobs:
             --flash_size 4MB \
             0x1000 .pio/build/esp32dev/bootloader.bin \
             0x8000 .pio/build/esp32dev/partitions.bin \
+            0xe000 "$HOME/.platformio/packages/framework-arduinoespressif32/tools/partitions/boot_app0.bin" \
             0x10000 .pio/build/esp32dev/firmware.bin
 
       - name: Generate manifest
@@ -113,7 +114,7 @@ jobs:
         with:
           tag_name: ${{ steps.meta.outputs.tag }}
           name: BECA Firmware ${{ steps.meta.outputs.version }}
-          target_commitish: official-system-updates
+          target_commitish: ${{ github.sha }}
           make_latest: true
           files: |
             dist/firmware-release/${{ steps.manifest.outputs.asset }}

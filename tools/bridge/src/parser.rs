@@ -25,8 +25,11 @@ pub fn parse_beca_midi_line(line: &str) -> Option<MidiPacket> {
     }
 
     let status = u8::from_str_radix(parts[1], 16).ok()?;
-    let data1 = u8::from_str_radix(parts[2], 16).ok()? & 0x7F;
-    let data2 = u8::from_str_radix(parts[3], 16).ok()? & 0x7F;
+    let data1 = u8::from_str_radix(parts[2], 16).ok()?;
+    let data2 = u8::from_str_radix(parts[3], 16).ok()?;
+    if !(0x80..=0xEF).contains(&status) || data1 > 127 || data2 > 127 {
+        return None;
+    }
 
     Some(MidiPacket {
         status,

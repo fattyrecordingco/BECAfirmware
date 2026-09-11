@@ -36,14 +36,16 @@ function Resolve-PythonCommand {
 $python = Resolve-PythonCommand
 
 Write-Host "Building firmware for env '$Environment'..."
-pio run -e $Environment
+& (Join-Path $root 'tools/build_firmware.ps1')
 
 $buildDir = Join-Path $root ".pio/build/$Environment"
 $bootloader = Join-Path $buildDir "bootloader.bin"
 $partitions = Join-Path $buildDir "partitions.bin"
 $firmware = Join-Path $buildDir "firmware.bin"
+$configHash = (Get-FileHash -LiteralPath (Join-Path $root 'platformio.ini') -Algorithm SHA256).Hash.Substring(0, 8)
+$bootApp = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) "BECA-build/pio62-$configHash/packages/framework-arduinoespressif32/tools/partitions/boot_app0.bin"
 
-foreach ($file in @($bootloader, $partitions, $firmware)) {
+foreach ($file in @($bootloader, $partitions, $bootApp, $firmware)) {
   if (-not (Test-Path $file)) {
     throw "Missing expected firmware artifact: $file"
   }
@@ -67,7 +69,9 @@ Write-Host "Merging firmware image..."
   --flash_size 4MB `
   0x1000 $bootloader `
   0x8000 $partitions `
+  0xe000 $bootApp `
   0x10000 $firmware
+if ($LASTEXITCODE -ne 0) { throw 'Firmware merge failed.' }
 
 $sha256 = (Get-FileHash -Algorithm SHA256 -Path $mergedPath).Hash.ToLowerInvariant()
 $manifestPath = Join-Path $OutputDir "firmware-manifest.json"

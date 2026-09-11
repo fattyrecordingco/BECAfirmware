@@ -103,16 +103,59 @@ pub async fn verify_sha256(path: &Path, expected_hex: &str) -> Result<()> {
 }
 
 pub async fn flash_firmware(cfg: &FlashCommandConfig) -> Result<()> {
+    // A merged image fills gaps with FF; writing it whole would erase saved NVS.
+    if matches!(cfg.offset.as_str(), "0x0" | "0x0000" | "0") {
+        let bytes = fs::read(&cfg.firmware_path).await?;
+        let ranges = beca_image_ranges(&bytes)?;
+        for (index, (start, end)) in ranges.iter().copied().enumerate() {
+            let path = cfg.firmware_path.with_extension(format!("part{index}.bin"));
+            fs::write(&path, &bytes[start..end]).await?;
+            let mut part = cfg.clone();
+            part.firmware_path = path.clone();
+            part.offset = format!("0x{start:x}");
+            let result = flash_raw(&part).await;
+            let _ = fs::remove_file(path).await;
+            result?;
+        }
+        return Ok(());
+    }
+    flash_raw(cfg).await
+}
+
+fn beca_image_ranges(bytes: &[u8]) -> Result<[(usize, usize); 2]> {
+    if bytes.len() <= 0x10000
+        || bytes.len() > 0x400000
+        || bytes[0x1000] != 0xe9
+        || bytes[0x10000] != 0xe9
+    {
+        return Err(anyhow!(
+            "Expected a complete BECA ESP32 merged image, including bootloader and application."
+        ));
+    }
+    let nvs = bytes[0x8000..0x9000].chunks_exact(32).find(|entry| {
+        entry[0..4] == [0xaa, 0x50, 1, 2] && entry[12..16] == *b"nvs\0"
+    }).ok_or_else(|| anyhow!("BECA settings partition is missing; refusing to overwrite an unknown flash layout."))?;
+    let start = u32::from_le_bytes(nvs[4..8].try_into().unwrap());
+    let size = u32::from_le_bytes(nvs[8..12].try_into().unwrap());
+    if start != 0x9000 || size != 0x5000 {
+        return Err(anyhow!(
+            "Unsupported BECA settings layout. No data has been written."
+        ));
+    }
+    Ok([(0, 0x9000), (0xe000, bytes.len())])
+}
+
+async fn flash_raw(cfg: &FlashCommandConfig) -> Result<()> {
     let mut cmd = Command::new(&cfg.tool_path);
+    cmd.kill_on_drop(true);
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
     for arg in build_flash_args(cfg) {
         cmd.arg(arg);
     }
     apply_background_process_flags(&mut cmd);
 
-    let output = cmd
-        .output()
-        .await
+    let output = tokio::time::timeout(std::time::Duration::from_secs(120), cmd.output())
+        .await.context("Flasher timed out. Reconnect USB and retry; hold BOOT if the board cannot enter its bootloader.")?
         .with_context(|| format!("failed to run flasher tool: {}", cfg.tool_path.display()))?;
 
     if output.status.success() {
@@ -168,6 +211,9 @@ pub async fn restore_nvs(
     backup_path: &Path,
     offset: &str,
 ) -> Result<()> {
+    if offset == "0x9000" && fs::metadata(backup_path).await?.len() != 0x5000 {
+        return Err(anyhow!("Expected a 20 KiB BECA settings backup. Legacy 24 KiB backups include boot data and must be converted before restoring."));
+    }
     let mut cmd = Command::new(tool);
     cmd.arg("--chip")
         .arg("esp32")
@@ -249,6 +295,32 @@ fn apply_background_process_flags(cmd: &mut Command) {
 mod tests {
     use super::*;
     use tempfile::tempdir;
+
+    #[test]
+    fn first_flash_contains_boot_code_and_preserves_settings() {
+        let mut bytes = vec![0xff; 0x20000];
+        bytes[0x1000] = 0xe9;
+        bytes[0x10000] = 0xe9;
+        bytes[0x8000..0x8004].copy_from_slice(&[0xaa, 0x50, 1, 2]);
+        bytes[0x8004..0x8008].copy_from_slice(&0x9000u32.to_le_bytes());
+        bytes[0x8008..0x800c].copy_from_slice(&0x5000u32.to_le_bytes());
+        bytes[0x800c..0x8010].copy_from_slice(b"nvs\0");
+        assert_eq!(
+            beca_image_ranges(&bytes).unwrap(),
+            [(0, 0x9000), (0xe000, 0x20000)]
+        );
+        bytes[0x8004] = 1;
+        assert!(beca_image_ranges(&bytes).is_err());
+        assert!(beca_image_ranges(&[0xff; 100]).is_err());
+    }
+
+    #[tokio::test]
+    async fn damaged_firmware_is_rejected() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("damaged.bin");
+        fs::write(&path, b"damaged").await.unwrap();
+        assert!(verify_sha256(&path, &"0".repeat(64)).await.is_err());
+    }
 
     #[tokio::test]
     async fn checksum_validation_works() {

@@ -14,6 +14,15 @@ const char* kPresetNames[SynthEngine::kPresetCount] = {
     "Forest Choir Pad",
     "Thick Mono Bass",
     "Rubber Bass",
+#if BECA_EXTENDED_SOUNDS
+    "Dewdrop Glass",
+    "Moon Garden",
+    "Moss Bells",
+    "Firefly Pluck",
+    "Bubble Reed",
+    "Pollen Drift",
+    "Raw Sensor Sine",
+#endif
 };
 
 }  // namespace
@@ -27,6 +36,10 @@ SynthEngine::SynthEngine()
       taskAlive_(false),
       paramMux_(portMUX_INITIALIZER_UNLOCKED),
       activeParamSlot_(0),
+      sensorHz_(0.0f),
+      sensorPhase_(0.0f),
+      sensorGain_(0.0f),
+      rawModeActive_(false),
       eventMux_(portMUX_INITIALIZER_UNLOCKED),
       eventHead_(0),
       eventTail_(0),
@@ -210,6 +223,57 @@ void SynthEngine::presetDefaults(uint8_t index, SynthParams& out) {
       out.detuneCents = 1.1f;
       out.gainTrim = 0.84f;
       break;
+#if BECA_EXTENDED_SOUNDS
+    case 6:  // Dewdrop Glass: clear, soft struck tones.
+      out.waveA = 3; out.waveB = 2; out.oscMix = 0.12f;
+      out.attack = 0.003f; out.decay = 0.85f; out.sustain = 0.0f; out.release = 1.4f;
+      out.cutoffHz = 7800.0f; out.resonance = 0.7f;
+      out.reverb = 0.30f; out.delayMs = 285.0f; out.delayFeedback = 0.32f; out.delayMix = 0.22f;
+      out.distDrive = 0.0f; out.detuneCents = 0.6f; out.master = 0.55f;
+      break;
+    case 7:  // Moon Garden: slow, rounded ambient bed.
+      out.waveA = 2; out.waveB = 3; out.oscMix = 0.68f;
+      out.attack = 1.6f; out.decay = 1.8f; out.sustain = 0.78f; out.release = 4.2f;
+      out.cutoffHz = 1450.0f; out.resonance = 0.65f;
+      out.reverb = 0.42f; out.delayMs = 470.0f; out.delayFeedback = 0.38f; out.delayMix = 0.24f;
+      out.distDrive = 0.0f; out.detuneCents = 3.8f; out.master = 0.55f;
+      break;
+    case 8:  // Moss Bells: woody triangle chimes.
+      out.waveA = 2; out.waveB = 3; out.oscMix = 0.34f;
+      out.attack = 0.002f; out.decay = 0.48f; out.sustain = 0.08f; out.release = 0.9f;
+      out.cutoffHz = 3400.0f; out.resonance = 1.4f;
+      out.reverb = 0.22f; out.delayMs = 210.0f; out.delayFeedback = 0.27f; out.delayMix = 0.17f;
+      out.distDrive = 0.04f; out.detuneCents = 2.0f; out.master = 0.54f;
+      break;
+    case 9:  // Firefly Pluck: bright, short, offbeat echoes.
+      out.waveA = 1; out.waveB = 2; out.oscMix = 0.73f;
+      out.attack = 0.002f; out.decay = 0.14f; out.sustain = 0.0f; out.release = 0.26f;
+      out.cutoffHz = 5100.0f; out.resonance = 0.9f;
+      out.reverb = 0.12f; out.delayMs = 173.0f; out.delayFeedback = 0.40f; out.delayMix = 0.26f;
+      out.distDrive = 0.06f; out.detuneCents = 4.8f; out.master = 0.48f;
+      break;
+    case 10:  // Bubble Reed: nasal, rounded mono voice.
+      out.waveA = 1; out.waveB = 3; out.oscMix = 0.70f;
+      out.mono = 1; out.maxVoices = 1;
+      out.attack = 0.028f; out.decay = 0.32f; out.sustain = 0.38f; out.release = 0.38f;
+      out.filterType = SYNTH_FILTER_BANDPASS; out.cutoffHz = 1250.0f; out.resonance = 2.1f;
+      out.reverb = 0.14f; out.delayMs = 95.0f; out.delayFeedback = 0.20f; out.delayMix = 0.18f;
+      out.distDrive = 0.08f; out.detuneCents = 1.2f; out.master = 0.55f;
+      break;
+    case 11:  // Pollen Drift: airy, gently beating upper texture.
+      out.waveA = 0; out.waveB = 2; out.oscMix = 0.82f;
+      out.attack = 0.85f; out.decay = 1.2f; out.sustain = 0.58f; out.release = 3.0f;
+      out.filterType = SYNTH_FILTER_HIGHPASS; out.cutoffHz = 580.0f; out.resonance = 0.7f;
+      out.reverb = 0.38f; out.delayMs = 390.0f; out.delayFeedback = 0.36f; out.delayMix = 0.23f;
+      out.distDrive = 0.0f; out.detuneCents = 6.5f; out.master = 0.48f;
+      break;
+    case kRawSinePreset:
+      out.waveA = out.waveB = 3; out.oscMix = 0.0f;
+      out.mono = 1; out.maxVoices = 1;
+      out.reverb = out.delayMix = out.distDrive = out.detuneCents = 0.0f;
+      out.master = 0.25f;
+      break;
+#endif
   }
 }
 
@@ -240,7 +304,6 @@ void SynthEngine::sanitizeParams(SynthParams& p) const {
   if (p.delayFeedback > 0.92f && p.delayMix > 0.75f) {
     p.delayFeedback = 0.92f;
   }
-  if (p.distDrive > 0.8f) p.master *= 0.92f;
 }
 
 bool SynthEngine::start(int pinBck, int pinWs, int pinData, uint32_t sampleRate, uint16_t blockSize) {
@@ -284,6 +347,10 @@ bool SynthEngine::start(int pinBck, int pinWs, int pinData, uint32_t sampleRate,
   filterL_.reset();
   filterR_.reset();
   filterDirty_ = true;
+
+  sensorPhase_ = 0.0f;
+  sensorGain_ = 0.0f;
+  rawModeActive_ = false;
 
   for (auto& v : voices_) {
     v.active = false;
@@ -359,8 +426,7 @@ void SynthEngine::setParams(const SynthParams& params) {
   activeParamSlot_ = next;
   portEXIT_CRITICAL(&paramMux_);
 
-  filterDirty_ = true;
-  drum_.setKit(p.drumKit);
+  // DSP state is owned by the audio task; parameter snapshots are the handoff.
 }
 
 void SynthEngine::getParams(SynthParams& out) const {
@@ -369,9 +435,12 @@ void SynthEngine::getParams(SynthParams& out) const {
   portEXIT_CRITICAL(&paramMux_);
 }
 
-void SynthEngine::loadPreset(uint8_t presetIndex) {
+void SynthEngine::loadPreset(uint8_t presetIndex, bool keepMaster) {
   SynthParams p;
+  getParams(p);
+  const float master = p.master;
   presetDefaults(presetIndex, p);
+  if (keepMaster) p.master = master;
   setParams(p);
 }
 
@@ -467,6 +536,12 @@ void SynthEngine::setDrumsEnabled(bool enabled) {
   if (!enabled) allDrumsOff();
 }
 
+void SynthEngine::setSensorFrequency(uint16_t raw, bool connected) {
+  portENTER_CRITICAL(&paramMux_);
+  sensorHz_ = connected ? static_cast<float>(raw > 4095 ? 4095 : raw) : 0.0f;
+  portEXIT_CRITICAL(&paramMux_);
+}
+
 bool SynthEngine::pushEvent(uint8_t type, uint8_t a, uint8_t b) {
   bool ok = false;
   portENTER_CRITICAL(&eventMux_);
@@ -500,7 +575,7 @@ void SynthEngine::taskTrampoline(void* arg) {
   vTaskDelete(nullptr);
 }
 
-SynthEngine::Voice* SynthEngine::allocVoice(uint8_t note, bool monoMode) {
+SynthEngine::Voice* SynthEngine::allocVoice(uint8_t note, bool monoMode, uint8_t maxVoices) {
   if (monoMode) {
     Voice& v = voices_[0];
     v.active = true;
@@ -511,7 +586,9 @@ SynthEngine::Voice* SynthEngine::allocVoice(uint8_t note, bool monoMode) {
     return &v;
   }
 
-  for (auto& v : voices_) {
+  const uint8_t limit = static_cast<uint8_t>(constrain(static_cast<int>(maxVoices), 1, static_cast<int>(kMaxVoices)));
+  for (uint8_t i = 0; i < limit; ++i) {
+    Voice& v = voices_[i];
     if (!v.active) {
       v.active = true;
       v.note = note;
@@ -523,7 +600,8 @@ SynthEngine::Voice* SynthEngine::allocVoice(uint8_t note, bool monoMode) {
   }
 
   Voice* oldest = &voices_[0];
-  for (auto& v : voices_) {
+  for (uint8_t i = 0; i < limit; ++i) {
+    Voice& v = voices_[i];
     if (v.age < oldest->age) oldest = &v;
   }
   oldest->active = true;
@@ -551,9 +629,12 @@ float SynthEngine::osc(uint8_t waveform, float phase) const {
 }
 
 void SynthEngine::handleEvent(const Event& e, const SynthParams& p) {
+#if BECA_EXTENDED_SOUNDS
+  if (p.preset == kRawSinePreset && (e.type == EVT_NOTE_ON || e.type == EVT_DRUM_HIT)) return;
+#endif
   switch (e.type) {
     case EVT_NOTE_ON: {
-      Voice* v = allocVoice(e.a, p.mono != 0);
+      Voice* v = allocVoice(e.a, p.mono != 0, p.maxVoices);
       if (!v) break;
       v->vel = dsp::clampf(static_cast<float>(e.b) / 127.0f, 0.05f, 1.0f);
       v->env.setSampleRate(static_cast<float>(sampleRate_));
@@ -613,7 +694,27 @@ void SynthEngine::applyFilterConfig(const SynthParams& p) {
   filterDirty_ = false;
 }
 
+void SynthEngine::prepareRenderMode(const SynthParams& p) {
+#if BECA_EXTENDED_SOUNDS
+  const bool rawMode = p.preset == kRawSinePreset;
+  if (rawMode != rawModeActive_) {
+    for (auto& v : voices_) { v.active = false; v.env.reset(); }
+    drum_.allOff();
+    memset(delay_, 0, sizeof(delay_));
+    filterL_.reset(); filterR_.reset();
+    dcL_.reset(); dcR_.reset();
+    revMemL_ = revMemR_ = 0.0f;
+    sensorGain_ = 0.0f;
+    rawModeActive_ = rawMode;
+  }
+#endif
+}
+
 void SynthEngine::renderBlock(const SynthParams& p) {
+  prepareRenderMode(p);
+#if BECA_EXTENDED_SOUNDS
+  if (rawModeActive_) { renderSensorSine(p); return; }
+#endif
   applyFilterConfig(p);
 
   const uint32_t delaySamples = static_cast<uint32_t>(
@@ -623,13 +724,17 @@ void SynthEngine::renderBlock(const SynthParams& p) {
   float incA[kMaxVoices];
   float incB[kMaxVoices];
   uint8_t activeTarget = 0;
+  const uint8_t voiceLimit = p.mono ? 1 : p.maxVoices;
   for (uint8_t vIdx = 0; vIdx < kMaxVoices; ++vIdx) {
     Voice& v = voices_[vIdx];
     if (!v.active) continue;
-    if (activeTarget >= p.maxVoices) {
-      v.env.noteOff();
+    if (activeTarget >= voiceLimit) {
+      v.active = false;
+      v.env.reset();
       continue;
     }
+
+    v.env.set(p.attack, p.decay, p.sustain, p.release);
 
     const float noteHz = dsp::midiToHz(v.note);
     const float lowNoteScale = dsp::clampf((static_cast<float>(v.note) - 24.0f) / 60.0f, 0.35f, 1.0f);
@@ -642,6 +747,10 @@ void SynthEngine::renderBlock(const SynthParams& p) {
     activeTarget++;
   }
 
+  const float driveGain = 1.0f + p.distDrive * 5.5f;
+  const float outputMaster = p.master * (p.distDrive > 0.8f ? 0.92f : 1.0f);
+  static const float polyGains[9] = {0.0f, 0.25f, 0.176777f, 0.144338f, 0.125f,
+                                    0.111803f, 0.102062f, 0.094491f, 0.088388f};
   for (uint16_t i = 0; i < blockSize_; ++i) {
     float synthSum = 0.0f;
     uint8_t activeVoicesNow = 0;
@@ -667,10 +776,9 @@ void SynthEngine::renderBlock(const SynthParams& p) {
       synthSum += s;
     }
 
-    const float polyGain = activeVoicesNow > 0 ? (0.25f / sqrtf(static_cast<float>(activeVoicesNow))) : 0.0f;
+    const float polyGain = polyGains[activeVoicesNow];
     float mono = synthSum * polyGain * p.gainTrim;
 
-    const float driveGain = 1.0f + p.distDrive * 5.5f;
     mono = dsp::fastTanh(mono * driveGain) / driveGain;
 
     float synthL = filterL_.process(mono);
@@ -705,8 +813,8 @@ void SynthEngine::renderBlock(const SynthParams& p) {
     mixL += revL * p.reverb;
     mixR += revR * p.reverb;
 
-    mixL *= p.master;
-    mixR *= p.master;
+    mixL *= outputMaster;
+    mixR *= outputMaster;
 
     mixL = dcL_.process(mixL);
     mixR = dcR_.process(mixR);
@@ -733,6 +841,27 @@ void SynthEngine::renderBlock(const SynthParams& p) {
   }
 }
 
+void SynthEngine::renderSensorSine(const SynthParams& p) {
+  float hz;
+  portENTER_CRITICAL(&paramMux_);
+  hz = sensorHz_;
+  portEXIT_CRITICAL(&paramMux_);
+  const float increment = hz / static_cast<float>(sampleRate_);
+  const float gainTarget = hz > 0.0f ? p.master * 0.25f : 0.0f;
+  const float gainStep = 1.0f / (0.005f * static_cast<float>(sampleRate_));
+  for (uint16_t i = 0; i < blockSize_; ++i) {
+    // Frequency changes at block boundaries without resetting phase or gliding.
+    sensorPhase_ += increment;
+    if (sensorPhase_ >= 1.0f) sensorPhase_ -= 1.0f;
+    sensorGain_ += dsp::clampf(gainTarget - sensorGain_, -gainStep, gainStep);
+    fadeValue_ += dsp::clampf(fadeTarget_ - fadeValue_, -fadeStep_, fadeStep_);
+    const float sample = sinf(2.0f * dsp::kPi * sensorPhase_) * sensorGain_ * fadeValue_;
+    const int16_t out = static_cast<int16_t>(sample * 32767.0f);
+    i2sBlock_[i * 2] = out;
+    i2sBlock_[i * 2 + 1] = out;
+  }
+}
+
 void SynthEngine::audioTask() {
   while (running_) {
     SynthParams p;
@@ -740,6 +869,8 @@ void SynthEngine::audioTask() {
     p = paramsSlots_[activeParamSlot_];
     portEXIT_CRITICAL(&paramMux_);
 
+    drum_.setKit(p.drumKit);
+    prepareRenderMode(p);
     Event e;
     while (popEvent(e)) handleEvent(e, p);
 

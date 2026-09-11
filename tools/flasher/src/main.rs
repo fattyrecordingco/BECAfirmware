@@ -50,7 +50,7 @@ enum Commands {
         baud: u32,
         #[arg(long, default_value = "0x9000")]
         offset: String,
-        #[arg(long, default_value = "0x6000")]
+        #[arg(long, default_value = "0x5000")]
         size: String,
         #[arg(long)]
         tool_path: PathBuf,

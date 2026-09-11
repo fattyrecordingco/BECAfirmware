@@ -5,17 +5,41 @@ on:
   push:
     tags:
       - "setup-v*"
-  release:
-    types: [published]
 
 permissions:
   contents: write
 
 jobs:
+  firmware:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Prepare pinned firmware tools
+        run: python -m pip install platformio==6.2.0 esptool==5.2.0 Markdown==3.8.2
+      - name: Verify generated UI and manual
+        run: |
+          python make_index_header.py
+          python tools/release/render_manual.py
+          git diff --exit-code -- index_html.h docs/user/BECA_MANUAL.html apps/beca-setup/ui/public/manual.html
+      - name: Test audio and compile core 2.0.14 firmware
+        run: |
+          g++ -std=c++17 -Itests/audio/stubs -I. tests/audio/audio_test.cpp drum_engine.cpp dsp_blocks.cpp -o /tmp/beca-audio-test
+          /tmp/beca-audio-test
+          python -m platformio run -e esp32dev
+          python tools/release/prepare_release.py --version 1.1.0 --tag setup-v0.2.0
+      - uses: actions/upload-artifact@v4
+        with:
+          name: beca-firmware
+          path: dist/firmware-release/*
+          if-no-files-found: error
+
   build-installers:
+    needs: firmware
     if: |
       github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'release' && startsWith(github.event.release.tag_name, 'setup-v')) ||
       (github.event_name == 'push' && startsWith(github.ref_name, 'setup-v'))
     strategy:
       fail-fast: false
@@ -41,9 +65,17 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
-          cache-dependency-path: apps/beca-setup/package.json
+          cache-dependency-path: apps/beca-setup/package-lock.json
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: beca-firmware
+          path: apps/beca-setup/src-tauri/resources/firmware
+      - name: Stage included firmware
+        shell: bash
+        run: mv apps/beca-setup/src-tauri/resources/firmware/beca-1.1.0-merged.bin apps/beca-setup/src-tauri/resources/firmware/beca-merged.bin
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -146,7 +178,18 @@ jobs:
 
       - name: Install JS dependencies
         working-directory: apps/beca-setup
-        run: npm install
+        run: npm ci
+
+      - name: Test bridge, flasher and application
+        run: cargo test --workspace --release --locked
+
+      - name: Browser and recovery regressions
+        if: runner.os == 'Windows'
+        working-directory: apps/beca-setup
+        run: |
+          npx playwright install chromium
+          node --test scripts/health-check.mjs
+          npm run test:ui
 
       - name: Build flasher sidecar
         run: cargo build -p beca-flasher --release -vv
@@ -288,99 +331,31 @@ jobs:
           path: target/release/bundle/**
           if-no-files-found: error
 
-      - name: Attach artifacts to GitHub Release
-        if: github.event_name == 'release'
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            target/release/bundle/**/*.msi
-            target/release/bundle/**/*.exe
-            target/release/bundle/**/*.dmg
-            target/release/bundle/**/*.AppImage
-            target/release/bundle/**/*.deb
 
-  sync-installer-mirror:
-    needs: build-installers
-    if: always() && needs.build-installers.result != 'cancelled' && github.repository == 'fattyrecordingco/BECAfirmware'
+  publish:
+    needs: [firmware, build-installers]
+    if: startsWith(github.ref, 'refs/tags/setup-v')
     runs-on: ubuntu-22.04
-
     steps:
-      - name: Checkout master
-        uses: actions/checkout@v4
-        with:
-          ref: master
-
-      - name: Download installer artifacts from this run
-        uses: actions/download-artifact@v4
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
         with:
           pattern: beca-setup-*
-          merge-multiple: true
-          path: ${{ runner.temp }}/beca-setup-artifacts
-
-      - name: Sync cross-platform installer mirror
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          artifact_root="${RUNNER_TEMP}/beca-setup-artifacts"
-          mirror_root="${GITHUB_WORKSPACE}/installers"
-          staged_root="${RUNNER_TEMP}/beca-setup-staged-mirror"
-
-          rm -rf "${staged_root}"
-          mkdir -p "${staged_root}/windows" "${staged_root}/macos" "${staged_root}/linux"
-
-          windows_count=0
-          macos_count=0
-          linux_count=0
-
-          while IFS= read -r -d '' file; do
-            lower="$(echo "${file}" | tr '[:upper:]' '[:lower:]')"
-            case "${lower}" in
-              *.dmg)
-                cp "${file}" "${staged_root}/macos/"
-                macos_count=$((macos_count+1))
-                ;;
-              *.appimage|*.deb)
-                cp "${file}" "${staged_root}/linux/"
-                linux_count=$((linux_count+1))
-                ;;
-              *.exe|*.msi|*.zip|*webview2loader.dll)
-                cp "${file}" "${staged_root}/windows/"
-                windows_count=$((windows_count+1))
-                ;;
-            esac
-          done < <(find "${artifact_root}" -type f -print0)
-
-          echo "Installer files copied -> windows:${windows_count} macos:${macos_count} linux:${linux_count}"
-          if [ "${windows_count}" -eq 0 ] || [ "${macos_count}" -eq 0 ] || [ "${linux_count}" -eq 0 ]; then
-            echo "Missing Windows, macOS, or Linux artifacts. Mirror update aborted."
-            exit 1
-          fi
-
-          mkdir -p "${mirror_root}/windows" "${mirror_root}/macos" "${mirror_root}/linux"
-          find "${mirror_root}/windows" "${mirror_root}/macos" "${mirror_root}/linux" \
-            -maxdepth 1 -type f ! -name '.gitkeep' ! -name 'README.md' -delete
-          cp -a "${staged_root}/windows/." "${mirror_root}/windows/"
-          cp -a "${staged_root}/macos/." "${mirror_root}/macos/"
-          cp -a "${staged_root}/linux/." "${mirror_root}/linux/"
-          (cd "${mirror_root}/windows" && find . -maxdepth 1 -type f ! -name '.gitkeep' ! -name 'README.md' -printf '%P\0' | sort -z | xargs -0 -r sha256sum > SHA256SUMS)
-          (cd "${mirror_root}/macos" && find . -maxdepth 1 -type f ! -name '.gitkeep' ! -name 'README.md' -printf '%P\0' | sort -z | xargs -0 -r sha256sum > SHA256SUMS)
-          (cd "${mirror_root}/linux" && find . -maxdepth 1 -type f ! -name '.gitkeep' ! -name 'README.md' -printf '%P\0' | sort -z | xargs -0 -r sha256sum > SHA256SUMS)
-          touch "${mirror_root}/windows/.gitkeep" "${mirror_root}/macos/.gitkeep" "${mirror_root}/linux/.gitkeep"
-
-      - name: Commit installer mirror updates
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          git add -A -f installers
-
-          if git diff --cached --quiet -- installers; then
-            echo "No installer mirror changes."
-            exit 0
-          fi
-
-          git commit -m "chore(setup): sync installer mirror (windows/macos/linux)"
-          git push origin HEAD:master
+          path: dist/installers
+      - uses: actions/download-artifact@v4
+        with:
+          name: beca-firmware
+          path: dist/firmware-release
+      - name: Assemble release and checksums
+        run: python tools/release/stage_assets.py
+      - name: Publish verified update
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          target_commitish: ${{ github.sha }}
+          name: BECA 0.2.0 — Performance & first-unit setup
+          body_path: docs/releases/setup-v0.2.0.md
+          prerelease: true
+          make_latest: false
+          fail_on_unmatched_files: true
+          files: dist/publish/*

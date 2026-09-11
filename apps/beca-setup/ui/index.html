@@ -46,22 +46,23 @@
             <div class="setup-row setup-row-connect">
               <div class="setup-copy">
                 <h2>connect BECA</h2>
-                <p>use a usb c data cable for flashing firmware or running serial MIDI</p>
+                <p>Use a USB-C data cable. A new, blank BECA appears here before firmware is installed.</p>
               </div>
               <div id="connect-status" class="setup-status-box">not connected</div>
               <button id="btn-scan" class="setup-button setup-button-solid" type="button">scan device</button>
               <div id="port-chip" class="setup-microcopy"></div>
+              <label class="setup-port-picker" hidden>USB device<select id="setup-port-select" class="setup-select"></select></label>
               <ul id="port-fixes" class="setup-fixes"></ul>
             </div>
 
             <div class="setup-row setup-row-firmware">
               <div class="setup-copy">
                 <h2>upload firmware</h2>
-                <p>upload the latest stable firmware before first use or when the codebase updates</p>
+                <p>First BECA? Install the included firmware once. Future sessions only need USB and the app.</p>
               </div>
               <label class="sr-only" for="firmware-select">firmware version</label>
               <select id="firmware-select" class="setup-select"></select>
-              <button id="btn-flash" class="setup-button setup-button-solid" type="button">flash firmware</button>
+              <button id="btn-flash" class="setup-button setup-button-solid" type="button">install firmware</button>
               <progress id="flash-progress" max="100" value="0"></progress>
               <p id="flash-status" class="setup-microcopy">waiting to flash</p>
             </div>
@@ -78,7 +79,7 @@
             <div class="setup-row setup-row-wifi">
               <div class="setup-copy">
                 <h2>select wifi</h2>
-                <p>use a 2.4GHz network. if it fails, run flash + save wifi again</p>
+                <p>Optional for music over USB. Use a 2.4 GHz personal network; enterprise sign-in and captive portals are not supported.</p>
               </div>
               <label class="sr-only" for="wifi-ssid">wifi name</label>
               <select id="wifi-ssid" class="setup-select">
@@ -97,40 +98,12 @@
               <p id="wifi-status" class="setup-microcopy">waiting for device</p>
             </div>
 
-            <div class="setup-row setup-row-bridge">
-              <div class="setup-copy">
-                <h2>MIDI bridge</h2>
-                <p>convert serial to MIDI and mirror it to a second output when needed</p>
-              </div>
-              <label class="sr-only" for="midi-select">primary output</label>
-              <select id="midi-select" class="setup-select">
-                <option value="">output1</option>
-              </select>
-              <button id="btn-start-bridge" class="setup-button setup-button-solid" type="button">start bridge</button>
-              <label class="sr-only" for="midi-mirror-select">mirror output</label>
-              <select id="midi-mirror-select" class="setup-select">
-                <option value="">output2</option>
-              </select>
-              <button id="btn-test-note" class="setup-button" type="button">send test note</button>
-              <label class="setup-toggle support-hidden" for="microfreak-mode">
-                <input id="microfreak-mode" type="checkbox" />
-                <span>microfreak primary</span>
-              </label>
-              <label class="setup-toggle support-hidden" for="midi-mirror-microfreak-mode">
-                <input id="midi-mirror-microfreak-mode" type="checkbox" checked />
-                <span>microfreak mirror</span>
-              </label>
-              <div class="setup-bridge-status">
-                <p id="bridge-status" class="setup-microcopy">bridge not running</p>
-                <span id="activity" class="activity-dot" aria-hidden="true"></span>
-              </div>
-            </div>
-
             <div class="setup-row setup-row-help">
               <h2>how does BECA work?</h2>
-              <p>setup stays guided and minimal while the control page mirrors the hardware LED language, so the instrument can gradually pull focus away from software.</p>
+              <p>Connect the electrodes to a leaf and the soil, then open Performance to play. Route MIDI to your DAW here in Setup. Aux sound comes from the device’s audio socket.</p>
             </div>
           </section>
+          <aside class="setup-music" aria-label="DAW setup"><div id="setup-midi-host"></div><div class="setup-guide"><h2>Ready to record</h2><p>Choose a virtual MIDI destination above, then select that same name as the MIDI input in your DAW. Load an instrument and arm the track.</p><p>On Windows, create a port named <strong>BECA</strong> in loopMIDI and enable its autostart. On Mac/Linux, choose <strong>BECA (virtual MIDI)</strong> above. Keep BECA open while playing.</p><p>For hardware synths, choose their MIDI output directly. Microsoft GS Wavetable Synth plays the computer’s built-in sounds; it does not send MIDI to your DAW.</p><a href="/manual.html" target="_blank" rel="noopener">Open the BECA manual &amp; first-unit quick start ↗</a></div></aside>
         </div>
       </section>
 
@@ -153,10 +126,10 @@
           <h2 id="first-launch-title">read before first launch</h2>
           <ul>
             <li>Install USB serial drivers when BECA is not detected: CH340/CH341 or CP210x.</li>
-            <li>Restart the computer after driver installation before connecting BECA again.</li>
+            <li>Restart after driver installation if the driver installer requests it.</li>
             <li>Use a USB data cable, not a charge-only cable.</li>
-            <li>Flash the latest stable firmware before the first performance session.</li>
-            <li>Use one live control surface at a time while the MIDI bridge is running.</li>
+            <li>A blank BECA needs the included firmware once. Use Setup → install firmware.</li>
+            <li>Set up your DAW MIDI input in Setup. MIDI and live controls work together.</li>
           </ul>
           <div class="first-launch-actions">
             <a class="setup-button" href="https://github.com/fattyrecordingco/BECAfirmware/blob/master/docs/user/READ_BEFORE_FIRST_LAUNCH.md" target="_blank" rel="noreferrer">full manual</a>

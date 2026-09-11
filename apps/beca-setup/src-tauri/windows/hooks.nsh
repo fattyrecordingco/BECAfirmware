@@ -17,5 +17,6 @@
     DetailPrint "Silicon Labs CP210x driver installer not bundled; see Read Before First Launch."
   ${EndIf}
 
-  MessageBox MB_ICONINFORMATION|MB_OK "BECA installation is complete. Restart this computer before first use if any USB serial driver was installed or updated."
+  IfSilent +2
+  MessageBox MB_ICONINFORMATION|MB_OK "BECA is installed. Open Setup to install the included firmware on a new device. See the built-in manual for your DAW's MIDI input setup."
 !macroend

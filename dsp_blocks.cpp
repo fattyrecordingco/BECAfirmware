@@ -4,6 +4,7 @@ namespace beca {
 namespace dsp {
 
 float clampf(float x, float lo, float hi) {
+  if (!isfinite(x)) return lo;
   if (x < lo) return lo;
   if (x > hi) return hi;
   return x;

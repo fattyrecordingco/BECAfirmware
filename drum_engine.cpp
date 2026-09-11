@@ -163,9 +163,12 @@ void DrumEngine::render(float& outL, float& outR) {
     Voice& v = voices_[i];
     if (!v.active) continue;
 
-    if (v.env < v.envTarget) {
+    if (v.envTarget > 0.0f) {
       v.env += v.attackInc;
-      if (v.env > v.envTarget) v.env = v.envTarget;
+      if (v.env >= v.envTarget) {
+        v.env = v.envTarget;
+        v.envTarget = 0.0f;  // Attack complete; decay until silent.
+      }
     } else {
       v.env *= v.decay;
     }

@@ -1,19 +1,17 @@
 use anyhow::{anyhow, Context, Result};
 use beca_bridge::{
-    list_midi_outputs, list_serial_ports, parse_beca_midi_line, transform_bridge_packet,
+    list_midi_outputs, list_serial_ports, routing::MidiRoute, session::BridgeSession,
 };
 use clap::{Parser, Subcommand};
 use midir::{MidiOutput, MidiOutputConnection};
 use serde::Serialize;
-use serialport::SerialPort;
 use std::io::Write;
-use std::io::{BufRead, BufReader, ErrorKind};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
 };
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 #[derive(Debug, Parser)]
 #[command(name = "beca-bridge")]
@@ -40,7 +38,11 @@ enum Commands {
         secondary_microfreak_mode: bool,
         #[arg(long, default_value_t = 115200)]
         baud: u32,
-        #[arg(long, default_value_t = 1500)]
+        #[arg(
+            long,
+            default_value_t = 1500,
+            help = "Legacy option; shared session retries after a verified USB handshake"
+        )]
         reconnect_ms: u64,
     },
     TestNote {
@@ -107,129 +109,86 @@ fn run_bridge(
     microfreak_mode: bool,
     secondary_microfreak_mode: bool,
     baud: u32,
-    reconnect_ms: u64,
+    _reconnect_ms: u64,
 ) -> Result<()> {
+    if baud != 115200 {
+        return Err(anyhow!(
+            "BECA's control and MIDI protocol uses 115200 baud."
+        ));
+    }
     let running = Arc::new(AtomicBool::new(true));
-    let running_for_handler = running.clone();
+    let signal = running.clone();
     ctrlc::set_handler(move || {
-        running_for_handler.store(false, Ordering::SeqCst);
+        signal.store(false, Ordering::SeqCst);
     })
     .context("failed to install signal handler")?;
-
-    let mut routes = open_output_routes(
-        midi_port_name,
+    let mut routes = vec![MidiRoute::full(
+        "primary",
+        &resolve_output_name(midi_port_name)?,
         microfreak_mode,
-        secondary_midi_port_name,
-        secondary_microfreak_mode,
-    )?;
-    emit_status("status", "connected", &describe_routes(&routes));
-
-    while running.load(Ordering::SeqCst) {
-        match serialport::new(serial_port_name, baud)
-            .timeout(Duration::from_millis(300))
-            .open()
-        {
-            Ok(port) => {
-                emit_status(
-                    "status",
-                    "connected",
-                    &format!("Serial connected: {serial_port_name} @ {baud}"),
-                );
-                let mut sent = 0usize;
-                if let Err(err) = run_bridge_session(port, &mut routes, &running, &mut sent) {
-                    emit_status(
-                        "status",
-                        "reconnecting",
-                        &format!("Serial disconnected: {err}"),
-                    );
-                }
-            }
-            Err(err) => {
-                emit_status(
-                    "status",
-                    "reconnecting",
-                    &format!("Waiting for serial port {serial_port_name}: {err}"),
-                );
-            }
-        }
-
-        if running.load(Ordering::SeqCst) {
-            thread::sleep(Duration::from_millis(reconnect_ms));
-        }
+    )];
+    if let Some(name) = secondary_midi_port_name.filter(|s| !s.trim().is_empty()) {
+        routes.push(MidiRoute::full(
+            "mirror",
+            &resolve_output_name(name)?,
+            secondary_microfreak_mode,
+        ));
     }
-
-    emit_status("status", "stopped", "Bridge stopped");
+    let session = BridgeSession::start(serial_port_name.into(), routes, |e| {
+        emit_status(&e.event, &e.state, &e.detail)
+    })?;
+    while running.load(Ordering::SeqCst) && session.status().running {
+        thread::sleep(Duration::from_millis(50));
+    }
+    let issue = session.status().issue;
+    session.stop()?;
+    if let Some(issue) = issue {
+        return Err(anyhow!(issue));
+    }
     Ok(())
 }
 
-fn run_bridge_session(
-    port: Box<dyn SerialPort>,
-    routes: &mut [OutputRoute],
-    running: &AtomicBool,
-    sent_count: &mut usize,
-) -> Result<()> {
-    let mut reader = BufReader::new(port);
-    let mut line = String::new();
-    let mut next_heartbeat = Instant::now();
-
-    while running.load(Ordering::SeqCst) {
-        if Instant::now() >= next_heartbeat {
-            let _ = reader.get_mut().write_all(b"@C SERIAL_HOST\n");
-            let _ = reader.get_mut().flush();
-            next_heartbeat = Instant::now() + Duration::from_millis(1000);
-        }
-
-        line.clear();
-        match reader.read_line(&mut line) {
-            Ok(0) => continue,
-            Ok(_) => {
-                if line.starts_with("@I ") {
-                    emit_status("info", "device", line.trim_start_matches("@I ").trim());
-                    continue;
-                }
-                if let Some(packet) = parse_beca_midi_line(&line) {
-                    for route in routes.iter_mut() {
-                        if let Some(packet) =
-                            transform_bridge_packet(&packet, route.microfreak_mode)
-                        {
-                            route.connection.send(&packet.as_bytes()).with_context(|| {
-                                format!("failed to send midi packet to {}", route.name)
-                            })?;
-                            *sent_count += 1;
-                            if *sent_count % 16 == 0 {
-                                emit_status(
-                                    "activity",
-                                    "running",
-                                    &format!("midi_packets={sent_count}"),
-                                );
-                            }
-                        }
-                    }
-                }
-            }
-            Err(err) => {
-                if matches!(err.kind(), ErrorKind::TimedOut | ErrorKind::WouldBlock) {
-                    continue;
-                }
-                return Err(anyhow!(err.to_string()));
-            }
-        }
+fn resolve_output_name(target: &str) -> Result<String> {
+    #[cfg(unix)]
+    if target.eq_ignore_ascii_case("auto") || target == beca_bridge::ports::APP_MIDI_PORT {
+        return Ok(beca_bridge::ports::APP_MIDI_PORT.into());
     }
-
-    Ok(())
+    let midi = MidiOutput::new("BECA outputs")?;
+    let ports = midi.ports();
+    if ports.is_empty() {
+        return Err(anyhow!("No MIDI outputs detected."));
+    }
+    if target.eq_ignore_ascii_case("auto") {
+        return Ok(midi.port_name(&ports[best_midi_port_index(&midi, &ports)?])?);
+    }
+    let names: Vec<_> = ports
+        .iter()
+        .filter_map(|p| midi.port_name(p).ok())
+        .collect();
+    if let Some(name) = names.iter().find(|name| name.eq_ignore_ascii_case(target)) {
+        return Ok(name.clone());
+    }
+    let matches: Vec<_> = names
+        .into_iter()
+        .filter(|name| name.to_lowercase().contains(&target.to_lowercase()))
+        .collect();
+    if matches.len() == 1 {
+        return Ok(matches[0].clone());
+    }
+    Err(anyhow!(
+        "Output '{target}' is missing or ambiguous. Use list-midi and choose its full name."
+    ))
 }
 
 struct OutputRoute {
-    name: String,
     connection: MidiOutputConnection,
-    microfreak_mode: bool,
 }
 
 fn open_output_routes(
     primary_name: &str,
-    primary_microfreak_mode: bool,
+    _primary_microfreak_mode: bool,
     secondary_name: Option<&str>,
-    secondary_microfreak_mode: bool,
+    _secondary_microfreak_mode: bool,
 ) -> Result<Vec<OutputRoute>> {
     if let Some(secondary_name) = secondary_name {
         if primary_name.eq_ignore_ascii_case(secondary_name) {
@@ -240,33 +199,16 @@ fn open_output_routes(
     }
 
     let mut routes = vec![OutputRoute {
-        name: primary_name.to_string(),
         connection: open_midi_output(primary_name)?,
-        microfreak_mode: primary_microfreak_mode,
     }];
 
     if let Some(secondary_name) = secondary_name.filter(|name| !name.trim().is_empty()) {
         routes.push(OutputRoute {
-            name: secondary_name.to_string(),
             connection: open_midi_output(secondary_name)?,
-            microfreak_mode: secondary_microfreak_mode,
         });
     }
 
     Ok(routes)
-}
-
-fn describe_routes(routes: &[OutputRoute]) -> String {
-    let mut parts = Vec::with_capacity(routes.len());
-    for route in routes {
-        let label = if route.microfreak_mode {
-            format!("{} (MicroFreak mode)", route.name)
-        } else {
-            route.name.clone()
-        };
-        parts.push(label);
-    }
-    format!("MIDI outputs ready: {}", parts.join(" | "))
 }
 
 fn open_midi_output(target_name: &str) -> Result<MidiOutputConnection> {

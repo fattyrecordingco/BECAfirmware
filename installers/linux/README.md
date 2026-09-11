@@ -1,6 +1,6 @@
 # Linux Installer
 
-Use `BECA_0.1.7_amd64.AppImage` or `BECA_0.1.7_amd64.deb` when present.
+Download `BECA_0.2.0_amd64.AppImage` or `BECA_0.2.0_amd64.deb` from the [0.2.0 release](https://github.com/fattyrecordingco/BECAfirmware/releases/tag/setup-v0.2.0). New installers and SHA256SUMS are release assets; binaries in this folder are historical.
 
 Read first:
 - [Read Before First Launch](../../docs/user/READ_BEFORE_FIRST_LAUNCH.md)

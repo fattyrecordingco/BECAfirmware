@@ -1,6 +1,8 @@
 pub mod dependency;
 pub mod parser;
 pub mod ports;
+pub mod routing;
+pub mod session;
 pub mod transform;
 
 pub use dependency::{resolve_bridge_runtime, BridgeRuntimeDecision, BridgeRuntimeInput};
