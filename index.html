@@ -1180,6 +1180,9 @@
                   <span class="control-value" id="value-output">--</span>
                 </div>
                 <div class="segmented" id="output-group"></div>
+                <p class="panel-copy" id="wifi-midi-hint" hidden>
+                  Connect BECA and your computer to the same Wi-Fi in Settings, then open a network MIDI session on your computer.
+                </p>
               </article>
 
               <article class="control-card">
@@ -1246,7 +1249,7 @@
     <script>
       (() => {
         const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
-        const OUTPUT_LABELS = ["BLE", "SERIAL", "AUX OUT", "SERIAL + AUX"];
+        const OUTPUT_LABELS = ["BLE", "SERIAL", "AUX OUT", "SERIAL + AUX", "Wi-Fi MIDI"];
         const CLOCK_LABELS = ["Internal", "Plant"];
         const LED_SLOT_COUNT = 8;
         const LED_DISPLAY_SETTING = 0;
@@ -1275,7 +1278,8 @@
           ["#00c8ff", null, "#00c8ff", null, "#00c8ff", null, "#00c8ff", null],
           ["#6e2cff", "#00c49a", "#00c853", "#00c853", "#ffd400", "#ffd400", "#ff5a00", "#f12129"],
           ["#00c853", "#00c853", null, null, null, null, null, null],
-          ["#00c853", "#00c853", "#00c49a", "#00c49a", "#6e2cff", "#6e2cff", null, null]
+          ["#00c853", "#00c853", "#00c49a", "#00c49a", "#6e2cff", "#6e2cff", null, null],
+          ["#00c8dc", "#00c8dc", "#00c853", "#00c853", null, null, null, null]
         ];
         const RANDOM_PATTERN = ["#6e2cff", null, "#00c853", null, "#ffd400", null, "#ff5a00", null];
         const DRUM_PARTS = [
@@ -1320,6 +1324,7 @@
           noteReadout: document.querySelector("#note-readout"),
           noteStrip: document.querySelector("#note-strip"),
           outputGroup: document.querySelector("#output-group"),
+          wifiMidiHint: document.querySelector("#wifi-midi-hint"),
           clockGroup: document.querySelector("#clock-group"),
           ledStack: document.querySelector("#led-stack"),
           drumGrid: document.querySelector("#drum-grid"),
@@ -1818,7 +1823,8 @@
 
           buildSegmented(
             el.outputGroup,
-            OUTPUT_LABELS.map((label, index) => ({ label, value: index })),
+            OUTPUT_LABELS.map((label, index) => ({ label, value: index }))
+              .filter((item) => item.value < 4 || Boolean(state.params.output_modes?.[item.value])),
             (value) => postSet("outputmode", value)
           );
           buildSegmented(
@@ -1908,7 +1914,11 @@
           el.norepButton.textContent = runtime.nr ? "No repeat ON" : "Keep notes moving";
 
           updateSegmented(el.outputGroup, runtime.outputmode);
-          el.outputGroup.querySelectorAll("button").forEach((button, index) => { button.disabled = !state.auxReady && index >= 2; });
+          el.outputGroup.querySelectorAll("button").forEach((button) => {
+            const value = Number(button.dataset.value);
+            button.disabled = !state.auxReady && (value === 2 || value === 3);
+          });
+          el.wifiMidiHint.hidden = runtime.outputmode !== 4;
           updateSegmented(el.clockGroup, runtime.clock);
 
           renderLedStack();

@@ -37,7 +37,7 @@ const GROUPS = [
 
   { title: "Plant & timing", controls: [
 
-    select("outputmode", "Output", ["BLE MIDI", "Serial MIDI", "Aux audio", "Serial MIDI + Aux"]),
+    select("outputmode", "Output", ["BLE MIDI", "Serial MIDI", "Aux audio", "Serial MIDI + Aux", "Wi-Fi MIDI"]),
 
     select("preset", "Soundscape", "synth_presets"),
 
@@ -778,6 +778,9 @@ export function createPerformancePage({ invoke, getTarget }) {
 
         input.replaceChildren(...options.map((name, index) => {
 
+          // Firmware preserves output IDs with empty slots when a feature is disabled.
+          if (control.key === "outputmode" && (!name || (index === 4 && !Array.isArray(params.output_modes)))) return null;
+
           const option = document.createElement("option");
 
           option.value = String(control.values ? name : index);
@@ -786,7 +789,7 @@ export function createPerformancePage({ invoke, getTarget }) {
 
           return option;
 
-        }));
+        }).filter(Boolean));
 
       } else if (!control.toggle && params.ranges?.[control.key]) {
 

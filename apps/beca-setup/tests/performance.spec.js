@@ -1,8 +1,8 @@
 import { expect, test } from "@playwright/test";
 import axeCore from "axe-core";
 
-async function openPerformance(page, { offline = false, transport = "serial", initialFailures = 0, livePreset = true, detectedPort = "COM_TEST", discoveryDelay = 0 } = {}) {
-  await page.addInitScript(({ offline, transport, initialFailures, livePreset, detectedPort, discoveryDelay }) => {
+async function openPerformance(page, { offline = false, transport = "serial", initialFailures = 0, livePreset = true, detectedPort = "COM_TEST", discoveryDelay = 0, outputModes = ["BLE MIDI", "Serial MIDI", "Aux audio", "Serial MIDI + Aux"] } = {}) {
+  await page.addInitScript(({ offline, transport, initialFailures, livePreset, detectedPort, discoveryDelay, outputModes }) => {
     localStorage.setItem("beca-read-before-first-launch-v1", "1");
     const target = { id: "beca-test", name: "BECA test", control_ready: true, serial_port: "COM_TEST" };
     const runtime = {
@@ -21,7 +21,7 @@ async function openPerformance(page, { offline = false, transport = "serial", in
       modes: ["Notes", "Arpeggiator", "Chords", "Drums"], scales: ["Major", "Minor"],
       time_signatures: ["3-4", "4-4"], note_lengths: ["1/32", "1/16t", "1/16", "1/8"],
       synth_presets: ["Fatty Neon Lead", "Prism Poly Lead", "Verdant Pad", "Forest Choir Pad", "Thick Mono Bass", "Rubber Bass", "Dewdrop Glass", "Moon Garden", "Moss Bells", "Firefly Pluck", "Bubble Reed", "Pollen Drift", "Raw Sensor Sine"],
-      output_modes: ["BLE MIDI", "Serial MIDI", "Aux audio", "Serial MIDI + Aux"], led_effects: ["Flow", "Wave"], led_palettes: ["Real palette"],
+      output_modes: outputModes, led_effects: ["Flow", "Wave"], led_palettes: ["Real palette"],
       ranges: { bpm: [20, 240], voices: [1, 8] }, live_preset: livePreset
     };
     window.__performanceMock = { runtime, synth, writes: [], snapshots: 0, snapshotBusy: false, readDelay: 0, overlapped: false, inFlight: 0, maxInFlight: 0, delay: 0, failKey: "", stale: false };
@@ -84,7 +84,7 @@ async function openPerformance(page, { offline = false, transport = "serial", in
         throw new Error(`Unexpected command ${command}`);
       }
     };
-  }, { offline, transport, initialFailures, livePreset, detectedPort, discoveryDelay });
+  }, { offline, transport, initialFailures, livePreset, detectedPort, discoveryDelay, outputModes });
   await page.goto("/");
   await expect(page.locator("#connect-status")).toContainText(detectedPort ? `USB connected · ${detectedPort}` : "not detected");
   // Wait for discovery to finish before opening live controls.
@@ -103,6 +103,21 @@ async function dragValues(page, entries) {
     });
   }, entries);
 }
+
+test("Wi-Fi MIDI keeps firmware output ID 4 when combined output is unavailable", async ({ page }) => {
+  await openPerformance(page, { outputModes: ["BLE MIDI", "Serial MIDI", "Aux audio", "", "Wi-Fi MIDI"] });
+  await expect(page.locator("#performance-outputmode option")).toHaveCount(4);
+  await expect(page.locator('#performance-outputmode option[value="3"]')).toHaveCount(0);
+  await page.locator("#performance-outputmode").selectOption({ label: "Wi-Fi MIDI" });
+  await expect.poll(() => page.evaluate(() => window.__performanceMock.runtime.outputmode)).toBe(4);
+  await expect(page.locator("#performance-outputmode")).toHaveValue("4");
+});
+
+test("Wi-Fi MIDI is hidden when legacy firmware omits output capabilities", async ({ page }) => {
+  await openPerformance(page, { outputModes: null });
+  await expect(page.locator('#performance-outputmode option[value="4"]')).toHaveCount(0);
+  await expect(page.locator("#performance-outputmode option")).toHaveCount(4);
+});
 
 test("Performance exposes full musical controls with responsive accessible layout", async ({ page }, testInfo) => {
   await openPerformance(page);

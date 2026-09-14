@@ -640,6 +640,7 @@ async function refreshWifiInfo() {
     } else {
       setWifiStatus("No Wi-Fi saved yet. Pick a 2.4GHz network and save.");
     }
+    if (info.sta_mac) el.wifiStatus.textContent += ` Wi-Fi MAC: ${info.sta_mac}.`;
 
     addLog(`Wi-Fi info: ${JSON.stringify(info)}`);
     return info;

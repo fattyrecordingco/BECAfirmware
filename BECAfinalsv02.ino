@@ -40,6 +40,7 @@ BLEMIDI_CREATE_INSTANCE("BECA BLE-MIDI", MIDI);
 #include "synth_engine.h"
 #include "timing_utils.h"
 #include "output_modes.h"
+#include "wifi_midi.h"
 
 #ifndef BECA_IDLE_LIGHT_EFFECTS
 #define BECA_IDLE_LIGHT_EFFECTS 1
@@ -105,6 +106,20 @@ uint8_t gBrightness = 154;
 // -------------------- BLE-MIDI --------------------
 volatile bool gMidiConnected = false;
 volatile uint8_t gOutputMode = OUTPUT_BLE;
+#if BECA_WIFI_MIDI
+beca::NetworkMidi gNetworkMidi;
+bool gNetworkMidiStarted = false;
+bool gNetworkMidiConnected = false;
+bool gNetworkMidiResetPending = false;
+bool gNetworkMidiPanicPending = false;
+bool gNetworkMidiAdvertised = false;
+volatile bool gNetworkMidiLinkLost = false;
+IPAddress gNetworkMidiIP;
+char gNetworkMidiName[20] = "BECA";
+uint32_t gNetworkMidiAdvertiseAt = 0;
+static inline void serviceNetworkMidi(uint32_t now);
+static inline void stopNetworkMidi();
+#endif
 enum OutputChangeSource : uint8_t {
   OUTPUT_CHANGE_USER = 0,
   OUTPUT_CHANGE_AUX_AUTO,
@@ -146,11 +161,19 @@ const uint32_t BLE_KICK_INTERVAL_MS = 2500; // kick advertise every 2.5s when no
 static inline bool outputModeIsAux() { return outputHasAux(gOutputMode); }
 static inline bool outputModeIsBle() { return gOutputMode == OUTPUT_BLE; }
 static inline bool outputModeIsSerial() { return outputHasSerial(gOutputMode); }
+static inline bool outputModeIsWifi() { return BECA_WIFI_MIDI && gOutputMode == OUTPUT_WIFI; }
+static inline bool networkMidiReady() {
+#if BECA_WIFI_MIDI
+  return gNetworkMidiStarted && gNetworkMidiConnected && !gNetworkMidiPanicPending && !gNetworkMidiResetPending && !gNetworkMidiLinkLost && WiFi.status() == WL_CONNECTED;
+#else
+  return false;
+#endif
+}
 static inline bool ioMuteManualActive() { return gIoMuted; }
 static inline bool plantAutoMuteActive() { return gPlantAutoMuted; }
 static inline bool ioMuteActive() { return gIoMuted || gPlantAutoMuted; }
 static inline bool midiOutIsSerial() { return outputModeIsSerial(); }
-static inline bool midiOutReady()    { return !ioMuteActive() && (outputModeIsSerial() || (outputModeIsBle() && gMidiConnected)); }
+static inline bool midiOutReady()    { return !ioMuteActive() && (outputModeIsSerial() || (outputModeIsBle() && gMidiConnected) || (outputModeIsWifi() && networkMidiReady())); }
 static inline bool plantJackConnected();
 static inline bool auxJackConnected();
 static inline void setupJackInputs();
@@ -215,6 +238,9 @@ static inline void midiSendNoteOn(uint8_t note, uint8_t vel, uint8_t ch) {
   if (gOutputMode == OUTPUT_AUX || ioMuteActive()) return;
   if (midiOutIsSerial()) serialMidiSend3(status, note, vel);
   else if (outputModeIsBle() && gMidiConnected) MIDI.sendNoteOn(note, vel, ch);
+#if BECA_WIFI_MIDI
+  else if (outputModeIsWifi() && networkMidiReady()) gNetworkMidi.midi.sendNoteOn(note, vel, ch);
+#endif
 }
 
 static inline bool midiSendNoteOff(uint8_t note, uint8_t vel, uint8_t ch) {
@@ -223,6 +249,9 @@ static inline bool midiSendNoteOff(uint8_t note, uint8_t vel, uint8_t ch) {
   if (midiOutIsSerial()) {
     if (!serialMidiSend3(status, note, vel)) return false;
   } else if (outputModeIsBle() && gMidiConnected) MIDI.sendNoteOff(note, vel, ch);
+#if BECA_WIFI_MIDI
+  else if (outputModeIsWifi() && networkMidiReady()) gNetworkMidi.midi.sendNoteOff(note, vel, ch);
+#endif
   serialJsonMidiEvent(note, vel, ch, false);
   return true;
 }
@@ -232,12 +261,18 @@ static inline void midiSendControlChange(uint8_t cc, uint8_t val, uint8_t ch) {
   if (gOutputMode == OUTPUT_AUX || ioMuteActive()) return;
   if (midiOutIsSerial()) serialMidiSend3(status, cc, val);
   else if (outputModeIsBle() && gMidiConnected) MIDI.sendControlChange(cc, val, ch);
+#if BECA_WIFI_MIDI
+  else if (outputModeIsWifi() && networkMidiReady()) gNetworkMidi.midi.sendControlChange(cc, val, ch);
+#endif
 }
 
 static inline void allNotesOffBothTransports() {
   for (uint8_t ch = 1; ch <= 16; ++ch) {
     MIDI.sendControlChange(123, 0, ch);
     serialMidiSend3((uint8_t)(0xB0 | ((ch - 1) & 0x0F)), 123, 0);
+#if BECA_WIFI_MIDI
+    if (gNetworkMidiStarted && gNetworkMidiConnected) gNetworkMidi.midi.sendControlChange(123, 0, ch);
+#endif
   }
 }
 
@@ -261,13 +296,13 @@ static inline void bleKickAdvertising() {
   adv->setMaxPreferred(0x12);
 }
 
-struct NoteOff {
+struct PendingNoteOff {
   uint8_t  note;
   uint8_t  ch;
   uint32_t tOff;
   bool     on;
 };
-NoteOff offQ[32];
+PendingNoteOff offQ[32];
 
 struct UiHeldNote {
   uint8_t  note;
@@ -344,6 +379,7 @@ static inline const char* outputModeName(uint8_t mode) {
     case OUTPUT_SERIAL: return "SERIAL";
     case OUTPUT_AUX: return "AUX";
     case OUTPUT_SERIAL_AUX: return "SERIAL_AUX";
+    case OUTPUT_WIFI: return "WIFI";
     default: return "BLE";
   }
 }
@@ -424,6 +460,9 @@ static inline uint8_t nextOutputModeForCycle() {
 #if BECA_DUAL_OUTPUT
   if (gOutputMode == OUTPUT_SERIAL && auxSwitchReady()) return OUTPUT_SERIAL_AUX;
 #endif
+#if BECA_WIFI_MIDI
+  if (!outputModeIsWifi()) return OUTPUT_WIFI;
+#endif
   return OUTPUT_BLE;
 }
 
@@ -498,6 +537,7 @@ static inline void applyPlantAutoMute(bool muteOn) {
 }
 
 static inline bool setOutputMode(uint8_t mode, OutputChangeSource source = OUTPUT_CHANGE_USER) {
+  if (!outputModeValid(mode)) return false;
   uint8_t next = (uint8_t)constrain((int)mode, 0, (int)OUTPUT_MODE_MAX);
   if (source == OUTPUT_CHANGE_USER) {
     gAuxJackAutoActive = false;
@@ -517,6 +557,9 @@ static inline bool setOutputMode(uint8_t mode, OutputChangeSource source = OUTPU
 
   Serial.printf("@I OUTPUTMODE %s -> %s\n", outputModeName(gOutputMode), outputModeName(next));
   allNotesOffBothTransports();
+#if BECA_WIFI_MIDI
+  if (outputModeIsWifi()) stopNetworkMidi();
+#endif
   gSynth.allNotesOff();
   gSynth.allDrumsOff();
   for (auto &q : offQ) q.on = false;
@@ -542,6 +585,8 @@ static inline bool setOutputMode(uint8_t mode, OutputChangeSource source = OUTPU
   if (outputModeIsSerial()) {
     gLastSerialBeaconMs = 0;
     Serial.println("@I MIDIMODE SERIAL");
+  } else if (outputModeIsWifi()) {
+    Serial.println("@I MIDIMODE WIFI");
   } else {
     Serial.println("@I MIDIMODE BLE");
     bleKickAdvertising();
@@ -557,7 +602,7 @@ static inline void setMidiOutModeLegacy(uint8_t mode) {
 static inline void onBleMidiConnect()    { gMidiConnected = true; }
 static inline void onBleMidiDisconnect() {
   gMidiConnected = false;
-  allNotesOff();
+  if (!outputModeIsWifi()) allNotesOff();
   // Immediately resume advertising after disconnect
   if (outputModeIsBle()) bleKickAdvertising();
 }
@@ -1152,7 +1197,7 @@ static inline void captureRuntimeState(RuntimeStateBlob& out) {
 static inline bool runtimeStateValid(const RuntimeStateBlob& in) {
   if (in.magic != RUNTIME_STATE_MAGIC) return false;
   if (in.version != RUNTIME_STATE_VER) return false;
-  if (in.outputmode > OUTPUT_MODE_MAX) return false;
+  if (!outputModeValid(in.outputmode)) return false;
   if (in.mode > 3) return false;
   if (in.clock > 1) return false;
   if (in.scale > 14) return false;
@@ -1670,10 +1715,15 @@ static inline void renderOutputInfoLeds() {
     CRGB(0, 200, 83), CRGB(0, 200, 83), CRGB(0, 196, 154), CRGB(0, 196, 154),
     CRGB(110, 44, 255), CRGB(110, 44, 255), CRGB::Black, CRGB::Black
   };
+  static const CRGB kWifiPattern[LED_COUNT] = {
+    CRGB(0, 200, 220), CRGB(0, 200, 220), CRGB(0, 200, 83), CRGB(0, 200, 83),
+    CRGB::Black, CRGB::Black, CRGB::Black, CRGB::Black
+  };
   const CRGB* pattern = kBlePattern;
   if (outputModeIsSerial() && outputModeIsAux()) pattern = kCombinedPattern;
   else if (outputModeIsSerial()) pattern = kSerialPattern;
   else if (outputModeIsAux()) pattern = kAuxPattern;
+  else if (outputModeIsWifi()) pattern = kWifiPattern;
   for (uint8_t i = 0; i < LED_COUNT; ++i) {
     leds[i] = pattern[i];
   }
@@ -2144,6 +2194,9 @@ static inline bool setupPortalActive();
 static void WiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
   switch (event) {
     case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
+#if BECA_WIFI_MIDI
+      gNetworkMidiLinkLost = true;
+#endif
       Serial.printf("STA_DISCONNECTED reason=%d\n", info.wifi_sta_disconnected.reason);
       gLastStaDisconnectReason = info.wifi_sta_disconnected.reason;
       if (gWifiFailCount < 255) gWifiFailCount++;
@@ -2161,6 +2214,9 @@ static void WiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
       startMDNS();
       break;
     case ARDUINO_EVENT_WIFI_STA_LOST_IP:
+#if BECA_WIFI_MIDI
+      gNetworkMidiLinkLost = true;
+#endif
       Serial.println("STA_LOST_IP");
       break;
     default:
@@ -2294,7 +2350,7 @@ static inline void serviceJackInputs(uint32_t nowMs) {
   if (!auxJackConnected()) {
     gAuxJackAutoSuppressed = false;
     if (gAuxJackAutoActive) {
-      const uint8_t restore = (gAuxJackPreviousOutput == OUTPUT_SERIAL) ? OUTPUT_SERIAL : OUTPUT_BLE;
+      const uint8_t restore = outputModeValid(gAuxJackPreviousOutput) ? gAuxJackPreviousOutput : OUTPUT_BLE;
       gAuxJackAutoActive = false;
       if (setOutputMode(restore, OUTPUT_CHANGE_AUX_RESTORE)) {
         showLedDisplay(LED_DISPLAY_OUTPUT, 1600);
@@ -2316,7 +2372,7 @@ static inline void serviceJackInputs(uint32_t nowMs) {
     return;
   }
 
-  gAuxJackPreviousOutput = outputModeIsSerial() ? OUTPUT_SERIAL : OUTPUT_BLE;
+  gAuxJackPreviousOutput = gOutputMode;
   if (setOutputMode(OUTPUT_AUX, OUTPUT_CHANGE_AUX_AUTO)) {
     gAuxJackAutoActive = true;
     showLedDisplay(LED_DISPLAY_OUTPUT, 1600);
@@ -3163,9 +3219,12 @@ static inline bool parseOutputModeArg(const String& in, uint8_t& outMode) {
 #if BECA_DUAL_OUTPUT
   if (v == "SERIAL_AUX" || v == "SERIAL+AUX" || v == "SERIAL + AUX") { outMode = OUTPUT_SERIAL_AUX; return true; }
 #endif
+#if BECA_WIFI_MIDI
+  if (v == "WIFI" || v == "WI-FI MIDI" || v == "RTP-MIDI") { outMode = OUTPUT_WIFI; return true; }
+#endif
   if (v.length() && isDigit(v[0])) {
     int m = v.toInt();
-    if (m < 0 || m > OUTPUT_MODE_MAX || v != String(m)) return false;
+    if (m < 0 || m > OUTPUT_MODE_MAX || !outputModeValid((uint8_t)m) || v != String(m)) return false;
     outMode = (uint8_t)m;
     return true;
   }
@@ -3441,11 +3500,16 @@ static inline String buildApiParamsJson() {
     if (i) json += ",";
     json += "\""; json += NOTE_LENGTH_LABELS[i]; json += "\"";
   }
+  json += "],\"output_modes\":[\"BLE MIDI\",\"Serial MIDI\",\"Aux audio\"";
 #if BECA_DUAL_OUTPUT
-  json += "],\"output_modes\":[\"BLE MIDI\",\"Serial MIDI\",\"Aux audio\",\"Serial MIDI + Aux\"]";
-#else
-  json += "],\"output_modes\":[\"BLE MIDI\",\"Serial MIDI\",\"Aux audio\"]";
+  json += ",\"Serial MIDI + Aux\"";
+#elif BECA_WIFI_MIDI
+  json += ",\"\""; // Keep stable mode IDs when combined output is disabled.
 #endif
+#if BECA_WIFI_MIDI
+  json += ",\"Wi-Fi MIDI\"";
+#endif
+  json += "]";
   json += ",\"aux_drums\":false,\"midi_drums\":true,\"led_effects\":[";
   for (uint8_t i=0; i<FX_COUNT; ++i) { if(i) json += ","; json += "\""; json += EFFECT_NAMES[i]; json += "\""; }
   json += "],\"led_palettes\":[";
@@ -4027,7 +4091,7 @@ static inline String wifiFailureMessage(int32_t reason) {
 }
 
 static inline String shortChipId() {
-  uint8_t mac[6]; WiFi.macAddress(mac);
+  uint8_t mac[6] = {}; esp_read_mac(mac, ESP_MAC_WIFI_STA);
   char id[8];
   snprintf(id, sizeof(id), "%02X%02X", mac[4], mac[5]);
   return String(id);
@@ -4105,6 +4169,105 @@ static inline void startMDNS() {
 static inline bool wifiReady() {
   return WiFi.status() == WL_CONNECTED && WiFi.localIP() != IPAddress(0,0,0,0);
 }
+
+static inline String deviceMac(bool ap = false) {
+  uint8_t mac[6] = {};
+  esp_read_mac(mac, ap ? ESP_MAC_WIFI_SOFTAP : ESP_MAC_WIFI_STA);
+  char text[18];
+  snprintf(text, sizeof(text), "%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+  return String(text);
+}
+
+#if BECA_WIFI_MIDI
+static inline void resetNetworkClock() {
+  gDawClockRunning = false;
+  gDawClockPulseAcc = 0;
+  gDawStepPending = 0;
+  gDawLastPulseMs = 0;
+}
+
+static inline void clearNetworkNotes() {
+  for (auto &q : offQ) q.on = false;
+  for (auto &q : uiNoteQ) q.on = false;
+  activeClear();
+  resetNetworkClock();
+}
+
+static void onNetworkMidiConnected(const APPLEMIDI_NAMESPACE::ssrc_t &, const char *) {
+  if (gNetworkMidiConnected) return;
+  gNetworkMidiConnected = true;
+  gNetworkMidiPanicPending = true;
+  clearNetworkNotes();
+  Serial.println("@I WIFI MIDI CONNECTED");
+}
+
+static void onNetworkMidiDisconnected(const APPLEMIDI_NAMESPACE::ssrc_t &) {
+  gNetworkMidiConnected = false;
+  gNetworkMidiResetPending = true;
+  clearNetworkNotes();
+  Serial.println("@I WIFI MIDI DISCONNECTED");
+}
+
+static inline void stopNetworkMidi() {
+  // Called from the main loop, never from a library or Wi-Fi callback.
+  gNetworkMidiResetPending = true;
+  if (gNetworkMidiStarted) {
+    if (gNetworkMidiConnected && wifiReady() && !gNetworkMidiLinkLost) {
+      for (uint8_t ch = 1; ch <= 16; ++ch) gNetworkMidi.midi.sendControlChange(123, 0, ch);
+      gNetworkMidi.session.available(); // Flush cleanup before ending the session.
+      gNetworkMidi.session.sendEndSession();
+    }
+    gNetworkMidi.reset();
+  }
+  if (gNetworkMidiAdvertised && gMdnsStarted) mdns_service_remove("_apple-midi", "_udp");
+  gNetworkMidiStarted = false;
+  gNetworkMidiConnected = false;
+  gNetworkMidiPanicPending = false;
+  gNetworkMidiResetPending = false;
+  gNetworkMidiAdvertised = false;
+  gNetworkMidiAdvertiseAt = 0;
+  clearNetworkNotes();
+}
+
+static inline void serviceNetworkMidi(uint32_t now) {
+  const bool ready = outputModeIsWifi() && wifiReady();
+  if (gNetworkMidiStarted && (!ready || gNetworkMidiLinkLost || gNetworkMidiResetPending || gNetworkMidiIP != WiFi.localIP())) {
+    stopNetworkMidi();
+  }
+  gNetworkMidiLinkLost = false;
+  if (!ready) return;
+  if (!gNetworkMidiStarted) {
+    resetNetworkClock();
+    gNetworkMidi.session.setName(gNetworkMidiName);
+    gNetworkMidi.session.setHandleConnected(onNetworkMidiConnected);
+    gNetworkMidi.session.setHandleDisconnected(onNetworkMidiDisconnected);
+    gNetworkMidi.midi.begin(MIDI_CHANNEL_OMNI);
+    gNetworkMidi.midi.turnThruOff();
+    gNetworkMidi.midi.setHandleClock([](){ if (outputModeIsWifi() && networkMidiReady()) onMidiClock(); });
+    gNetworkMidi.midi.setHandleStart([](){ if (outputModeIsWifi() && networkMidiReady()) onMidiStart(); });
+    gNetworkMidi.midi.setHandleStop([](){ if (outputModeIsWifi() && networkMidiReady()) onMidiStop(); });
+    gNetworkMidi.midi.setHandleContinue([](){ if (outputModeIsWifi() && networkMidiReady()) onMidiContinue(); });
+    gNetworkMidiIP = WiFi.localIP();
+    gNetworkMidiStarted = true;
+    Serial.printf("@I WIFI MIDI LISTEN %s %s:5004\n", gNetworkMidiName, gNetworkMidiIP.toString().c_str());
+  }
+  if (!gMdnsStarted) gNetworkMidiAdvertised = false;
+  if (gMdnsStarted && !gNetworkMidiAdvertised && (gNetworkMidiAdvertiseAt == 0 || (uint32_t)(now - gNetworkMidiAdvertiseAt) >= 10000)) {
+    gNetworkMidiAdvertiseAt = now;
+    gNetworkMidiAdvertised = MDNS.addService("apple-midi", "udp", beca::WIFI_MIDI_PORT);
+    if (gNetworkMidiAdvertised) mdns_service_instance_name_set("_apple-midi", "_udp", gNetworkMidiName);
+  }
+  // A finite ingress budget keeps plant sampling, BLE and the watchdog serviced.
+  for (uint8_t i = 0; i < 8 && !gNetworkMidiResetPending; ++i) {
+    if (!gNetworkMidi.midi.read()) break;
+  }
+  if (gNetworkMidiPanicPending && !gNetworkMidiResetPending) {
+    for (uint8_t ch = 1; ch <= 16; ++ch) gNetworkMidi.midi.sendControlChange(123, 0, ch);
+    gNetworkMidi.session.available();
+    gNetworkMidiPanicPending = false;
+  }
+}
+#endif
 
 static inline void serviceMDNS(uint32_t now) {
   if (!gIsSta || !wifiReady()) return;
@@ -4211,6 +4374,16 @@ static inline String buildWifiScanJson() {
 
 static inline String buildApiInfoJson() {
   String json = "{";
+  json += "\"sta_mac\":\""; json += deviceMac(); json += "\",";
+  json += "\"ap_mac\":\""; json += deviceMac(true); json += "\",";
+  json += "\"wifi_connected\":"; json += (wifiReady() ? "true" : "false"); json += ",";
+#if BECA_WIFI_MIDI
+  json += "\"wifi_midi\":true,\"wifi_midi_name\":\""; json += gNetworkMidiName; json += "\",";
+  json += "\"wifi_midi_port\":5004,\"wifi_midi_listening\":"; json += (gNetworkMidiStarted ? "true" : "false"); json += ",";
+  json += "\"wifi_midi_connected\":"; json += (networkMidiReady() ? "true" : "false"); json += ",";
+#else
+  json += "\"wifi_midi\":false,";
+#endif
   json += "\"mode\":\"";   json += (setupPortalActive() ? "ap" : "sta"); json += "\",";
   json += "\"ip\":\"";     json += (gIsSta ? WiFi.localIP().toString() : gApIP.toString()); json += "\",";
   json += "\"name\":\"";   json += gDeviceName; json += "\",";
@@ -5230,6 +5403,12 @@ void setup() {
   delay(240);
   Serial.println();
   Serial.println("=== BECA booting ===");
+  Serial.printf("@I WIFI STA MAC %s\n", deviceMac().c_str());
+#if BECA_WIFI_MIDI
+  uint8_t stationMac[6] = {};
+  esp_read_mac(stationMac, ESP_MAC_WIFI_STA);
+  snprintf(gNetworkMidiName, sizeof(gNetworkMidiName), "BECA-%02X%02X%02X", stationMac[3], stationMac[4], stationMac[5]);
+#endif
   randomSeed(esp_random());
   resetStartupChecks();
 
@@ -5239,10 +5418,10 @@ void setup() {
   BLEMIDI.setHandleConnected(onBleMidiConnect);
   BLEMIDI.setHandleDisconnected(onBleMidiDisconnect);
   MIDI.begin(MIDI_CHANNEL_OMNI);
-  MIDI.setHandleClock(onMidiClock);
-  MIDI.setHandleStart(onMidiStart);
-  MIDI.setHandleStop(onMidiStop);
-  MIDI.setHandleContinue(onMidiContinue);
+  MIDI.setHandleClock([](){ if (!outputModeIsWifi()) onMidiClock(); });
+  MIDI.setHandleStart([](){ if (!outputModeIsWifi()) onMidiStart(); });
+  MIDI.setHandleStop([](){ if (!outputModeIsWifi()) onMidiStop(); });
+  MIDI.setHandleContinue([](){ if (!outputModeIsWifi()) onMidiContinue(); });
   setStartupCheck(STARTUP_CHECK_BLE, STARTUP_CHECK_OK);
 
   // LEDs
@@ -5313,7 +5492,7 @@ void setup() {
   }
   setStartupCheck(STARTUP_CHECK_SESSION, hasBootState ? STARTUP_CHECK_OK : STARTUP_CHECK_WARN);
 
-  if (storedOutput > OUTPUT_MODE_MAX) {
+  if (!outputModeValid(storedOutput)) {
     storedOutput = legacyMidiMode;
   }
   const bool bootOutputStabilized = outputHasAux(storedOutput);
@@ -5486,6 +5665,9 @@ void loop() {
   serviceSerialControlCommands();
   maintainWiFi(now);
   serviceMDNS(now);
+#if BECA_WIFI_MIDI
+  serviceNetworkMidi(now);
+#endif
   applyEncoder();
   serviceJackInputs(now);
 

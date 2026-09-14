@@ -71,7 +71,7 @@
 
       .control-viewport {
         width: calc(575px * var(--ui-scale, 1));
-        height: calc(842px * var(--ui-scale, 1));
+        height: calc(866px * var(--ui-scale, 1));
         display: flex;
         justify-content: center;
         align-items: flex-start;
@@ -83,7 +83,7 @@
         position: relative;
         flex: none;
         width: 575px;
-        height: 842px;
+        height: 866px;
         background: var(--panel);
         border: var(--border-width) solid var(--accent);
         border-radius: var(--frame-radius);
@@ -443,7 +443,7 @@
         left: 20px;
         top: 740px;
         width: 350px;
-        height: 42px;
+        height: 66px;
         display: flex;
         align-items: center;
         gap: 8px;
@@ -512,7 +512,7 @@
 
       .random-card {
         left: 20px;
-        top: 790px;
+        top: 814px;
         width: 80px;
         height: 40px;
         display: grid;
@@ -538,7 +538,7 @@
 
       .sync-card {
         left: 112px;
-        top: 790px;
+        top: 814px;
         width: 258px;
         height: 40px;
         display: flex;
@@ -759,7 +759,7 @@
       const MODE_LABELS = ["notes", "arpeggio", "chords", "drums"];
       const SCALE_LABELS = ["maj", "min", "dorian", "lyd", "mix", "pent min", "pent maj", "harm min", "phryg", "whole", "maj7", "min7", "dom7", "sus2", "sus4"];
       const NOTE_LENGTHS = ["1/32", "1/16t", "1/16", "1/8t", "1/8", "1/4", "1/2", "1/1"];
-      const OUTPUTS = ["ble", "aux out", "serial", "serial+aux"];
+      const OUTPUTS = ["ble", "aux out", "serial", "serial+aux", "wifi"];
       const TIME_SIGNATURES = ["1-1", "2-2", "2-4", "3-4", "4-4", "5-4", "7-4", "6-8", "9-8", "12-8", "4-8", "4-16", "8-32"];
       const LED_SLOT_COUNT = 8;
       const LED_DISPLAY_SETTING = 0;
@@ -794,7 +794,8 @@
         ble: ["#00c8ff", null, "#00c8ff", null, "#00c8ff", null, "#00c8ff", null],
         serial: ["#6e2cff", "#00c49a", "#00c853", "#00c853", "#ffd400", "#ffd400", "#ff5a00", "#f12129"],
         "aux out": ["#00c853", "#00c853", null, null, null, null, null, null],
-        "serial+aux": ["#00c853", "#00c853", "#00c49a", "#00c49a", "#6e2cff", "#6e2cff", null, null]
+        "serial+aux": ["#00c853", "#00c853", "#00c49a", "#00c49a", "#6e2cff", "#6e2cff", null, null],
+        wifi: ["#00c8dc", "#00c8dc", "#00c853", "#00c853", null, null, null, null]
       };
       const RANDOM_PATTERN = ["#6e2cff", null, "#00c853", null, "#ffd400", null, "#ff5a00", null];
       const PLANT_RENDER_MS = 33;
@@ -905,13 +906,21 @@
         if (text === "0" || (numericFallback === 0 && !text)) return "ble";
         if (text === "1" || (numericFallback === 1 && !text)) return "serial";
         if (text === "2" || (numericFallback === 2 && !text)) return "aux out";
-        if (text === "3" || text === "serial aux" || text === "serial+aux" || numericFallback === 3) return "serial+aux";
-        if (text === "aux" || text === "aux out") return "aux out";
-        if (text === "ble" || text === "serial") return text;
+        if (text === "4" || /^(wi-?fi|network|rtp)( midi)?$/.test(text) || numericFallback === 4) return "wifi";
+        if (text === "3" || /serial.*aux/.test(text) || numericFallback === 3) return "serial+aux";
+        if (text === "aux" || text === "aux out" || text === "aux audio") return "aux out";
+        if (text === "ble" || text === "ble midi") return "ble";
+        if (text === "serial" || text === "serial midi") return "serial";
         if (numericFallback === 0) return "ble";
         if (numericFallback === 1) return "serial";
         if (numericFallback === 2) return "aux out";
         return "serial";
+      }
+
+      function outputSupported(output) {
+        const modes = state.params.output_modes;
+        if (!Array.isArray(modes)) return output !== "wifi";
+        return modes.some((name, index) => name && normalizeOutputModeToken(name, index) === output);
       }
 
       function isAuxOutput() {
@@ -1218,7 +1227,7 @@
           1,
           Math.min(bounds.height || viewportHeight, viewportHeight) - verticalPadding - 2
         );
-        const scale = Math.min(availableWidth / 575, availableHeight / 842, 1);
+        const scale = Math.min(availableWidth / 575, availableHeight / 866, 1);
         document.documentElement.style.setProperty("--ui-scale", scale.toFixed(4));
       }
 
@@ -1444,6 +1453,7 @@
           if (Array.isArray(paramsState.synth_presets) && paramsState.synth_presets.length) {
             state.params.synth_presets = paramsState.synth_presets;
           }
+          if (Array.isArray(paramsState.output_modes)) state.params.output_modes = paramsState.output_modes;
           mergeLiveState(baseState);
           renderAll();
         } catch (error) {
@@ -1519,14 +1529,16 @@
           const option = document.createElement("button");
           option.type = "button";
           option.className = "output-option";
-          option.textContent = output === "serial+aux" ? "serial + aux" : output;
+          option.textContent = output === "wifi" ? "Wi-Fi MIDI" : output === "serial+aux" ? "serial + aux" : output;
+          option.hidden = !outputSupported(output);
           option.addEventListener("click", () => {
             runExclusive(async () => {
+              if (!outputSupported(output)) return;
               if (normalizeOutputModeToken(state.live.outputmode, Number(state.live.outputmode)) === output) {
                 return;
               }
               setOutputMode(output);
-              await postSet("outputmode", output, { refreshState: false });
+              await postSet("outputmode", output === "wifi" ? "4" : output, { refreshState: false });
             }).catch((error) => console.error("Output change failed", error));
           });
           el.outputOptions.appendChild(option);
@@ -1637,12 +1649,14 @@
         OUTPUTS.forEach((output) => {
           const button = dom.outputButtons.get(output);
           if (!button) return;
+          button.hidden = !outputSupported(output);
           const isAux = output === "aux out";
           const auxJack = Number(state.live.aux_jack ?? 0) !== 0;
           const auxAuto = Number(state.live.aux_auto ?? 0) !== 0;
           button.classList.toggle("is-active", activeOutput === output);
           button.classList.toggle("is-jack-present", isAux && auxJack);
           button.classList.toggle("is-auto", isAux && auxAuto);
+          if (output === "wifi") button.title = "Wi-Fi MIDI over your local network; connect BECA in the computer's RTP-MIDI session";
           if (isAux) {
             button.title = auxAuto
               ? "Aux jack auto-routed"

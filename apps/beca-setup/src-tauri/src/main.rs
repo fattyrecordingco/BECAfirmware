@@ -157,6 +157,8 @@ struct WifiSetupInfo {
     ssid: String,
     wifi_error: String,
     wifi_hint: String,
+    sta_mac: String,
+    ap_mac: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -167,6 +169,8 @@ struct SerialWifiInfo {
     ssid: Option<String>,
     wifi_error: Option<String>,
     wifi_hint: Option<String>,
+    sta_mac: Option<String>,
+    ap_mac: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -540,6 +544,8 @@ async fn get_wifi_setup_info(
             ssid: info.ssid.unwrap_or_default(),
             wifi_error: info.wifi_error.unwrap_or_default(),
             wifi_hint: info.wifi_hint.unwrap_or_default(),
+            sta_mac: info.sta_mac.unwrap_or_default(),
+            ap_mac: info.ap_mac.unwrap_or_default(),
         })
     })
     .await

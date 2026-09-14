@@ -134,6 +134,35 @@ test("control surface labels fit and arrow keys drive the encoder", async ({ pag
   ).not.toBe(before);
 });
 
+test("control Wi-Fi MIDI follows firmware capabilities and sends mode 4", async ({ page }, testInfo) => {
+  const writes = [];
+  await page.route("**/api/state", (route) => route.fulfill({ json: { outputmode: 1, outputname: "Serial MIDI" } }));
+  await page.route("**/api/params", (route) => route.fulfill({ json: { output_modes: ["BLE MIDI", "Serial MIDI", "Aux audio", "Serial MIDI + Aux", "Wi-Fi MIDI"] } }));
+  await page.route("**/api/set", (route) => {
+    writes.push(Object.fromEntries(new URLSearchParams(route.request().postData())));
+    return route.fulfill({ json: { ok: true } });
+  });
+  await page.goto("/control.html");
+  const wifi = page.getByRole("button", { name: "Wi-Fi MIDI", exact: true });
+  await expect(wifi).toBeVisible();
+  await expect(page.getByRole("button", { name: "serial + aux", exact: true })).toBeVisible();
+  await wifi.click();
+  await expect(wifi).toHaveClass(/is-active/);
+  await expect.poll(() => writes.some((write) => write.key === "outputmode" && write.value === "4")).toBe(true);
+  const outputBounds = await page.locator(".output-card").boundingBox();
+  const nextBounds = await page.locator(".random-card").boundingBox();
+  expect(outputBounds.y + outputBounds.height).toBeLessThan(nextBounds.y);
+  await expectNoVisibleHorizontalOverflow(page, ".control-frame");
+  await page.screenshot({ path: testInfo.outputPath("wifi-midi-control.png"), fullPage: true });
+});
+
+test("control hides Wi-Fi MIDI on firmware without output capabilities", async ({ page }) => {
+  await page.route("**/api/state", (route) => route.fulfill({ json: { outputmode: 1 } }));
+  await page.route("**/api/params", (route) => route.fulfill({ json: {} }));
+  await page.goto("/control.html");
+  await expect(page.getByRole("button", { name: "Wi-Fi MIDI", exact: true })).toBeHidden();
+});
+
 test("ui source does not use gradients", async () => {
   const files = [
     resolve(uiRoot, "index.html"),
