@@ -6,9 +6,17 @@ BECA 0.2.0 brings a dedicated Performance view, editable MIDI splits in Setup, a
 - Install the included firmware without a separate compiler or firmware download. Complete boot code is included; checksums are verified and existing settings are preserved.
 - Read the complete manual inside Setup, or download the HTML/Markdown manual below. It includes blank-unit installation, BOOT/RESET recovery, Aux recording and Ableton/DAW quick starts.
 
-Windows users: download the x64 setup EXE (MSI for managed installs). macOS: choose aarch64 for Apple Silicon or x64 for Intel. Linux: choose amd64 DEB or AppImage.
+## Downloads
 
-**Release status:** this update is published as a prerelease. Signing depends on publisher credentials; unsigned Windows and unnotarized Mac builds do not provide production signing trust. Do not disable OS security protections. SHA256SUMS verifies the downloaded files' integrity.
+- Windows x64: [setup EXE](https://github.com/fattyrecordingco/BECAfirmware/releases/download/setup-v0.2.0/BECA_0.2.0_x64-setup.exe) · [MSI for managed installs](https://github.com/fattyrecordingco/BECAfirmware/releases/download/setup-v0.2.0/BECA_0.2.0_x64_en-US.msi)
+- macOS: [Apple Silicon DMG](https://github.com/fattyrecordingco/BECAfirmware/releases/download/setup-v0.2.0/BECA_0.2.0_aarch64.dmg) · [Intel DMG](https://github.com/fattyrecordingco/BECAfirmware/releases/download/setup-v0.2.0/BECA_0.2.0_x64.dmg)
+- Linux x64: [AppImage](https://github.com/fattyrecordingco/BECAfirmware/releases/download/setup-v0.2.0/BECA_0.2.0_amd64.AppImage) · [DEB](https://github.com/fattyrecordingco/BECAfirmware/releases/download/setup-v0.2.0/BECA_0.2.0_amd64.deb)
+- Firmware 1.1.0: [merged image](https://github.com/fattyrecordingco/BECAfirmware/releases/download/setup-v0.2.0/beca-1.1.0-merged.bin) · [manifest](https://github.com/fattyrecordingco/BECAfirmware/releases/download/setup-v0.2.0/firmware-manifest.json)
+- [SHA256SUMS](https://github.com/fattyrecordingco/BECAfirmware/releases/download/setup-v0.2.0/SHA256SUMS) · [manual HTML](https://github.com/fattyrecordingco/BECAfirmware/releases/download/setup-v0.2.0/BECA_MANUAL.html) · [manual Markdown](https://github.com/fattyrecordingco/BECAfirmware/releases/download/setup-v0.2.0/BECA_MANUAL.md)
+
+Every installer includes firmware 1.1.0. In Setup, select **Included 1.1.0 · works offline** for first installation.
+
+**Release status:** published as the current public release on 14 September 2026, using the verified 11 September builds. All 11 public downloads were rechecked against their SHA256 digests. The Windows installer is unsigned; Mac builds use an ad-hoc signature and are not Apple-notarized. Publishing a GitHub release does not add platform signing trust. Do not disable OS security protections. SHA256SUMS verifies the downloaded files' integrity.
 
 **DAW connection:** Mac/Linux can create a native BECA virtual MIDI source. Windows needs a virtual MIDI cable configured once (for example a loopMIDI port named BECA). The current CH340/CP210x board is USB serial, not class-compliant USB MIDI. Third-party MIDI/USB drivers are not bundled. WebView2's bootstrapper can require internet on a fresh Windows installation.
 

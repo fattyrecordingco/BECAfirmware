@@ -5,11 +5,11 @@
 ## End-user manual
 
 For complete user instructions (Windows/macOS/Linux install, DAW setup, and BECA control page usage), use:
-- `README.md` sections `10` through `16`
-- `docs/user/READ_BEFORE_FIRST_LAUNCH.md` before first app launch
+- [Current downloads](../README.md#download-beca-020)
+- [First-launch guide](user/READ_BEFORE_FIRST_LAUNCH.md)
 
 Current setup app version baseline in this branch:
-- `0.1.7`
+- `0.2.0`, including firmware `1.1.0`
 
 ## Final architecture choice
 
@@ -46,11 +46,8 @@ The setup app only flashes release artifacts built for that baseline.
 
 ## Branch layout
 
-- `official-system-updates`: firmware/system release branch
-- `official-app-updates`: installer/app release branch
-
-Named baseline for this cycle:
-- `verBECAbetav1.0.1` at commit `27559f9`
+- `master`: current release source
+- `setup-v0.2.0`: combined app 0.2.0 and firmware 1.1.0 release
 
 ## User flow
 
@@ -59,9 +56,9 @@ Named baseline for this cycle:
 - If no device is found, app shows guided fixes (cable/driver/permissions).
 
 2. **Update Firmware**
-- Firmware list is loaded from `firmware-manifest.json` attached to the latest GitHub Release.
-- `Latest Stable` is selected by default.
-- Firmware binary is downloaded and SHA256 verified before flash.
+- For first installation select `Included 1.1.0 · works offline`, bundled with the app.
+- Online firmware choices use `firmware-manifest.json` attached to a published GitHub Release.
+- Both bundled and downloaded firmware are SHA256 verified before flash.
 - Flash uses bundled `espflash` (or `esptool` if provided).
 - If bundled flash tooling is missing, app auto-repair downloads `espflash` (`v4.2.0`) and retries.
 - If `espflash` cannot connect to some CH340/CP210x boards, app auto-fallback retries with `esptool` (`v5.2.0` on Windows).
@@ -149,15 +146,13 @@ Notes:
 
 ## Maintainer release workflow
 
-1. Firmware release branch: `official-system-updates`.
-2. Run firmware workflow `.github/workflows/firmware-release.yml` using tag `firmware-vx.y.z` (or `verBECAbetavx.y.z`).
-3. Workflow builds firmware, merges image, and publishes:
-- `beca-x.y.z-merged.bin`
-- `firmware-manifest.json`
-4. App release branch: `official-app-updates`.
-5. Publish BECA release tag as `setup-vx.y.z` to trigger `.github/workflows/setup-installer-release.yml`.
-6. Keep firmware and app releases separate so manifest lookup remains stable.
-7. Sync release assets into the top-level `installers/` mirror for the beta package.
+1. Prepare matching app/firmware versions and release notes on `master`; see [release tools](../tools/release/README.md).
+2. Publish the `setup-vx.y.z` tag to trigger `.github/workflows/setup-installer-release.yml`.
+3. The workflow compiles firmware on ESP32 core 2.0.14, runs regressions and embeds the same merged image in Windows, both Mac architectures and Linux installers.
+4. After all builds pass, publish installers, `beca-x.y.z-merged.bin`, `firmware-manifest.json`, manuals and SHA256SUMS in the same GitHub Release. Combined app/firmware releases support manifest lookup.
+5. Update public download links to the versioned Release assets and disclose platform signing status. The workflow does not update historical installer copies in the repository.
+
+Standalone firmware releases can still use `.github/workflows/firmware-release.yml` with a `firmware-vx.y.z` tag.
 
 ## Local development
 

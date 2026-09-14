@@ -2,6 +2,25 @@
 
 BECA is a plant-driven music instrument built around an ESP32 device and a desktop control app.
 
+## Download BECA 0.2.0
+
+**App 0.2.0 and firmware 1.1.0 are available now** in the [official release](https://github.com/fattyrecordingco/BECAfirmware/releases/tag/setup-v0.2.0). Choose your computer below; these links download the installer directly.
+
+| Computer | Download |
+| --- | --- |
+| Windows x64 | [BECA setup EXE](https://github.com/fattyrecordingco/BECAfirmware/releases/download/setup-v0.2.0/BECA_0.2.0_x64-setup.exe) · [MSI for managed installs](https://github.com/fattyrecordingco/BECAfirmware/releases/download/setup-v0.2.0/BECA_0.2.0_x64_en-US.msi) |
+| macOS Apple Silicon (M-series) | [BECA Apple Silicon DMG](https://github.com/fattyrecordingco/BECAfirmware/releases/download/setup-v0.2.0/BECA_0.2.0_aarch64.dmg) |
+| macOS Intel | [BECA Intel DMG](https://github.com/fattyrecordingco/BECAfirmware/releases/download/setup-v0.2.0/BECA_0.2.0_x64.dmg) |
+| Linux x64 | [BECA AppImage](https://github.com/fattyrecordingco/BECAfirmware/releases/download/setup-v0.2.0/BECA_0.2.0_amd64.AppImage) · [Debian/Ubuntu DEB](https://github.com/fattyrecordingco/BECAfirmware/releases/download/setup-v0.2.0/BECA_0.2.0_amd64.deb) |
+
+Every installer includes firmware 1.1.0. Connect BECA by USB, open **Setup**, select **Included 1.1.0 · works offline**, and press **install firmware**. Start with the [first-launch guide](docs/user/READ_BEFORE_FIRST_LAUNCH.md).
+
+Separate downloads: [firmware 1.1.0 merged image](https://github.com/fattyrecordingco/BECAfirmware/releases/download/setup-v0.2.0/beca-1.1.0-merged.bin) · [firmware manifest](https://github.com/fattyrecordingco/BECAfirmware/releases/download/setup-v0.2.0/firmware-manifest.json) · [SHA256 checksums](https://github.com/fattyrecordingco/BECAfirmware/releases/download/setup-v0.2.0/SHA256SUMS).
+
+This is the current public release. The Windows installer is unsigned and the Mac builds are not notarized; see the release notes for platform limitations. The 0.1.7 files under `installers/` are historical, and 0.2.0 downloads are hosted in Releases.
+
+## Overview
+
 The current product workflow is desktop-first:
 - use the BECA app to flash firmware
 - save Wi-Fi credentials
@@ -147,23 +166,13 @@ BECA is open source under the [MIT License](./LICENSE). The open-source license 
 Start here:
 
 1. Read the full [BECA First Launch Guide](./docs/user/READ_BEFORE_FIRST_LAUNCH.md).
-2. Open the [installers](./installers) folder.
+2. Choose your computer in [Download BECA 0.2.0](#download-beca-020).
 3. Download the installer for your computer.
 4. Install BECA.
 5. Restart if a USB serial driver was installed or updated.
-6. Open BECA, connect the device by USB, then flash `Latest Stable`.
+6. Open BECA, connect the device by USB, then install `Included 1.1.0 · works offline` from Setup.
 
-Installer files:
-
-- Windows x64: [installers/windows/BECA_0.2.0_x64-setup.exe](./installers/windows/BECA_0.2.0_x64-setup.exe)
-- macOS Apple Silicon: [installers/macos/BECA_0.2.0_aarch64.dmg](./installers/macos/BECA_0.2.0_aarch64.dmg)
-- macOS Intel: [installers/macos/BECA_0.2.0_x64.dmg](./installers/macos/BECA_0.2.0_x64.dmg)
-- Linux AppImage: [installers/linux/BECA_0.2.0_amd64.AppImage](./installers/linux/BECA_0.2.0_amd64.AppImage)
-- Linux Debian package: [installers/linux/BECA_0.2.0_amd64.deb](./installers/linux/BECA_0.2.0_amd64.deb)
-
-On the GitHub website, click the installer file, then use the download button.
-
-Current beta note: these installers may be unsigned until Windows and Apple signing certificates are configured. Unsigned builds are useful for testing, but they are not trusted production installers. Do not disable OS security protections to run BECA; for normal public use, use signed Windows builds and signed/notarized macOS builds.
+Signing status: the current Windows installer is unsigned and Mac builds are not notarized. Publishing a GitHub release does not add platform signing trust. Do not disable OS security protections to run BECA; signing and notarization remain publisher work.
 
 The app can flash the newest stable firmware from the release manifest. A source checkout is only needed for development or manual PlatformIO flashing.
 
@@ -182,8 +191,8 @@ On the `Setup` screen:
 
 ### 2. Flash Firmware
 
-1. confirm `Latest Stable` is selected in `upload firmware`
-2. click `flash firmware`
+1. select `Included 1.1.0 · works offline` in `upload firmware`
+2. click `install firmware`
 3. wait for flash completion before doing anything else
 
 Normal firmware flashes keep the saved Wi-Fi credentials and the last runtime session because the app image is updated without erasing the NVS settings partition.
@@ -504,7 +513,7 @@ That workflow:
 - builds the BECA desktop app
 - refreshes [installers/windows](./installers/windows)
 
-The cross-platform release path is the GitHub `Build Setup Installer` workflow triggered by `setup-v*`; it builds Windows, macOS, and Linux bundles and mirrors them into [installers](./installers).
+The cross-platform release path is the GitHub `Build Setup Installer` workflow triggered by `setup-v*`; it builds firmware and Windows, macOS, and Linux bundles, then publishes installers, firmware, manuals and checksums as GitHub Release assets after all builds pass. It does not update the historical binaries under [installers](./installers). Keep the download links above pointed at the published release assets.
 
 Release signing, notarization, checksum, and malware-scan commands are in [docs/RELEASE_SECURITY.md](./docs/RELEASE_SECURITY.md).
 
@@ -514,8 +523,8 @@ Release signing, notarization, checksum, and malware-scan commands are in [docs/
   - [apps/beca-setup/package.json](./apps/beca-setup/package.json)
   - [apps/beca-setup/src-tauri/Cargo.toml](./apps/beca-setup/src-tauri/Cargo.toml)
   - [apps/beca-setup/src-tauri/tauri.conf.json](./apps/beca-setup/src-tauri/tauri.conf.json)
-- firmware release tags use `firmware-v*`
-- desktop release tags use `setup-v*`
+- standalone firmware release tags use `firmware-v*`
+- combined desktop/firmware release tags use `setup-v*` (0.2.0 includes firmware 1.1.0)
 
 ## Repo Map
 
@@ -526,7 +535,7 @@ Release signing, notarization, checksum, and malware-scan commands are in [docs/
 - [apps/beca-setup/ui/index.html](./apps/beca-setup/ui/index.html): setup workspace shell
 - [tools/bridge](./tools/bridge): native MIDI bridge
 - [tools/flasher](./tools/flasher): flash and backup helpers
-- [installers](./installers): local mirror for launch-ready app installers
+- [installers](./installers): current download links and historical installer copies
 - [ableton](./ableton): optional Ableton Live and Max for Live support files
 - [docs](./docs): architecture notes that support this README
 

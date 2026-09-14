@@ -14,7 +14,7 @@ cargo build -p beca-bridge -p beca-flasher --release
 
 The preparation script stages the complete merged image and checksum manifest in `apps/beca-setup/src-tauri/resources/firmware`. Copy fresh bridge/flasher executables into `src-tauri/binaries` alongside espflash 4.2.0/esptool 5.2.0 before running `npm run release:windows` from the app directory. Do not distribute the standalone EXE without its resources; use the installer.
 
-The setup tag workflow builds firmware once, runs audio/Rust/browser regressions, embeds that image in all four OS/architecture builds, and publishes only after all installers succeed. Release assets carry checksums and the offline manual. Installer binaries live in Releases; the old 0.1.7 in-repository copies are historical and should not be downloaded for this update. Unsigned builds are prereleases. Signing credentials are described in `docs/RELEASE_SECURITY.md`.
+The setup tag workflow builds firmware once, runs audio/Rust/browser regressions, embeds that image in all four OS/architecture builds, and publishes only after all installers succeed. Release assets carry checksums and the offline manual. Installer binaries live in Releases; the old 0.1.7 in-repository copies are historical and should not be downloaded for this update. The public release is marked as latest; this does not imply platform signing. Disclose unsigned Windows and unnotarized Mac builds in release notes. Signing credentials are described in `docs/RELEASE_SECURITY.md`.
 
 ## Local Windows flow
 

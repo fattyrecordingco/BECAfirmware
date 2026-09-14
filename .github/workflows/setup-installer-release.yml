@@ -355,7 +355,7 @@ jobs:
           target_commitish: ${{ github.sha }}
           name: BECA 0.2.0 — Performance & first-unit setup
           body_path: docs/releases/setup-v0.2.0.md
-          prerelease: true
-          make_latest: false
+          prerelease: false
+          make_latest: true
           fail_on_unmatched_files: true
           files: dist/publish/*

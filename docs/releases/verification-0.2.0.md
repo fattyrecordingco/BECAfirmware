@@ -38,6 +38,14 @@ The published app then installed that exact included firmware on the connected u
 
 The published Windows installer is unsigned. Mac builds use an ad-hoc signature and have no Apple notarization. Successful CI compilation does not replace Mac/Linux device and DAW runtime testing.
 
+## Public download verification — 14 September 2026
+
+All 11 release assets were downloaded without authentication and matched their GitHub SHA256 digests and declared sizes. All 10 entries in SHA256SUMS matched, including the six installers. The firmware manifest points to the same firmware 1.1.0 image and checksum. The original release workflow passed all six jobs on the tagged commit.
+
+A fresh local firmware compile passed on ESP32 Arduino core 2.0.14 with the same program and RAM usage reported above. No app or firmware source changed after the tagged build; the existing published binaries remain the verified artifacts.
+
+The public launch promotes `setup-v0.2.0` from prerelease to the latest release, with direct download links in the root and installer documentation. Windows signing, Apple notarization and the runtime-testing limits below remain unchanged.
+
 ## Limits
 
 The physical unit tested already contained firmware; a fully erased second unit was not available. Blank-unit coverage comprises the complete boot image, flash-layout tests and installing that full image on the connected device without erasing its user settings. No destructive factory erase was used.
