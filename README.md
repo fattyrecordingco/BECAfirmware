@@ -19,6 +19,14 @@ Separate downloads: [firmware 1.1.0 merged image](https://github.com/fattyrecord
 
 This is the current public release. The Windows installer is unsigned and the Mac builds are not notarized; see the release notes for platform limitations. The 0.1.7 files under `installers/` are historical, and 0.2.0 downloads are hosted in Releases.
 
+## Native Ableton instrument
+
+**[Download BECA Instrument 0.1.0 for Ableton Live](https://github.com/fattyrecordingco/BECAfirmware/releases/download/instrument-v0.1.0/BECA-Instrument-0.1.0.zip)** · [Release notes and installation](https://github.com/fattyrecordingco/BECAfirmware/releases/tag/instrument-v0.1.0) · [SHA256 checksum](https://github.com/fattyrecordingco/BECAfirmware/releases/download/instrument-v0.1.0/SHA256SUMS). The ZIP contains the complete device folder; no source build is needed. Requires Max for Live and Max 8.6 or newer. Tested on Windows with Live 12.4.5; macOS and Live 11 runtime checks remain outstanding.
+
+[BECA Instrument](ableton/instrument/README.md) adds stereo sound generation inside Live, the thirteen BECA soundscapes (Raw Sensor Sine needs hardware), native Live automation, saved timbre variations, plant monitoring and direct USB/Wi-Fi hardware controls. Play it with recorded MIDI clips, a keyboard or a connected BECA. It is a Max for Live instrument for Live 11/12 with Max for Live; firmware flashing and Wi-Fi provisioning stay in the desktop Setup app.
+
+Build and install the complete device folder with `py -3 ableton/instrument/build_instrument.py --install`. The portable package is generated at `dist/ableton/BECA-Instrument-0.1.0.zip`. Native audio uses BECA's preset data and synthesis equations; hardware DACs and local percussion differ. The existing BECA Control MIDI effect remains available for controlling the unit while playing other instruments. See the instrument README for connection instructions, verification and limits.
+
 ## Overview
 
 The current product workflow is desktop-first:
@@ -50,7 +58,7 @@ Firmware now retries saved Wi-Fi after a failed startup without blocking the loo
 
 Feature flags: `BECA_EXTENDED_SOUNDS=0` restores six presets; `BECA_AUTO_RECOVERY=0` disables added startup Wi-Fi retries (both default to 1). Frontend `VITE_BECA_PERFORMANCE_PAGE=false` omits Performance. Core 2.0.14 and BLE libraries are unchanged. Live audio fixes cover repeated master loss at high drive, held envelope edits, bounded voice allocation/retirement and audio-task ownership of drum-kit updates. A gain lookup removes per-sample square roots.
 
-Research and remaining priorities: [firmware review](docs/research/firmware-review.md), [Ableton instrument plan](docs/research/ableton-instrument-plan.md). The proposed Ableton instrument has not been implemented in this run.
+Research and remaining priorities: [firmware review](docs/research/firmware-review.md), [original Ableton instrument plan](docs/research/ableton-instrument-plan.md). The native instrument is now implemented in [ableton/instrument](ableton/instrument/README.md).
 
 ### Playable Performance interface
 

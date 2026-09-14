@@ -1,5 +1,13 @@
 # BECA Ableton Integration (Max for Live)
 
+## Native BECA Instrument
+
+**[Download the complete BECA Instrument 0.1.0 ZIP](https://github.com/fattyrecordingco/BECAfirmware/releases/download/instrument-v0.1.0/BECA-Instrument-0.1.0.zip)** · [Release notes](https://github.com/fattyrecordingco/BECAfirmware/releases/tag/instrument-v0.1.0). Extract the ZIP, copy the entire BECA Instrument folder to User Library → Presets → Instruments → Max Instrument, and drag BECA Instrument.amxd onto a MIDI track. Requires Max for Live with Max 8.6 or newer. Tested on Windows with Live 12.4.5; macOS and Live 11 runtime checks remain outstanding.
+
+[BECA Instrument 0.1.0](instrument/README.md) generates stereo audio inside Live and provides native automation, soundscapes, variations, plant monitoring and USB/Wi-Fi hardware controls. Load it directly on a MIDI track; no following instrument is required. Build/install with `py -3 ableton/instrument/build_instrument.py --install` from the repository root. Keep its support files with the AMXD.
+
+The documentation below describes the older **BECA Control** MIDI effect, which remains available when you want hardware controls followed by another Live instrument.
+
 This folder adds an optional Ableton workflow. It does not replace the BECA web UI or existing firmware behavior.
 
 ## Included Files

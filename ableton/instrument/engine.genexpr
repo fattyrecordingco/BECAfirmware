@@ -1,0 +1,62 @@
+// BECA firmware equations ported to native Gen, at the host sample rate.
+oscillator(p,w) { return w==0 ? 2*p-1 : w==1 ? (p<.5 ? 1 : -1) : w==2 ? 1-2*abs(2*p-1) : sin(p*twopi); }
+softclip(x) { return x*(27+x*x)/(27+9*x*x); }
+Param wave_a(0); Param wave_b(1); Param osc_mix(.45); Param detune(4);
+Param attack(.006); Param decay(.2); Param sustain(.66); Param release(.24);
+Param cutoff(5200); Param resonance(1.7); Param filter(0);
+Param drive(.22); Param gain_trim(.95); Param master(.25); Param mute(0);
+Param reverb(.12); Param delay_ms(115); Param delay_mix(.12); Param delay_feedback(.22);
+Param raw_mode(0); Param sensor_hz(0); Param panic_token(0); Param enabled(1);
+Param kick(0); Param snare(0); Param hat(0); Param percussion(0); Param drum_note(60); Param drum_vel(.5);
+History previouspanic(0); History z1(0); History z2(0);
+History rvL(0); History rvR(0); History dcxL(0); History dcxR(0); History dcyL(0); History dcyR(0);
+History mastergain(0); History rawphase(0); History rawgain(0); History delayhold(0);
+History ek(0); History es(0); History eh(0); History ep(0); History pk(0); History pp(0);
+History lk(0); History ls(0); History lh(0); History lp(0);
+Delay echo(192001);
+// VOICE_DECLARATIONS
+clearing = panic_token != previouspanic;
+previouspanic=panic_token;
+ai=1/(max(.001,attack)*samplerate);
+di=(1-sustain)/(max(.001,decay)*samplerate);
+ri=1/(max(.001,release)*samplerate);
+sumvoice=0;active=0;
+// VOICES
+if (clearing) { z1=0;z2=0;rvL=0;rvR=0;dcxL=0;dcxR=0;dcyL=0;dcyR=0;delayhold=samplerate*.801;ek=0;es=0;eh=0;ep=0; }
+mono=sumvoice*.25/sqrt(max(1,active))*gain_trim;
+dg=1+drive*5.5;
+mono=softclip(mono*dg)/dg;
+w0=twopi*clamp(cutoff,20,min(18000,samplerate*.45))/samplerate;
+c=cos(w0);a=sin(w0)/(2*clamp(resonance,.1,10));a0=1+a;
+fb0=filter==0 ? (1-c)*.5/a0 : filter==1 ? (1+c)*.5/a0 : a/a0;
+fb1=filter==0 ? (1-c)/a0 : filter==1 ? -(1+c)/a0 : 0;
+fb2=filter==2 ? -fb0 : fb0;
+a1=-2*c/a0;a2=(1-a)/a0;
+filtered=fb0*mono+z1;z1=fb1*mono-a1*filtered+z2;z2=fb2*mono-a2*filtered;
+if (kick!=lk) { ek=drum_vel;lk=kick;pk=0; }
+if (snare!=ls) { es=drum_vel;ls=snare; }
+if (hat!=lh) { eh=drum_vel;lh=hat; }
+if (percussion!=lp) { ep=drum_vel;lp=percussion;pp=0; }
+ek=ek*exp(-1/(.16*samplerate));es=es*exp(-1/(.11*samplerate));eh=eh*exp(-1/(.035*samplerate));ep=ep*exp(-1/(.19*samplerate));
+pk=wrap(pk+(48+ek*100)/samplerate,0,1);pp=wrap(pp+440*pow(2,(drum_note-69)/12)/samplerate,0,1);
+drum=sin(pk*twopi)*ek*.25+noise()*es*.10+noise()*eh*.07+sin(pp*twopi)*ep*.18;
+mix=filtered+drum;
+d=echo.read(clamp(delay_ms*samplerate/1000,1,min(192000,samplerate*.8)));
+delayhold=max(0,delayhold-1);
+d=delayhold>0 ? 0 : d;
+echo.write(trunc(clamp(mix+d*delay_feedback,-1,1)*127)/127);
+mix=mix*(1-delay_mix)+d*delay_mix;
+rvL=rvL*.974+mix*.026;rvR=rvR*.972+mix*.028;
+left=mix+(rvL*.62+rvR*.15)*reverb;
+right=mix+(rvR*.62+rvL*.15)*reverb;
+mg=master*(drive>.8 ? .92 : 1);
+left=left*mg;right=right*mg;
+dcl=left-dcxL+.995*dcyL;dcr=right-dcxR+.995*dcyR;
+dcxL=left;dcxR=right;dcyL=dcl;dcyR=dcr;
+left=softclip(dcl*1.6)/1.6;right=softclip(dcr*1.6)/1.6;
+rawphase=wrap(rawphase+clamp(sensor_hz,0,4095)/samplerate,0,1);
+rawgain=rawgain+clamp((sensor_hz>0 ? master*.25 : 0)-rawgain,-1/(.005*samplerate),1/(.005*samplerate));
+raw=sin(rawphase*twopi)*rawgain;
+mastergain=mastergain+clamp((enabled*(1-mute))-mastergain,-1/(.005*samplerate),1/(.005*samplerate));
+out1=clamp((raw_mode ? raw : left)*mastergain,-1,1);
+out2=clamp((raw_mode ? raw : right)*mastergain,-1,1);
