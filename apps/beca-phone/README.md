@@ -13,19 +13,19 @@ The GitHub Pages workflow publishes this folder as the site root. For local deve
 ## Requirements
 
 - An Android phone or tablet.
-- Current Chrome or Edge with Web Serial enabled.
+- Current Chrome or Edge on Android with WebUSB enabled.
 - A USB-C OTG/data cable. Charge-only cables cannot work.
 - BECA firmware with the serial control protocol used by this repository.
 - The published HTTPS app or a localhost development server.
 
-iPhone and iPad browsers do not expose USB serial to web apps. The interface can load there, but direct USB connection is unavailable. Use an Android device for this version.
+iPhone and iPad browsers do not expose BECA's USB serial bridge to web apps. The interface can load there, but direct USB connection is unavailable. Use an Android device for this version. Desktop Chromium browsers continue to use native Web Serial; Android uses the app's WebUSB driver for CH340/CH341 and CP210x adapters.
 
 ## Connect and use AUX
 
 1. Disconnect Arduino Serial Monitor, the desktop BECA app, or any other program using the device's serial port.
 2. Connect BECA to the Android device with a USB-C data/OTG cable. Use an adapter if the BECA end is USB-A or Micro-USB.
 3. Open the app in Chrome and press **Connect USB**.
-4. Select the USB serial device in the browser prompt and approve access.
+4. In Chrome's USB prompt, select **USB-Serial**, **CH340/CH341**, or **CP210x**, then approve access. The app cannot grant this permission silently: Android requires a tap and explicit approval for security.
 5. Wait for **BECA connected**. The app verifies `@C PING`, then loads parameters, state, synth state, plant state, and notes.
 6. Choose **Aux audio** to hear the onboard synth, or **Serial MIDI + Aux** to keep serial MIDI output active as well.
 7. Connect headphones, speakers, or an audio input to BECA's AUX output and adjust **Master volume** gradually.
@@ -38,7 +38,7 @@ In Android Chrome, open the app and use **Install app** from the browser menu or
 
 ## Features
 
-- Verified 115200-baud Web Serial connection and cable-removal handling.
+- Verified 115200-baud Android WebUSB connection for CH340/CH341 and CP210x bridges, desktop Web Serial, and cable-removal handling.
 - AUX, Serial + AUX, Serial, BLE, and firmware-advertised Wi-Fi MIDI routing.
 - Master level, mute, test chord, presets, oscillators, ADSR, filter, reverb, delay, drive, detune, and voice controls.
 - Plant sensitivity, musical mode, scale, root, tempo, swing, octave range, rests, clock, time signature, and note length.
@@ -66,11 +66,11 @@ The app uses `@C SET <key> <value>` for controls. It requests `TELEMETRY 0` duri
 
 ## Troubleshooting
 
-**No USB device appears:** confirm the cable carries data, the phone supports USB OTG, BECA is powered, and no other app owns the port. Reconnect the cable and retry.
+**No USB device appears:** confirm the cable carries data, the phone supports USB OTG/host mode, BECA is powered, and no other app owns the adapter. Unlock the phone, reconnect the cable, accept Android's “use this USB device” prompt if shown, open the app directly in Chrome, press **Connect USB**, and choose USB-Serial/CH340/CP210x.
 
-**The Connect button is unavailable:** use current Chrome or Edge on Android and open the HTTPS GitHub Pages address. Web Serial is unavailable in iPhone/iPad browsers and most embedded in-app browsers.
+**The Connect button is unavailable:** use current Chrome or Edge on Android and open the HTTPS GitHub Pages address directly, not inside an email/social-media in-app browser. WebUSB is unavailable in iPhone/iPad browsers and many embedded browsers.
 
-**The port opens but BECA does not connect:** close Arduino Serial Monitor and the desktop app. Select BECA's CH340/CP210x serial adapter, not an unrelated USB device. The app closes ports that do not answer the BECA handshake.
+**The adapter appears but will not open:** close USB terminal apps and the desktop BECA app, disconnect/reconnect BECA, and approve Chrome as the app allowed to use the USB device. Select BECA's CH340/CP210x adapter, not an unrelated USB device. The app closes adapters that do not answer the BECA handshake.
 
 **AUX is disabled:** wait for the startup countdown. If the firmware returns `aux not ready`, refresh state and retry after the displayed time.
 
@@ -90,7 +90,7 @@ npm run build
 npm run test:ui
 ```
 
-`npm test` checks framing, parsing, command sanitization, serialized writes, manifest metadata, and the offline asset list. Playwright serves the built deployment artifact and runs Android, small-phone, and desktop layouts against a mock BECA serial device, covering handshake, live state, AUX commands, navigation, overflow, offline reload, and serious WCAG A/AA findings.
+`npm test` checks framing, parsing, command sanitization, serialized writes, CH340/CP210x initialization and permissions, manifest metadata, and the offline asset list. Playwright serves the built deployment artifact and runs Android, small-phone, and desktop layouts against a mock BECA serial device, covering handshake, live state, AUX commands, navigation, overflow, offline reload, and serious WCAG A/AA findings.
 
 Physical verification should also confirm the actual AUX signal and USB behavior on the target phone. Automated tests cannot hear the DAC output or grant a phone's USB permission dialog.
 
