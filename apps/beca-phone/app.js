@@ -1,7 +1,7 @@
 import { BecaSerial, formatValue } from "./protocol.js";
 import { WebUsbSerialProvider, shouldUseWebUsb } from "./webusb-serial.js";
 
-const APP_VERSION = "1.1.0";
+const APP_VERSION = "1.2.0";
 const NOTE_NAMES = ["C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B"];
 const FALLBACK_PARAMS = {
   modes: ["Notes", "Arpeggiator", "Chords", "Drum Machine"],
@@ -60,9 +60,9 @@ const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
 const isAndroid = shouldUseWebUsb();
 const webUsbProvider = navigator.usb?.requestDevice ? new WebUsbSerialProvider(navigator.usb) : null;
-const serialProvider = globalThis.__BECA_SERIAL__ ?? (isAndroid ? webUsbProvider : navigator.serial ?? webUsbProvider);
+const serialProvider = globalThis.__BECA_SERIAL__ ?? (isAndroid ? webUsbProvider ?? navigator.serial : navigator.serial ?? webUsbProvider);
 const transport = new BecaSerial(serialProvider);
-const transportName = serialProvider?.transportName ?? (isAndroid ? "Android USB" : "Web Serial");
+const transportName = serialProvider?.transportName ?? (serialProvider === navigator.serial ? "Web Serial" : "Android USB");
 const model = { params: structuredClone(FALLBACK_PARAMS), state: {}, synth: {}, plant: {}, notes: {} };
 const interaction = new Set();
 const sendTimers = new Map();
@@ -87,6 +87,47 @@ function setNotice(message = "", type = "warning") {
   const notice = $("#compatibilityNotice");
   notice.textContent = message;
   notice.className = message ? `notice ${type}` : "notice hidden";
+}
+
+function setUsbCheck(selector, value, state = "") {
+  const element = $(selector);
+  if (!element) return;
+  element.textContent = value;
+  element.className = state;
+}
+
+function selectedAdapterLabel() {
+  const device = transport.port?.device;
+  if (!device) return "Waiting for selection";
+  const id = [device.vendorId, device.productId]
+    .map((value) => Number(value).toString(16).padStart(4, "0").toUpperCase())
+    .join(":");
+  return `${device.productName || "USB serial"} · ${id}`;
+}
+
+async function refreshUsbDiagnostics() {
+  const embeddedBrowser = /; wv\)|FBAN|FBAV|Instagram/i.test(navigator.userAgent);
+  const usbReady = Boolean(webUsbProvider);
+  const serialReady = Boolean(navigator.serial?.requestPort);
+  setUsbCheck("#browserStatus", embeddedBrowser ? "In-app browser blocked" : usbReady ? "WebUSB ready" : serialReady ? "Web Serial fallback" : "USB API unavailable", embeddedBrowser || (!usbReady && !serialReady) ? "error" : "ok");
+  setUsbCheck("#secureStatus", window.isSecureContext ? "HTTPS ready" : "HTTPS required", window.isSecureContext ? "ok" : "error");
+
+  if (!usbReady) {
+    setUsbCheck("#permissionStatus", serialReady ? "Requested on connect" : "Cannot request", serialReady ? "" : "error");
+    return;
+  }
+  try {
+    const devices = await navigator.usb.getDevices();
+    if (devices.length) {
+      setUsbCheck("#permissionStatus", `${devices.length} device${devices.length === 1 ? "" : "s"} approved`, "ok");
+      const device = devices[0];
+      const id = `${device.vendorId.toString(16).padStart(4, "0").toUpperCase()}:${device.productId.toString(16).padStart(4, "0").toUpperCase()}`;
+      setUsbCheck("#adapterStatus", `${device.productName || "USB serial"} · ${id}`, "ok");
+    }
+  } catch (error) {
+    setUsbCheck("#permissionStatus", "Permission check failed", "error");
+    $("#usbDiagnostic").textContent = `Chrome could not inspect USB permissions: ${error.message || error}`;
+  }
 }
 
 function logLine(message, kind = "in") {
@@ -187,11 +228,18 @@ async function toggleConnection() {
   }
   try {
     setNotice();
+    setUsbCheck("#permissionStatus", "Opening device picker…");
+    setUsbCheck("#adapterStatus", "Waiting for Chrome…");
     await transport.connect();
+    setUsbCheck("#permissionStatus", "Permission granted", "ok");
+    setUsbCheck("#adapterStatus", selectedAdapterLabel(), "ok");
     setConnectedUi(true);
     await verifyDevice();
   } catch (error) {
     const friendlyError = connectionError(error);
+    setUsbCheck("#permissionStatus", error?.name === "NotFoundError" ? "No device selected" : "Connection failed", "error");
+    setUsbCheck("#adapterStatus", "Check cable / OTG mode", "error");
+    $("#usbDiagnostic").textContent = friendlyError.message;
     handleError(friendlyError);
     await transport.disconnect(false);
     setNotice(friendlyError.message, "error");
@@ -200,7 +248,7 @@ async function toggleConnection() {
 
 function connectionError(error) {
   if (error?.name === "NotFoundError") {
-    return new Error("No USB device was selected. Reconnect the OTG/data cable, tap Connect USB, choose USB-Serial/CH340/CP210x, and approve access.");
+    return new Error("Chrome did not receive a BECA adapter selection. Reconnect BECA directly, enable USB/OTG host mode if your phone offers it, tap Connect USB again, and choose CH340/CH341, CP210x, FTDI, or Espressif USB Serial/JTAG.");
   }
   if (error?.name === "SecurityError") {
     return new Error("Android blocked USB access. Open this HTTPS app directly in Chrome, not inside another app, then allow the USB permission.");
@@ -491,17 +539,24 @@ function initInstall() {
 
 function initCompatibility() {
   if (!transport.supported) {
-    setNotice("Direct USB control needs Chrome or Edge on Android with WebUSB, or a desktop Chromium browser with Web Serial. iPhone and iPad browsers cannot access BECA's USB serial bridge.");
+    setNotice("This browser cannot request USB devices. Open the HTTPS app directly in current Chrome or Edge—not an embedded browser inside another app. iPhone and iPad browsers cannot access BECA's USB serial bridge.");
     $("#connectButton").disabled = true;
   } else if (!window.isSecureContext) {
     setNotice("USB access requires HTTPS. Open the published GitHub Pages app, or use localhost for development.", "error");
     $("#connectButton").disabled = true;
   } else if (isAndroid && webUsbProvider) {
-    setNotice("Android permission step: connect BECA with an OTG/data cable, tap Connect USB, select USB-Serial/CH340/CP210x, then approve Chrome's USB prompt.");
+    setNotice("USB is available. Connect BECA directly, tap Connect USB, select CH340/CH341, CP210x, FTDI, or Espressif USB Serial/JTAG, then approve Chrome and Android.");
+  } else if (isAndroid) {
+    setNotice("WebUSB is unavailable, so the app will use this browser's Web Serial fallback. Tap Connect USB and select BECA when prompted.");
   }
+  refreshUsbDiagnostics();
 }
 
-transport.addEventListener("connect", () => { logLine("Serial port opened at 115200 baud.", "system"); });
+transport.addEventListener("connect", () => {
+  logLine("Serial port opened at 115200 baud.", "system");
+  setUsbCheck("#permissionStatus", "Permission granted", "ok");
+  setUsbCheck("#adapterStatus", selectedAdapterLabel(), "ok");
+});
 transport.addEventListener("sent", (event) => logLine(event.detail, "out"));
 transport.addEventListener("line", (event) => receive(event.detail));
 transport.addEventListener("transporterror", (event) => handleError(event.detail));
@@ -510,7 +565,11 @@ transport.addEventListener("disconnect", () => {
   stopPolling();
   setConnectedUi(false);
   logLine("Serial connection closed.", "system");
+  refreshUsbDiagnostics();
 });
+
+navigator.usb?.addEventListener?.("connect", () => refreshUsbDiagnostics());
+navigator.usb?.addEventListener?.("disconnect", () => refreshUsbDiagnostics());
 
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden && transport.connected) {

@@ -1,6 +1,8 @@
 const USB_SERIAL_FILTERS = [
   { vendorId: 0x1a86 }, // WCH CH340/CH341 family
   { vendorId: 0x10c4 }, // Silicon Labs CP210x family
+  { vendorId: 0x0403 }, // FTDI USB UART family
+  { vendorId: 0x303a }, // Espressif USB Serial/JTAG family
   { vendorId: 0x2184, productId: 0x0057 }, // CH34x-compatible bridge
   { vendorId: 0x4348, productId: 0x5523 }, // CH34x-compatible bridge
   { vendorId: 0x9986, productId: 0x7523 } // CH34x-compatible bridge
@@ -8,12 +10,38 @@ const USB_SERIAL_FILTERS = [
 
 const CH34X_VENDOR_IDS = new Set([0x1a86, 0x2184, 0x4348, 0x9986]);
 const CP210X_VENDOR_ID = 0x10c4;
+const FTDI_VENDOR_ID = 0x0403;
+const ESPRESSIF_VENDOR_ID = 0x303a;
+const DRIVER_LABELS = {
+  ch34x: "CH340/CH341",
+  cp210x: "CP210x",
+  ftdi: "FTDI",
+  espressif: "Espressif USB Serial/JTAG"
+};
 
 function assertTransfer(result, operation) {
   if (!result || result.status !== "ok") {
     throw new DOMException(`${operation} failed${result?.status ? `: ${result.status}` : ""}.`, "NetworkError");
   }
   return result;
+}
+
+export function stripFtdiStatusBytes(data, packetSize) {
+  const source = data instanceof Uint8Array
+    ? data
+    : new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+  const payload = [];
+  for (let offset = 0; offset < source.byteLength; offset += packetSize) {
+    const packetEnd = Math.min(offset + packetSize, source.byteLength);
+    if (packetEnd > offset + 2) payload.push(source.subarray(offset + 2, packetEnd));
+  }
+  const combined = new Uint8Array(payload.reduce((length, chunk) => length + chunk.byteLength, 0));
+  let writeOffset = 0;
+  for (const chunk of payload) {
+    combined.set(chunk, writeOffset);
+    writeOffset += chunk.byteLength;
+  }
+  return combined;
 }
 
 function findBulkInterface(device) {
@@ -54,6 +82,54 @@ async function initializeCp210x(device, interfaceNumber, baudRate) {
   await vendorInterface(0x1e, 0x0000, baud); // Set baud rate.
   await vendorInterface(0x03, 0x0800); // 8 data bits, no parity, 1 stop bit.
   await vendorInterface(0x07, 0x0303); // Assert DTR and RTS.
+}
+
+async function initializeFtdi(device, interfaceNumber, baudRate) {
+  if (baudRate !== 115200) throw new RangeError("The BECA FTDI connection currently requires 115200 baud.");
+  const channel = interfaceNumber + 1;
+  const vendorDevice = (request, value, index = channel) => controlOut(device, {
+    requestType: "vendor",
+    recipient: "device",
+    request,
+    value,
+    index
+  }, undefined, `FTDI request 0x${request.toString(16)}`);
+
+  await vendorDevice(0x00, 0x0000); // Reset UART.
+  await vendorDevice(0x03, 0x001a); // 115200 baud from the 3 MHz FTDI base clock.
+  await vendorDevice(0x04, 0x0008); // 8 data bits, no parity, 1 stop bit.
+  await vendorDevice(0x01, 0x0303); // Assert DTR and RTS.
+  await vendorDevice(0x02, 0x0000); // Disable hardware flow control.
+}
+
+async function initializeEspressif(device, dataInterface, baudRate, claimInterface) {
+  const configuration = device.configuration;
+  const control = configuration?.interfaces.find((iface) =>
+    iface.alternates.some((alternate) => alternate.interfaceClass === 0x02)
+  );
+  if (!control) return;
+
+  if (control.interfaceNumber !== dataInterface) await claimInterface(control.interfaceNumber);
+  const lineCoding = new ArrayBuffer(7);
+  const view = new DataView(lineCoding);
+  view.setUint32(0, baudRate, true);
+  view.setUint8(4, 0); // One stop bit.
+  view.setUint8(5, 0); // No parity.
+  view.setUint8(6, 8); // Eight data bits.
+  await controlOut(device, {
+    requestType: "class",
+    recipient: "interface",
+    request: 0x20,
+    value: 0,
+    index: control.interfaceNumber
+  }, lineCoding, "Espressif line coding");
+  await controlOut(device, {
+    requestType: "class",
+    recipient: "interface",
+    request: 0x22,
+    value: 0x0003,
+    index: control.interfaceNumber
+  }, undefined, "Espressif control lines");
 }
 
 function ch34xDivisor(baudRate, version) {
@@ -135,6 +211,14 @@ async function disableAdapter(device, driver, interfaceNumber) {
         value: 0xffff,
         index: 0
       });
+    } else if (driver === "ftdi") {
+      await device.controlTransferOut({
+        requestType: "vendor",
+        recipient: "device",
+        request: 0x01,
+        value: 0x0300,
+        index: interfaceNumber + 1
+      });
     }
   } catch {
     // The adapter may already be physically disconnected.
@@ -144,6 +228,8 @@ async function disableAdapter(device, driver, interfaceNumber) {
 export function usbSerialDriverFor(device) {
   if (CH34X_VENDOR_IDS.has(device.vendorId)) return "ch34x";
   if (device.vendorId === CP210X_VENDOR_ID) return "cp210x";
+  if (device.vendorId === FTDI_VENDOR_ID) return "ftdi";
+  if (device.vendorId === ESPRESSIF_VENDOR_ID) return "espressif";
   return null;
 }
 
@@ -152,6 +238,7 @@ export class WebUsbSerialPort {
     this.device = device;
     this.driver = usbSerialDriverFor(device);
     this.interfaceNumber = null;
+    this.claimedInterfaces = [];
     this.inEndpoint = null;
     this.outEndpoint = null;
     this.readable = null;
@@ -175,24 +262,32 @@ export class WebUsbSerialPort {
       this.interfaceNumber = dataInterface.interfaceNumber;
       this.inEndpoint = dataInterface.inEndpoint;
       this.outEndpoint = dataInterface.outEndpoint;
-      await this.device.claimInterface(this.interfaceNumber);
+      const claimInterface = async (interfaceNumber) => {
+        if (this.claimedInterfaces.includes(interfaceNumber)) return;
+        await this.device.claimInterface(interfaceNumber);
+        this.claimedInterfaces.push(interfaceNumber);
+      };
+      await claimInterface(this.interfaceNumber);
       if (dataInterface.alternateSetting) {
         await this.device.selectAlternateInterface(this.interfaceNumber, dataInterface.alternateSetting);
       }
 
       if (this.driver === "ch34x") await initializeCh34x(this.device, baudRate);
-      else await initializeCp210x(this.device, this.interfaceNumber, baudRate);
+      else if (this.driver === "cp210x") await initializeCp210x(this.device, this.interfaceNumber, baudRate);
+      else if (this.driver === "ftdi") await initializeFtdi(this.device, this.interfaceNumber, baudRate);
+      else await initializeEspressif(this.device, this.interfaceNumber, baudRate, claimInterface);
 
       this.opened = true;
       this.#createStreams(options?.bufferSize ?? 4096);
     } catch (error) {
       try { if (this.device.opened) await this.device.close(); } catch { /* already closed */ }
-      throw new Error(`Could not open the ${this.driver === "ch34x" ? "CH340" : "CP210x"} USB serial adapter: ${error.message || error}`);
+      throw new Error(`Could not open the ${DRIVER_LABELS[this.driver]} USB serial adapter: ${error.message || error}`);
     }
   }
 
   #createStreams(bufferSize) {
     const device = this.device;
+    const driver = this.driver;
     const input = this.inEndpoint;
     const output = this.outEndpoint;
     this.readable = new ReadableStream({
@@ -200,7 +295,9 @@ export class WebUsbSerialPort {
         try {
           const result = assertTransfer(await device.transferIn(input.endpointNumber, Math.max(input.packetSize, Math.min(bufferSize, 4096))), "USB serial read");
           if (result.data?.byteLength) {
-            controller.enqueue(new Uint8Array(result.data.buffer, result.data.byteOffset, result.data.byteLength));
+            const bytes = new Uint8Array(result.data.buffer, result.data.byteOffset, result.data.byteLength);
+            const payload = driver === "ftdi" ? stripFtdiStatusBytes(bytes, input.packetSize) : bytes;
+            if (payload.byteLength) controller.enqueue(payload);
           }
         } catch (error) {
           controller.error(error);
@@ -217,11 +314,12 @@ export class WebUsbSerialPort {
   async close() {
     if (!this.device.opened) return;
     await disableAdapter(this.device, this.driver, this.interfaceNumber);
-    if (this.interfaceNumber !== null) {
-      try { await this.device.releaseInterface(this.interfaceNumber); } catch { /* disconnected */ }
+    for (const interfaceNumber of [...this.claimedInterfaces].reverse()) {
+      try { await this.device.releaseInterface(interfaceNumber); } catch { /* disconnected */ }
     }
     try { await this.device.close(); } catch { /* disconnected */ }
     this.opened = false;
+    this.claimedInterfaces = [];
     this.readable = null;
     this.writable = null;
   }
@@ -236,7 +334,7 @@ export class WebUsbSerialProvider {
   async requestPort() {
     if (!this.usb?.requestDevice) throw new Error("WebUSB is not available in this browser.");
     const device = await this.usb.requestDevice({ filters: USB_SERIAL_FILTERS });
-    if (!usbSerialDriverFor(device)) throw new Error("Choose BECA's CH340 or CP210x USB serial adapter.");
+    if (!usbSerialDriverFor(device)) throw new Error("Choose BECA's CH340/CH341, CP210x, FTDI, or Espressif USB adapter.");
     return new WebUsbSerialPort(device);
   }
 

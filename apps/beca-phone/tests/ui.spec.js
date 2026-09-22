@@ -62,9 +62,19 @@ test("all sections work at phone width without horizontal overflow", async ({ pa
   await expect(page.locator(".vite-error-overlay")).toHaveCount(0);
 });
 
+test("uses the desktop BECA light design and brand assets", async ({ page }) => {
+  await expect(page.locator(".brand img")).toHaveAttribute("src", "./icons/wordmark.svg");
+  const theme = await page.evaluate(() => ({
+    scheme: getComputedStyle(document.documentElement).colorScheme,
+    background: getComputedStyle(document.body).backgroundColor,
+    accent: getComputedStyle(document.documentElement).getPropertyValue("--accent").trim()
+  }));
+  expect(theme).toEqual({ scheme: "light", background: "rgb(246, 244, 239)", accent: "#008351" });
+});
+
 test("has no serious automated accessibility violations", async ({ page }) => {
   const source = await page.evaluate(() => document.documentElement.outerHTML);
-  expect(source).toContain("BECA AUX Controller");
+  expect(source).toContain("BECA Phone Control");
   const results = await page.evaluate(async (axeSource) => {
     const script = document.createElement("script");
     script.textContent = axeSource;
