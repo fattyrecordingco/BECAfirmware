@@ -1,0 +1,63 @@
+name: Deploy Phone Controller
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - codex/final-beca-release
+      - master
+    paths:
+      - "apps/beca-phone/**"
+      - ".github/workflows/phone-controller-pages.yml"
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-22.04
+    defaults:
+      run:
+        working-directory: apps/beca-phone
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/beca-phone/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Run protocol and PWA checks
+        run: npm test
+      - name: Run browser controller checks
+        run: npm run test:ui
+      - name: Build static app
+        run: npm run build
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: apps/beca-phone/dist
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-22.04
+    needs: verify
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

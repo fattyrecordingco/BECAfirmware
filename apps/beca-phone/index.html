@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#081712">
+    <meta name="description" content="Phone controller for BECA plant instruments over USB-C serial.">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>BECA AUX Controller</title>
+    <link rel="manifest" href="./manifest.webmanifest">
+    <link rel="icon" href="./icons/icon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="./icons/icon-192.png">
+    <link rel="stylesheet" href="./app.css">
+  </head>
+  <body>
+    <div class="ambient ambient-a" aria-hidden="true"></div>
+    <div class="ambient ambient-b" aria-hidden="true"></div>
+    <header class="topbar">
+      <a class="brand" href="#controller" aria-label="BECA controller home">
+        <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span><strong>BECA</strong><small>AUX CONTROLLER</small></span>
+      </a>
+      <button id="updateButton" class="update-button hidden" type="button">Update</button>
+      <button id="installButton" class="icon-button hidden" type="button" aria-label="Install app" title="Install app">↓</button>
+      <button id="connectButton" class="connect-button" type="button">
+        <span class="status-dot" aria-hidden="true"></span><span>Connect USB</span>
+      </button>
+    </header>
+
+    <main>
+      <section id="compatibilityNotice" class="notice warning hidden" role="status"></section>
+      <section class="hero panel">
+        <div>
+          <p class="eyebrow">USB-C / 115200 BAUD</p>
+          <h1>Let the plant play.<br><em>You shape the sound.</em></h1>
+          <p id="connectionMessage" class="muted">Connect your Android phone to BECA with a USB-C data cable.</p>
+        </div>
+        <div class="signal-orbit" aria-label="Plant energy">
+          <svg viewBox="0 0 160 160" role="img" aria-label="Live plant energy meter">
+            <circle class="orbit-track" cx="80" cy="80" r="68"></circle>
+            <circle id="energyRing" class="orbit-value" cx="80" cy="80" r="68"></circle>
+          </svg>
+          <div><strong id="plantValue">—</strong><span>PLANT ENERGY</span></div>
+        </div>
+      </section>
+
+      <section class="status-strip" aria-label="Device status">
+        <div><span>DEVICE</span><strong id="deviceStatus">Not connected</strong></div>
+        <div><span>OUTPUT</span><strong id="outputStatus">—</strong></div>
+        <div><span>PLANT</span><strong id="plantStatus">—</strong></div>
+        <div><span>LAST NOTE</span><strong id="noteStatus">—</strong></div>
+      </section>
+
+      <nav class="tabs" aria-label="Controller sections">
+        <button class="tab active" data-tab="controller" type="button">Controller</button>
+        <button class="tab" data-tab="synth" type="button">Synth</button>
+        <button class="tab" data-tab="performance" type="button">Performance</button>
+        <button class="tab" data-tab="console" type="button">Console</button>
+      </nav>
+
+      <section id="controller" class="tab-page active">
+        <div class="section-heading"><div><p class="eyebrow">ROUTING</p><h2>Audio output</h2></div><span id="auxReadiness" class="pill">Waiting for device</span></div>
+        <div id="outputModes" class="output-grid" role="radiogroup" aria-label="Audio output mode"></div>
+
+        <div class="control-grid two-column">
+          <article class="panel master-card">
+            <div class="card-title"><div><p class="eyebrow">LEVEL</p><h2>Master volume</h2></div><output id="masterOutput" for="master">—</output></div>
+            <label class="sr-only" for="master">Master volume</label>
+            <input id="master" class="range" type="range" min="0" max="1" step="0.01" value="0.7" data-key="master" data-source="synth" disabled>
+            <div class="range-labels"><span>Quiet</span><span>Full</span></div>
+          </article>
+          <article class="panel action-card">
+            <p class="eyebrow">QUICK ACTIONS</p>
+            <div class="action-row">
+              <button id="muteButton" class="action-button" type="button" disabled><span class="action-icon">◼</span><span>Mute</span></button>
+              <button id="testButton" class="action-button accent" type="button" disabled><span class="action-icon">♪</span><span>Test sound</span></button>
+              <button id="refreshButton" class="action-button" type="button" disabled><span class="action-icon">↻</span><span>Refresh</span></button>
+            </div>
+          </article>
+        </div>
+
+        <article class="panel preset-card">
+          <div class="card-title"><div><p class="eyebrow">TIMBRE</p><h2>Synth preset</h2></div><span id="presetName" class="pill green">—</span></div>
+          <div id="presetGrid" class="preset-grid"></div>
+        </article>
+      </section>
+
+      <section id="synth" class="tab-page">
+        <div class="section-heading"><div><p class="eyebrow">AUX ENGINE</p><h2>Sound design</h2></div><button id="resetPreset" class="text-button" type="button" disabled>Reset preset</button></div>
+        <div id="synthControls" class="control-grid"></div>
+      </section>
+
+      <section id="performance" class="tab-page">
+        <div class="section-heading"><div><p class="eyebrow">PLANT RESPONSE</p><h2>Performance</h2></div><button id="randomizeButton" class="text-button" type="button" disabled>Randomize</button></div>
+        <div id="performanceControls" class="control-grid"></div>
+      </section>
+
+      <section id="console" class="tab-page">
+        <div class="section-heading"><div><p class="eyebrow">ADVANCED</p><h2>Serial console</h2></div><button id="clearConsole" class="text-button" type="button">Clear</button></div>
+        <article class="panel console-panel">
+          <div class="quick-commands" aria-label="Quick serial commands">
+            <button type="button" data-command="STATE">STATE</button><button type="button" data-command="PARAMS">PARAMS</button>
+            <button type="button" data-command="SYNTH">SYNTH</button><button type="button" data-command="PLANT">PLANT</button>
+            <button type="button" data-command="NOTES">NOTES</button><button type="button" data-command="PINS">PINS</button>
+          </div>
+          <div id="consoleLog" class="console-log" role="log" aria-live="polite"><p class="log-system">Ready. Connect USB to begin.</p></div>
+          <form id="commandForm" class="command-form">
+            <label class="sr-only" for="commandInput">Serial command</label>
+            <input id="commandInput" type="text" autocomplete="off" placeholder="SET cutoff 4200" disabled>
+            <button type="submit" disabled>Send</button>
+          </form>
+        </article>
+      </section>
+    </main>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <footer><span>BECA phone controller</span><span id="appVersion">v1.0.0</span></footer>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

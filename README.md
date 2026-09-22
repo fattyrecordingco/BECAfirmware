@@ -19,6 +19,14 @@ Separate downloads: [firmware 1.1.0 merged image](https://github.com/fattyrecord
 
 This is the current public release. The Windows installer is unsigned and the Mac builds are not notarized; see the release notes for platform limitations. The 0.1.7 files under `installers/` are historical, and 0.2.0 downloads are hosted in Releases.
 
+## Phone AUX controller
+
+**[Open the BECA AUX Controller](https://fattyrecordingco.github.io/BECAfirmware/)** on an Android phone in Chrome or Edge, then connect BECA with a USB-C OTG/data cable. The installable web app uses the existing 115200-baud serial protocol to select AUX or Serial + AUX, shape the onboard synth, adjust plant/performance settings, monitor live activity, and send advanced console commands. After the first load, its application shell is available offline.
+
+Direct browser USB serial is not available on iPhone or iPad. Android also requires a data-capable cable, an explicit device permission, and the HTTPS published app. Close Arduino Serial Monitor or the desktop BECA app before connecting because only one host can own the serial port. See the [complete phone setup, compatibility, and troubleshooting guide](apps/beca-phone/README.md).
+
+The phone controller is transport-limited and state-diff based: writes are coalesced and serialized below 20 per second, state/plant/note snapshots run at 2 Hz, synth reconciliation runs at 0.5 Hz, hidden pages pause polling, and console history is bounded. It introduces no firmware or BLE stack change. The firmware remains pinned to ESP32 Arduino core 2.0.14 and its existing library versions.
+
 ## Native Ableton instrument
 
 **[Download BECA Instrument 0.1.0 for Ableton Live](https://github.com/fattyrecordingco/BECAfirmware/releases/download/instrument-v0.1.0/BECA-Instrument-0.1.0.zip)** · [Release notes and installation](https://github.com/fattyrecordingco/BECAfirmware/releases/tag/instrument-v0.1.0) · [SHA256 checksum](https://github.com/fattyrecordingco/BECAfirmware/releases/download/instrument-v0.1.0/SHA256SUMS). The ZIP contains the complete device folder; no source build is needed. Requires Max for Live and Max 8.6 or newer. Tested on Windows with Live 12.4.5; macOS and Live 11 runtime checks remain outstanding.
@@ -117,6 +125,7 @@ Additional regression fixes preserve tempo across swung step pairs, let each emb
 
 - BECA device firmware in [BECAfinalsv02.ino](./BECAfinalsv02.ino)
 - BECA desktop app in [apps/beca-setup](./apps/beca-setup)
+- Android USB-C web controller in [apps/beca-phone](./apps/beca-phone)
 - native Serial MIDI bridge in [tools/bridge](./tools/bridge)
 - flashing and backup helpers in [tools/flasher](./tools/flasher)
 
@@ -561,6 +570,7 @@ Release signing, notarization, checksum, and malware-scan commands are in [docs/
 - [BECAfinalsv02.ino](./BECAfinalsv02.ino): main firmware sketch
 - [platformio.ini](./platformio.ini): firmware build environment pinned to ESP32 core `2.0.14`
 - [apps/beca-setup](./apps/beca-setup): desktop app
+- [apps/beca-phone](./apps/beca-phone): installable Android USB-C AUX controller
 - [apps/beca-setup/ui/control.html](./apps/beca-setup/ui/control.html): live control surface
 - [apps/beca-setup/ui/index.html](./apps/beca-setup/ui/index.html): setup workspace shell
 - [tools/bridge](./tools/bridge): native MIDI bridge

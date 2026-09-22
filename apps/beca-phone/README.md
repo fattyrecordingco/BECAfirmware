@@ -1,0 +1,99 @@
+# BECA AUX Controller
+
+BECA AUX Controller is an installable mobile web app for controlling BECA's onboard AUX synthesizer directly over a USB-C serial connection. It uses the firmware's existing `@C` protocol at 115200 baud and does not change BLE-MIDI behavior.
+
+## Open the app
+
+The published app is hosted at:
+
+<https://fattyrecordingco.github.io/BECAfirmware/>
+
+The GitHub Pages workflow publishes this folder as the site root. For local development, run `npm install`, then `npm run dev` and open the printed localhost URL.
+
+## Requirements
+
+- An Android phone or tablet.
+- Current Chrome or Edge with Web Serial enabled.
+- A USB-C OTG/data cable. Charge-only cables cannot work.
+- BECA firmware with the serial control protocol used by this repository.
+- The published HTTPS app or a localhost development server.
+
+iPhone and iPad browsers do not expose USB serial to web apps. The interface can load there, but direct USB connection is unavailable. Use an Android device for this version.
+
+## Connect and use AUX
+
+1. Disconnect Arduino Serial Monitor, the desktop BECA app, or any other program using the device's serial port.
+2. Connect BECA to the Android device with a USB-C data/OTG cable. Use an adapter if the BECA end is USB-A or Micro-USB.
+3. Open the app in Chrome and press **Connect USB**.
+4. Select the USB serial device in the browser prompt and approve access.
+5. Wait for **BECA connected**. The app verifies `@C PING`, then loads parameters, state, synth state, plant state, and notes.
+6. Choose **Aux audio** to hear the onboard synth, or **Serial MIDI + Aux** to keep serial MIDI output active as well.
+7. Connect headphones, speakers, or an audio input to BECA's AUX output and adjust **Master volume** gradually.
+
+BECA deliberately blocks AUX switching during its startup cooldown. The app displays the remaining wait and enables AUX when the firmware reports it ready.
+
+## Install on the home screen
+
+In Android Chrome, open the app and use **Install app** from the browser menu or the install button shown in the app. After the first successful load, the application shell works offline. Browser security can still require a fresh tap and device approval before every USB session.
+
+## Features
+
+- Verified 115200-baud Web Serial connection and cable-removal handling.
+- AUX, Serial + AUX, Serial, BLE, and firmware-advertised Wi-Fi MIDI routing.
+- Master level, mute, test chord, presets, oscillators, ADSR, filter, reverb, delay, drive, detune, and voice controls.
+- Plant sensitivity, musical mode, scale, root, tempo, swing, octave range, rests, clock, time signature, and note length.
+- Live plant energy, connection state, AUX readiness, and note display.
+- Advanced serial console with bounded history and safe single-line commands.
+- Installable offline PWA with responsive phone and landscape layouts.
+
+## Transport behavior
+
+The app keeps a `PING` heartbeat below the firmware's three-second serial-host window. Visible pages request state and plant/notes at 2 Hz and synth state at 0.5 Hz. Hidden pages pause polling. Slider changes are coalesced for 80 ms, then all writes pass through one queue capped to about 16 writes per second. Incoming updates only replace controls that are not actively being touched.
+
+The initial handshake sends:
+
+```text
+@C PING
+@C TELEMETRY 1
+@C PARAMS
+@C STATE
+@C SYNTH
+@C PLANT
+@C NOTES
+```
+
+The app uses `@C SET <key> <value>` for controls. It requests `TELEMETRY 0` during an orderly disconnect. The console accepts either `STATE` or the complete `@C STATE` form and removes embedded newlines.
+
+## Troubleshooting
+
+**No USB device appears:** confirm the cable carries data, the phone supports USB OTG, BECA is powered, and no other app owns the port. Reconnect the cable and retry.
+
+**The Connect button is unavailable:** use current Chrome or Edge on Android and open the HTTPS GitHub Pages address. Web Serial is unavailable in iPhone/iPad browsers and most embedded in-app browsers.
+
+**The port opens but BECA does not connect:** close Arduino Serial Monitor and the desktop app. Select BECA's CH340/CP210x serial adapter, not an unrelated USB device. The app closes ports that do not answer the BECA handshake.
+
+**AUX is disabled:** wait for the startup countdown. If the firmware returns `aux not ready`, refresh state and retry after the displayed time.
+
+**No sound:** select Aux or Serial + Aux, make sure mute is off, connect the AUX cable, start at a low master level, and press **Test sound**. The test requires AUX mode and an active audio engine.
+
+**Plant activity is absent:** open Console and run `PINS` and `PLANT`. Check electrode and jack connections. Plant jack detection may be disabled in some firmware builds, so raw readings are the useful diagnostic.
+
+**An old app version remains:** close all installed app windows, revisit the HTTPS page while online, then reopen it. The service worker replaces old application-shell caches during activation.
+
+## Development and verification
+
+```bash
+cd apps/beca-phone
+npm install
+npm test
+npm run build
+npm run test:ui
+```
+
+`npm test` checks framing, parsing, command sanitization, serialized writes, manifest metadata, and the offline asset list. Playwright serves the built deployment artifact and runs Android, small-phone, and desktop layouts against a mock BECA serial device, covering handshake, live state, AUX commands, navigation, overflow, offline reload, and serious WCAG A/AA findings.
+
+Physical verification should also confirm the actual AUX signal and USB behavior on the target phone. Automated tests cannot hear the DAC output or grant a phone's USB permission dialog.
+
+## Firmware compatibility
+
+This app introduces no firmware dependency and does not edit the embedded `index.html`. The repository remains pinned to ESP32 Arduino core 2.0.14, BLE-MIDI 2.2, MIDI Library 5.0.2, NimBLE-Arduino 1.4.3, FastLED 3.10.3, and AppleMIDI 3.5.0.
