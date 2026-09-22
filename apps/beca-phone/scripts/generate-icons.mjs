@@ -1,14 +1,15 @@
 import { chromium } from "playwright";
+import { readFile } from "node:fs/promises";
 import { resolve, dirname } from "node:path";
-import { pathToFileURL, fileURLToPath } from "node:url";
+import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const svg = await readFile(resolve(root, "icons", "icon.svg"), "utf8");
 const browser = await chromium.launch({ channel: "chrome" });
 for (const size of [192, 512]) {
   const page = await browser.newPage({ viewport: { width: size, height: size }, deviceScaleFactor: 1 });
-  const source = pathToFileURL(resolve(root, "icons", "icon.svg")).href;
-  await page.setContent(`<style>*{margin:0}body{width:${size}px;height:${size}px}img{display:block;width:100%;height:100%}</style><img src="${source}" alt="">`);
-  await page.locator("img").screenshot({ path: resolve(root, "icons", `icon-${size}.png`), omitBackground: true });
+  await page.setContent(`<style>*{margin:0}body,svg{display:block;width:${size}px;height:${size}px}</style>${svg}`);
+  await page.locator("svg").screenshot({ path: resolve(root, "icons", `icon-${size}.png`), omitBackground: true });
   await page.close();
 }
 await browser.close();

@@ -1,5 +1,5 @@
 {
-  "name": "BECA AUX Controller",
+  "name": "BECA Phone Control",
   "short_name": "BECA",
   "description": "Control the BECA onboard AUX synthesizer from an Android phone over USB-C serial.",
   "id": "./",
@@ -7,8 +7,8 @@
   "scope": "./",
   "display": "standalone",
   "orientation": "any",
-  "background_color": "#07120e",
-  "theme_color": "#081712",
+  "background_color": "#f6f4ef",
+  "theme_color": "#f6f4ef",
   "categories": ["music", "utilities"],
   "icons": [
     {

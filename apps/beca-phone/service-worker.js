@@ -1,4 +1,4 @@
-const CACHE_NAME = "beca-phone-v1.1.0";
+const CACHE_NAME = "beca-phone-v1.2.0";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -8,12 +8,17 @@ const APP_SHELL = [
   "./webusb-serial.js",
   "./manifest.webmanifest",
   "./icons/icon.svg",
+  "./icons/wordmark.svg",
   "./icons/icon-192.png",
   "./icons/icon-512.png"
 ];
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)));
+  event.waitUntil(
+    caches.open(CACHE_NAME)
+      .then((cache) => cache.addAll(APP_SHELL))
+      .then(() => self.skipWaiting())
+  );
 });
 
 self.addEventListener("activate", (event) => {

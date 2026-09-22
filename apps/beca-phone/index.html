@@ -3,11 +3,11 @@
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-    <meta name="theme-color" content="#081712">
+    <meta name="theme-color" content="#f6f4ef">
     <meta name="description" content="Phone controller for BECA plant instruments over USB-C serial.">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <title>BECA AUX Controller</title>
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <title>BECA Phone Control</title>
     <link rel="manifest" href="./manifest.webmanifest">
     <link rel="icon" href="./icons/icon.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="./icons/icon-192.png">
@@ -18,8 +18,8 @@
     <div class="ambient ambient-b" aria-hidden="true"></div>
     <header class="topbar">
       <a class="brand" href="#controller" aria-label="BECA controller home">
-        <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
-        <span><strong>BECA</strong><small>AUX CONTROLLER</small></span>
+        <img src="./icons/wordmark.svg" alt="" aria-hidden="true">
+        <small>PHONE CONTROL</small>
       </a>
       <button id="updateButton" class="update-button hidden" type="button">Update</button>
       <button id="installButton" class="icon-button hidden" type="button" aria-label="Install app" title="Install app">↓</button>
@@ -30,6 +30,23 @@
 
     <main>
       <section id="compatibilityNotice" class="notice warning hidden" role="status"></section>
+      <section class="usb-guide panel" aria-labelledby="usbGuideTitle">
+        <div class="usb-guide-copy">
+          <p class="eyebrow">DIRECT USB</p>
+          <h2 id="usbGuideTitle">Connect BECA</h2>
+          <p>Plug BECA directly into this phone, then tap <strong>Connect USB</strong>. Chrome should show a device picker first, followed by Android's access permission.</p>
+        </div>
+        <div class="usb-checks" aria-label="USB connection diagnostics">
+          <div><span>Browser</span><strong id="browserStatus">Checking…</strong></div>
+          <div><span>Secure app</span><strong id="secureStatus">Checking…</strong></div>
+          <div><span>USB permission</span><strong id="permissionStatus">Not requested</strong></div>
+          <div><span>Adapter</span><strong id="adapterStatus">Waiting for selection</strong></div>
+        </div>
+        <details class="usb-details">
+          <summary>Connection help</summary>
+          <p id="usbDiagnostic">Use current Chrome or Edge, unlock the phone, connect without a USB hub, and make sure USB/OTG host mode is enabled in Android settings if your phone provides that option.</p>
+        </details>
+      </section>
       <section class="hero panel">
         <div>
           <p class="eyebrow">USB-C / 115200 BAUD</p>
@@ -115,7 +132,7 @@
     </main>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
-    <footer><span>BECA phone controller</span><span id="appVersion">v1.0.0</span></footer>
+    <footer><span>BECA phone control</span><span id="appVersion">v1.2.0</span></footer>
     <script type="module" src="./app.js"></script>
   </body>
 </html>

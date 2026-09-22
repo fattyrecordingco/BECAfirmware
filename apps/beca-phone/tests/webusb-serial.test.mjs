@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { WebUsbSerialPort, WebUsbSerialProvider, shouldUseWebUsb, usbSerialDriverFor } from "../webusb-serial.js";
+import { WebUsbSerialPort, WebUsbSerialProvider, shouldUseWebUsb, stripFtdiStatusBytes, usbSerialDriverFor } from "../webusb-serial.js";
 
 function createDevice(vendorId, productId, version = 0x30) {
   const calls = [];
@@ -39,6 +39,8 @@ test("Android selects the WebUSB transport", () => {
 test("recognizes BECA's common USB serial bridges", () => {
   assert.equal(usbSerialDriverFor({ vendorId: 0x1a86 }), "ch34x");
   assert.equal(usbSerialDriverFor({ vendorId: 0x10c4 }), "cp210x");
+  assert.equal(usbSerialDriverFor({ vendorId: 0x0403 }), "ftdi");
+  assert.equal(usbSerialDriverFor({ vendorId: 0x303a }), "espressif");
   assert.equal(usbSerialDriverFor({ vendorId: 0x1234 }), null);
 });
 
@@ -50,6 +52,8 @@ test("requests explicit WebUSB permission for USB serial families", async () => 
   assert.ok(port instanceof WebUsbSerialPort);
   assert.ok(options.filters.some((filter) => filter.vendorId === 0x1a86));
   assert.ok(options.filters.some((filter) => filter.vendorId === 0x10c4));
+  assert.ok(options.filters.some((filter) => filter.vendorId === 0x0403));
+  assert.ok(options.filters.some((filter) => filter.vendorId === 0x303a));
 });
 
 test("configures CH340 for 115200 8N1 and asserts modem lines", async () => {
@@ -78,5 +82,45 @@ test("configures CP210x for 115200 8N1 and asserts DTR/RTS", async () => {
   assert.equal(new DataView(baudCall[2]).getUint32(0, true), 115200);
   assert.ok(controls.some(([, setup]) => setup.request === 0x03 && setup.value === 0x0800));
   assert.ok(controls.some(([, setup]) => setup.request === 0x07 && setup.value === 0x0303));
+  await port.close();
+});
+
+test("configures FTDI for BECA's 115200-baud serial protocol", async () => {
+  const { device, calls } = createDevice(0x0403, 0x6001);
+  const port = new WebUsbSerialPort(device);
+  await port.open({ baudRate: 115200 });
+  const controls = calls.filter(([name]) => name === "controlOut");
+  assert.ok(controls.some(([, setup]) => setup.request === 0x00 && setup.value === 0));
+  assert.ok(controls.some(([, setup]) => setup.request === 0x03 && setup.value === 0x001a));
+  assert.ok(controls.some(([, setup]) => setup.request === 0x04 && setup.value === 8));
+  assert.ok(controls.some(([, setup]) => setup.request === 0x01 && setup.value === 0x0303));
+  await port.close();
+});
+
+test("removes FTDI modem status bytes from every USB packet", () => {
+  const packet = new Uint8Array(128);
+  packet.set([0x01, 0x60, 0x40, 0x52], 0);
+  packet.set([0x01, 0x60, 0x20, 0x50], 64);
+  const payload = stripFtdiStatusBytes(packet, 64);
+  assert.deepEqual([...payload.slice(0, 2)], [0x40, 0x52]);
+  assert.deepEqual([...payload.slice(62, 64)], [0x20, 0x50]);
+  assert.equal(payload.byteLength, 124);
+});
+
+test("configures Espressif USB Serial/JTAG as CDC 115200 8N1", async () => {
+  const { device, calls } = createDevice(0x303a, 0x1001);
+  const endpoints = device.configuration.interfaces[0].alternates[0].endpoints;
+  device.configuration.interfaces = [
+    { interfaceNumber: 0, alternates: [{ alternateSetting: 0, interfaceClass: 0x02, endpoints: [] }] },
+    { interfaceNumber: 1, alternates: [{ alternateSetting: 0, interfaceClass: 0x0a, endpoints }] }
+  ];
+  const port = new WebUsbSerialPort(device);
+  await port.open({ baudRate: 115200 });
+  assert.ok(calls.some(([name, number]) => name === "claim" && number === 0));
+  assert.ok(calls.some(([name, number]) => name === "claim" && number === 1));
+  const controls = calls.filter(([name]) => name === "controlOut");
+  const lineCoding = controls.find(([, setup]) => setup.request === 0x20);
+  assert.equal(new DataView(lineCoding[2]).getUint32(0, true), 115200);
+  assert.ok(controls.some(([, setup]) => setup.request === 0x22 && setup.value === 3));
   await port.close();
 });
