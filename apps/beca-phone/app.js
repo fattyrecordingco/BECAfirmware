@@ -1,6 +1,7 @@
 import { BecaSerial, formatValue } from "./protocol.js";
+import { WebUsbSerialProvider, shouldUseWebUsb } from "./webusb-serial.js";
 
-const APP_VERSION = "1.0.0";
+const APP_VERSION = "1.1.0";
 const NOTE_NAMES = ["C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B"];
 const FALLBACK_PARAMS = {
   modes: ["Notes", "Arpeggiator", "Chords", "Drum Machine"],
@@ -57,8 +58,11 @@ const PERFORMANCE_CONTROLS = [
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
-const serialProvider = globalThis.__BECA_SERIAL__ ?? navigator.serial;
+const isAndroid = shouldUseWebUsb();
+const webUsbProvider = navigator.usb?.requestDevice ? new WebUsbSerialProvider(navigator.usb) : null;
+const serialProvider = globalThis.__BECA_SERIAL__ ?? (isAndroid ? webUsbProvider : navigator.serial ?? webUsbProvider);
 const transport = new BecaSerial(serialProvider);
+const transportName = serialProvider?.transportName ?? (isAndroid ? "Android USB" : "Web Serial");
 const model = { params: structuredClone(FALLBACK_PARAMS), state: {}, synth: {}, plant: {}, notes: {} };
 const interaction = new Set();
 const sendTimers = new Map();
@@ -107,8 +111,10 @@ function setConnectedUi(connected) {
   $("#connectButton span:last-child").textContent = connected ? "Disconnect" : "Connect USB";
   $("#deviceStatus").textContent = connected ? (verified ? "BECA connected" : "Checking device…") : "Not connected";
   $("#connectionMessage").textContent = connected
-    ? (verified ? "Direct USB control is active. Your changes are sent to BECA in real time." : "Opening the serial link and checking for BECA…")
-    : "Connect your Android phone to BECA with a USB-C data cable.";
+    ? (verified ? `Direct ${transportName} control is active. Your changes are sent to BECA in real time.` : "Opening the USB link and checking for BECA…")
+    : isAndroid
+      ? "Connect BECA with a USB-C OTG/data cable, then tap Connect USB and approve the device permission."
+      : "Connect your device to BECA with a USB data cable.";
   $$('button[data-requires-connection], button[data-command], .preset-button, input[data-key], select[data-key], #muteButton, #testButton, #refreshButton, #resetPreset, #randomizeButton, #commandInput, #commandForm button[type="submit"]').forEach((element) => {
     element.disabled = !connected;
   });
@@ -185,10 +191,24 @@ async function toggleConnection() {
     setConnectedUi(true);
     await verifyDevice();
   } catch (error) {
-    handleError(error);
+    const friendlyError = connectionError(error);
+    handleError(friendlyError);
     await transport.disconnect(false);
-    setNotice(error.message, "error");
+    setNotice(friendlyError.message, "error");
   }
+}
+
+function connectionError(error) {
+  if (error?.name === "NotFoundError") {
+    return new Error("No USB device was selected. Reconnect the OTG/data cable, tap Connect USB, choose USB-Serial/CH340/CP210x, and approve access.");
+  }
+  if (error?.name === "SecurityError") {
+    return new Error("Android blocked USB access. Open this HTTPS app directly in Chrome, not inside another app, then allow the USB permission.");
+  }
+  if (/claim|busy|access|open/i.test(error?.message ?? "")) {
+    return new Error(`${error.message} Close any serial-terminal app, reconnect BECA, and approve Chrome when Android asks which app may use the USB device.`);
+  }
+  return error instanceof Error ? error : new Error(String(error));
 }
 
 function receive(parsed) {
@@ -471,11 +491,13 @@ function initInstall() {
 
 function initCompatibility() {
   if (!transport.supported) {
-    setNotice("Direct USB control needs Chrome or Edge on Android with Web Serial. iPhone and iPad browsers cannot access USB serial; use an Android device for this version.");
+    setNotice("Direct USB control needs Chrome or Edge on Android with WebUSB, or a desktop Chromium browser with Web Serial. iPhone and iPad browsers cannot access BECA's USB serial bridge.");
     $("#connectButton").disabled = true;
   } else if (!window.isSecureContext) {
     setNotice("USB access requires HTTPS. Open the published GitHub Pages app, or use localhost for development.", "error");
     $("#connectButton").disabled = true;
+  } else if (isAndroid && webUsbProvider) {
+    setNotice("Android permission step: connect BECA with an OTG/data cable, tap Connect USB, select USB-Serial/CH340/CP210x, then approve Chrome's USB prompt.");
   }
 }
 

@@ -3,7 +3,7 @@ import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const required = ["index.html", "app.css", "app.js", "protocol.js", "manifest.webmanifest", "service-worker.js", "icons/icon.svg", "icons/icon-192.png", "icons/icon-512.png"];
+const required = ["index.html", "app.css", "app.js", "protocol.js", "webusb-serial.js", "manifest.webmanifest", "service-worker.js", "icons/icon.svg", "icons/icon-192.png", "icons/icon-512.png"];
 for (const file of required) {
   const info = await stat(resolve(root, file));
   if (!info.isFile() || info.size === 0) throw new Error(`${file} is missing or empty`);

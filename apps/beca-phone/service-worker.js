@@ -1,10 +1,11 @@
-const CACHE_NAME = "beca-phone-v1.0.0";
+const CACHE_NAME = "beca-phone-v1.1.0";
 const APP_SHELL = [
   "./",
   "./index.html",
   "./app.css",
   "./app.js",
   "./protocol.js",
+  "./webusb-serial.js",
   "./manifest.webmanifest",
   "./icons/icon.svg",
   "./icons/icon-192.png",

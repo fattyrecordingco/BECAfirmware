@@ -1,13 +1,13 @@
 {
   "name": "beca-phone-controller",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "node ./scripts/build.mjs",
     "preview": "vite preview",
-    "test": "node --test ./tests/protocol.test.mjs && node ./scripts/verify.mjs",
+    "test": "node --test ./tests/protocol.test.mjs ./tests/webusb-serial.test.mjs && node ./scripts/verify.mjs",
     "test:ui": "playwright test"
   },
   "devDependencies": {
