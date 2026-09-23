@@ -50,6 +50,7 @@ In Android Chrome, open the app and use **Install app** from the browser menu or
 - A desktop-style 12-leaf MIDI display that highlights played pitch classes and doubles as an accessible root-note selector.
 - A touch and keyboard accessible 2D sound pad: horizontal movement shapes filter cutoff and vertical movement shapes resonance.
 - State-diff sampling keeps the graph to 60 bounded points; pad changes are paired and limited to 10 updates per second before serialized USB writes.
+- The fixed-size live deck replaces the introductory banner and remains visible across Controller, Synth, Performance, and Console. Dynamic MIDI labels are clipped within reserved space so note activity cannot move the controls or cause page jitter.
 
 ## Transport behavior
 

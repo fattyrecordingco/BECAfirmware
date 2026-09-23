@@ -1,7 +1,7 @@
 import { BecaSerial, formatValue } from "./protocol.js";
 import { WebUsbSerialProvider, shouldUseWebUsb } from "./webusb-serial.js";
 
-const APP_VERSION = "1.3.0";
+const APP_VERSION = "1.3.1";
 const NOTE_NAMES = ["C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B"];
 const LEAF_PATH = "M100 48.864C100 77.106 77.106 100 48.864 100H0V51.136C0 22.894 22.894 0 51.136 0H100v48.864ZM51.136 11.364c-21.965 0-39.772 17.807-39.772 39.772V81.17l42.005-42.005c2.219-2.219 5.817-2.219 8.036 0 2.219 2.219 2.219 5.817 0 8.036L19.967 88.636h28.897c21.965 0 39.772-17.807 39.772-39.772V11.364H51.136Z";
 const FALLBACK_PARAMS = {
@@ -48,7 +48,6 @@ const PERFORMANCE_CONTROLS = [
   { key: "clock", label: "Plant clock", type: "toggle", source: "state" },
   { key: "bpm", label: "Tempo", step: 1, unit: " BPM", source: "state" },
   { key: "swing", label: "Swing", step: 1, unit: "%", source: "state" },
-  { key: "sens", label: "Sensitivity", step: 0.01, source: "state" },
   { key: "lo", label: "Low octave", step: 1, source: "state" },
   { key: "hi", label: "High octave", step: 1, source: "state" },
   { key: "rest", label: "Rest chance", step: 0.01, unit: "%", scale: 100, source: "state" },
@@ -56,6 +55,7 @@ const PERFORMANCE_CONTROLS = [
   { key: "ts", label: "Time signature", type: "select", optionKey: "time_signatures", source: "state", transformOut: (value) => value.replace("/", "-") },
   { key: "note_length", label: "Note length", type: "select", optionKey: "note_lengths", source: "state", valueKey: "note_length_idx" }
 ];
+const SENSITIVITY_CONTROL = { key: "sens", label: "Sensitivity", step: 0.01, source: "state" };
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -326,7 +326,6 @@ function updateLastNote(note, velocity) {
 function renderPlant() {
   const value = Math.max(0, Math.min(1, Number(model.plant.value ?? 0)));
   $("#plantValue").textContent = transport.connected ? value.toFixed(2) : "—";
-  $("#energyRing").style.strokeDashoffset = String(427.26 * (1 - value));
   const connected = Number(model.plant.connected ?? model.state.plant_jack ?? 0) !== 0;
   $("#plantStatus").textContent = transport.connected ? (connected ? "Connected" : "Check plant") : "—";
   if (transport.connected && Number.isFinite(value)) samplePlant(value);
@@ -356,6 +355,10 @@ function renderState() {
   renderOutputModes();
   renderPresetSelection();
   applyModelToControls("state", state);
+  if (!interaction.has("sens") && Number.isFinite(Number(state.sens))) {
+    $("#sensitivity").value = String(state.sens);
+    $("#sensitivityOutput").textContent = Number(state.sens).toFixed(2);
+  }
   renderMidiLeaves();
   renderModeRestrictions();
 }
@@ -435,7 +438,7 @@ function applyModelToControls(source, values) {
     if (value === undefined || value === null) return;
     if (input.type === "checkbox") input.checked = Boolean(Number(value));
     else input.value = String(value);
-    const def = [...SYNTH_CONTROLS, ...PERFORMANCE_CONTROLS].find((item) => item.key === key);
+    const def = [...SYNTH_CONTROLS, ...PERFORMANCE_CONTROLS, SENSITIVITY_CONTROL].find((item) => item.key === key);
     const output = input.closest(".control-card")?.querySelector("output");
     if (def && output) output.textContent = displayControlValue(def, value);
   });
@@ -657,6 +660,14 @@ function initActions() {
     scheduleSet("master", event.target.value);
   });
   $("#master").addEventListener("change", (event) => scheduleSet("master", event.target.value, null, true));
+  $("#sensitivity").addEventListener("pointerdown", () => interaction.add("sens"));
+  $("#sensitivity").addEventListener("pointerup", () => interaction.delete("sens"));
+  $("#sensitivity").addEventListener("blur", () => interaction.delete("sens"));
+  $("#sensitivity").addEventListener("input", (event) => {
+    $("#sensitivityOutput").textContent = Number(event.target.value).toFixed(2);
+    scheduleSet("sens", event.target.value);
+  });
+  $("#sensitivity").addEventListener("change", (event) => scheduleSet("sens", event.target.value, null, true));
   $$("[data-command]").forEach((button) => button.addEventListener("click", () => transport.send(button.dataset.command).catch(handleError)));
   $("#commandForm").addEventListener("submit", (event) => {
     event.preventDefault();
