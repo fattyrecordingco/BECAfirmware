@@ -15,6 +15,7 @@ async function installMockSerial(page) {
       replies.push(encoder.encode(`${line}\n`));
       if (wake) { wake(); wake = null; }
     };
+    globalThis.__MOCK_PUSH = push;
     const respond = (command) => {
       const tag = command.replace(/^@C\s+/, "").split(/\s+/)[0];
       if (tag === "PING") push('@R PING {"ok":1}');
@@ -55,11 +56,50 @@ test("shows live plant data and the leaf MIDI root selector", async ({ page }) =
   await page.getByRole("button", { name: "Connect USB" }).click();
   await expect(page.locator("#plantTrace")).not.toHaveAttribute("d", "");
   await expect(page.locator("#signalNow")).toHaveText("42%");
-  await page.getByRole("button", { name: "Performance", exact: true }).click();
   await expect(page.getByRole("radio", { name: "C root note" })).toHaveClass(/playing/);
   await page.getByRole("radio", { name: "D root note" }).click();
   await expect(page.getByRole("radio", { name: "D root note" })).toHaveAttribute("aria-checked", "true");
   await expect.poll(() => page.evaluate(() => globalThis.__MOCK_WRITES)).toContain("@C SET root 2");
+});
+
+test("keeps the live deck stable across notes, modes, and sensitivity changes", async ({ page }) => {
+  await page.getByRole("button", { name: "Connect USB" }).click();
+  const deck = page.locator("#liveDeck");
+  const tabs = page.locator(".tabs");
+  const before = await Promise.all([deck.boundingBox(), tabs.boundingBox()]);
+  const clipping = await page.locator("#liveDeck, .live-signal, .live-midi").evaluateAll((elements) => elements.map((element) => ({
+    id: element.id || element.className,
+    horizontal: element.scrollWidth - element.clientWidth,
+    vertical: element.scrollHeight - element.clientHeight
+  })));
+  expect(clipping).toEqual(clipping.map((item) => ({ ...item, horizontal: 0, vertical: 0 })));
+  await page.evaluate(() => {
+    globalThis.__MOCK_PUSH('{"type":"midi","on":1,"note":64,"vel":91}');
+    globalThis.__MOCK_PUSH('{"type":"midi","on":1,"note":67,"vel":93}');
+    globalThis.__MOCK_PUSH('{"type":"midi","on":1,"note":71,"vel":95}');
+  });
+  await expect(page.locator("#midiReadout")).toContainText("B4");
+  const afterNotes = await Promise.all([deck.boundingBox(), tabs.boundingBox()]);
+  expect(afterNotes).toEqual(before);
+
+  await page.locator("#sensitivity").evaluate((input) => {
+    input.value = "0.31";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await expect(page.locator("#sensitivityOutput")).toHaveText("0.31");
+  await expect.poll(() => page.evaluate(() => globalThis.__MOCK_WRITES)).toContain("@C SET sens 0.31");
+
+  const documentDeckBox = () => deck.evaluate((element) => {
+    const box = element.getBoundingClientRect();
+    return { x: box.x + scrollX, y: box.y + scrollY, width: box.width, height: box.height };
+  });
+  const fixedDeckBox = await documentDeckBox();
+  for (const tab of ["Synth", "Performance", "Console", "Controller"]) {
+    await page.getByRole("button", { name: tab, exact: true }).click();
+    await expect(deck).toBeVisible();
+    expect(await documentDeckBox()).toEqual(fixedDeckBox);
+  }
 });
 
 test("2D synth pad changes cutoff and resonance", async ({ page }) => {
@@ -109,6 +149,6 @@ test("registers an offline shell that survives a reload", async ({ page, context
   await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller)), { timeout: 10_000 }).toBe(true);
   await context.setOffline(true);
   await page.reload({ waitUntil: "domcontentloaded" });
-  await expect(page.getByRole("heading", { name: /Let the plant play/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Plant activity/ })).toBeVisible();
   await context.setOffline(false);
 });

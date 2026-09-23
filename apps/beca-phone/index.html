@@ -47,18 +47,34 @@
           <p id="usbDiagnostic">Use current Chrome or Edge, unlock the phone, connect without a USB hub, and make sure USB/OTG host mode is enabled in Android settings if your phone provides that option.</p>
         </details>
       </section>
-      <section class="hero panel">
-        <div>
-          <p class="eyebrow">USB-C / 115200 BAUD</p>
-          <h1>Let the plant play.<br><em>You shape the sound.</em></h1>
+      <section id="liveDeck" class="live-deck panel" aria-labelledby="signalTitle">
+        <header class="live-deck-header">
+          <div><p class="eyebrow">LIVING SIGNAL / MIDI</p><h1 id="signalTitle">Plant activity</h1></div>
           <p id="connectionMessage" class="muted">Connect your Android phone to BECA with a USB-C data cable.</p>
-        </div>
-        <div class="signal-orbit" aria-label="Plant energy">
-          <svg viewBox="0 0 160 160" role="img" aria-label="Live plant energy meter">
-            <circle class="orbit-track" cx="80" cy="80" r="68"></circle>
-            <circle id="energyRing" class="orbit-value" cx="80" cy="80" r="68"></circle>
-          </svg>
-          <div><strong id="plantValue">—</strong><span>PLANT ENERGY</span></div>
+        </header>
+        <div class="live-deck-grid">
+          <section class="live-signal" aria-label="Plant activity monitor">
+            <div class="live-section-title"><span>RECENT 24 SECONDS</span><strong id="plantValue">—</strong><span id="signalTrend" class="pill green">Waiting</span></div>
+            <svg class="plant-scope" viewBox="0 0 600 150" preserveAspectRatio="none" role="img" aria-label="Recent plant energy over 24 seconds">
+              <path class="scope-grid" d="M0 37.5H600 M0 75H600 M0 112.5H600"></path>
+              <path id="plantTrace" class="scope-trace" d=""></path>
+            </svg>
+            <div class="signal-stats" aria-label="Plant signal summary">
+              <div><span>NOW</span><strong id="signalNow">—</strong></div>
+              <div><span>AVERAGE</span><strong id="signalAverage">—</strong></div>
+              <div><span>LOW</span><strong id="signalLow">—</strong></div>
+              <div><span>HIGH</span><strong id="signalHigh">—</strong></div>
+            </div>
+          </section>
+          <section class="live-midi" aria-labelledby="midiLeafTitle">
+            <div class="live-section-title"><span id="midiLeafTitle">MIDI NOTE GARDEN</span><span id="midiReadout" class="midi-readout">No notes</span></div>
+            <div id="midiLeaves" class="midi-leaves" role="radiogroup" aria-label="Root note selector and live MIDI activity"></div>
+            <div class="sensitivity-control">
+              <label for="sensitivity"><span>SENSITIVITY</span><output id="sensitivityOutput" for="sensitivity">—</output></label>
+              <input id="sensitivity" class="range" type="range" min="0" max="0.5" step="0.01" value="0.2" data-key="sens" data-source="state" disabled>
+              <div class="range-labels"><span>Calm</span><span>Responsive</span></div>
+            </div>
+          </section>
         </div>
       </section>
 
@@ -77,21 +93,6 @@
       </nav>
 
       <section id="controller" class="tab-page active">
-        <article class="panel signal-card" aria-labelledby="signalTitle">
-          <div class="card-title"><div><p class="eyebrow">LIVING SIGNAL</p><h2 id="signalTitle">Plant activity</h2></div><span id="signalTrend" class="pill green">Waiting</span></div>
-          <svg class="plant-scope" viewBox="0 0 600 150" preserveAspectRatio="none" role="img" aria-label="Recent plant energy over 24 seconds">
-            <path class="scope-grid" d="M0 37.5H600 M0 75H600 M0 112.5H600"></path>
-            <path id="plantTrace" class="scope-trace" d=""></path>
-          </svg>
-          <div class="signal-stats" aria-label="Plant signal summary">
-            <div><span>NOW</span><strong id="signalNow">—</strong></div>
-            <div><span>AVERAGE</span><strong id="signalAverage">—</strong></div>
-            <div><span>LOW</span><strong id="signalLow">—</strong></div>
-            <div><span>HIGH</span><strong id="signalHigh">—</strong></div>
-          </div>
-          <p class="instrument-caption">Normalized plant energy · recent 24 seconds</p>
-        </article>
-
         <div class="section-heading"><div><p class="eyebrow">ROUTING</p><h2>Audio output</h2></div><span id="auxReadiness" class="pill">Waiting for device</span></div>
         <div id="outputModes" class="output-grid" role="radiogroup" aria-label="Audio output mode"></div>
 
@@ -137,11 +138,6 @@
 
       <section id="performance" class="tab-page">
         <div class="section-heading"><div><p class="eyebrow">PLANT RESPONSE</p><h2>Performance</h2></div><button id="randomizeButton" class="text-button" type="button" disabled>Randomize</button></div>
-        <article class="panel midi-leaf-card" aria-labelledby="midiLeafTitle">
-          <div class="card-title"><div><p class="eyebrow">NOTE GARDEN</p><h2 id="midiLeafTitle">Choose the root note</h2></div><span id="midiReadout" class="pill">No notes</span></div>
-          <div id="midiLeaves" class="midi-leaves" role="radiogroup" aria-label="Root note selector and live MIDI activity"></div>
-          <p class="instrument-caption">Tap a leaf to choose the root. Filled leaves are currently being played; the outlined leaf is the selected root.</p>
-        </article>
         <div id="performanceControls" class="control-grid"></div>
       </section>
 
@@ -164,7 +160,7 @@
     </main>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
-    <footer><span>BECA phone control</span><span id="appVersion">v1.3.0</span></footer>
+    <footer><span>BECA phone control</span><span id="appVersion">v1.3.1</span></footer>
     <script type="module" src="./app.js"></script>
   </body>
 </html>
