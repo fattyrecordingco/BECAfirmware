@@ -51,6 +51,27 @@ test("connects, renders device state, and sends AUX control", async ({ page }) =
   await expect.poll(() => page.evaluate(() => globalThis.__MOCK_WRITES)).toContain("@C SET outputmode 2");
 });
 
+test("shows live plant data and the leaf MIDI root selector", async ({ page }) => {
+  await page.getByRole("button", { name: "Connect USB" }).click();
+  await expect(page.locator("#plantTrace")).not.toHaveAttribute("d", "");
+  await expect(page.locator("#signalNow")).toHaveText("42%");
+  await page.getByRole("button", { name: "Performance", exact: true }).click();
+  await expect(page.getByRole("radio", { name: "C root note" })).toHaveClass(/playing/);
+  await page.getByRole("radio", { name: "D root note" }).click();
+  await expect(page.getByRole("radio", { name: "D root note" })).toHaveAttribute("aria-checked", "true");
+  await expect.poll(() => page.evaluate(() => globalThis.__MOCK_WRITES)).toContain("@C SET root 2");
+});
+
+test("2D synth pad changes cutoff and resonance", async ({ page }) => {
+  await page.getByRole("button", { name: "Connect USB" }).click();
+  await page.getByRole("button", { name: "Synth", exact: true }).click();
+  const pad = page.locator("#expressionPad");
+  await pad.click({ position: { x: 220, y: 45 } });
+  await expect.poll(() => page.evaluate(() => globalThis.__MOCK_WRITES.some((line) => line.startsWith("@C SET cutoff ")))).toBe(true);
+  await expect.poll(() => page.evaluate(() => globalThis.__MOCK_WRITES.some((line) => line.startsWith("@C SET resonance ")))).toBe(true);
+  await expect(pad).toHaveAttribute("aria-disabled", "false");
+});
+
 test("all sections work at phone width without horizontal overflow", async ({ page }) => {
   await page.getByRole("button", { name: "Connect USB" }).click();
   for (const tab of ["Controller", "Synth", "Performance", "Console"]) {

@@ -1,8 +1,9 @@
 import { BecaSerial, formatValue } from "./protocol.js";
 import { WebUsbSerialProvider, shouldUseWebUsb } from "./webusb-serial.js";
 
-const APP_VERSION = "1.2.0";
+const APP_VERSION = "1.3.0";
 const NOTE_NAMES = ["C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B"];
+const LEAF_PATH = "M100 48.864C100 77.106 77.106 100 48.864 100H0V51.136C0 22.894 22.894 0 51.136 0H100v48.864ZM51.136 11.364c-21.965 0-39.772 17.807-39.772 39.772V81.17l42.005-42.005c2.219-2.219 5.817-2.219 8.036 0 2.219 2.219 2.219 5.817 0 8.036L19.967 88.636h28.897c21.965 0 39.772-17.807 39.772-39.772V11.364H51.136Z";
 const FALLBACK_PARAMS = {
   modes: ["Notes", "Arpeggiator", "Chords", "Drum Machine"],
   scales: ["Major", "Minor", "Dorian", "Lydian", "Mixolydian", "Pent Minor", "Pent Major", "Harm Minor", "Phrygian", "Whole Tone", "Maj7", "Min7", "Dom7", "Sus2", "Sus4"],
@@ -74,6 +75,12 @@ let synthPollTimer = null;
 let deferredInstall = null;
 let toastTimer = null;
 let consoleLines = 0;
+let plantSamples = [];
+let lastPlantSample = null;
+let plantRenderFrame = null;
+let padPointerId = null;
+let padSendTimer = null;
+let pendingPadValues = null;
 
 function showToast(message, type = "") {
   const toast = $("#toast");
@@ -156,9 +163,10 @@ function setConnectedUi(connected) {
     : isAndroid
       ? "Connect BECA with a USB-C OTG/data cable, then tap Connect USB and approve the device permission."
       : "Connect your device to BECA with a USB data cable.";
-  $$('button[data-requires-connection], button[data-command], .preset-button, input[data-key], select[data-key], #muteButton, #testButton, #refreshButton, #resetPreset, #randomizeButton, #commandInput, #commandForm button[type="submit"]').forEach((element) => {
+  $$('button[data-requires-connection], button[data-command], .preset-button, .midi-leaf, input[data-key], select[data-key], #muteButton, #testButton, #refreshButton, #resetPreset, #randomizeButton, #commandInput, #commandForm button[type="submit"]').forEach((element) => {
     element.disabled = !connected;
   });
+  $("#expressionPad").setAttribute("aria-disabled", String(!connected));
   renderOutputModes();
 }
 
@@ -293,7 +301,12 @@ function receive(parsed) {
       model.plant = { ...model.plant, ...parsed.payload };
       renderPlant();
     } else if (parsed.telemetryType === "midi") {
-      if (parsed.payload.on) updateLastNote(parsed.payload.note, parsed.payload.vel);
+      const note = Number(parsed.payload.note);
+      const notes = new Set(Array.isArray(model.notes.notes) ? model.notes.notes.map(Number) : []);
+      if (parsed.payload.on) { notes.add(note); updateLastNote(note, parsed.payload.vel); }
+      else notes.delete(note);
+      model.notes = { ...model.notes, notes: [...notes], last: parsed.payload.on ? note : model.notes.last, last_vel: parsed.payload.vel ?? model.notes.last_vel };
+      renderNotes();
     }
   } else if (parsed.type === "midi" && (parsed.status & 0xf0) === 0x90 && parsed.data2 > 0) {
     updateLastNote(parsed.data1, parsed.data2);
@@ -316,12 +329,16 @@ function renderPlant() {
   $("#energyRing").style.strokeDashoffset = String(427.26 * (1 - value));
   const connected = Number(model.plant.connected ?? model.state.plant_jack ?? 0) !== 0;
   $("#plantStatus").textContent = transport.connected ? (connected ? "Connected" : "Check plant") : "—";
+  if (transport.connected && Number.isFinite(value)) samplePlant(value);
 }
 
 function renderNotes() {
   const notes = Array.isArray(model.notes.notes) ? model.notes.notes : [];
   if (notes.length) updateLastNote(notes.at(-1), model.notes.last_vel ?? model.notes.vel);
   else if (model.notes.last) updateLastNote(model.notes.last, model.notes.last_vel);
+  const activePitchClasses = new Set(notes.map((note) => Number(note) % 12));
+  $$(".midi-leaf").forEach((leaf) => leaf.classList.toggle("playing", activePitchClasses.has(Number(leaf.dataset.note))));
+  $("#midiReadout").textContent = notes.length ? notes.slice(0, 4).map(noteLabel).join(" · ") : "No notes";
 }
 
 function renderState() {
@@ -339,6 +356,7 @@ function renderState() {
   renderOutputModes();
   renderPresetSelection();
   applyModelToControls("state", state);
+  renderMidiLeaves();
   renderModeRestrictions();
 }
 
@@ -350,6 +368,7 @@ function renderSynth() {
     $("#masterOutput").textContent = `${Math.round(master * 100)}%`;
   }
   applyModelToControls("synth", model.synth);
+  paintExpressionPad();
   renderPresetSelection();
 }
 
@@ -484,6 +503,135 @@ function scheduleSet(key, rawValue, transform, immediate = false) {
   else sendTimers.set(key, setTimeout(send, 80));
 }
 
+function samplePlant(value) {
+  const now = performance.now();
+  if (lastPlantSample && now - lastPlantSample.at < 300) return;
+  if (lastPlantSample && Math.abs(value - lastPlantSample.value) < 0.002 && now - lastPlantSample.at < 1000) return;
+  lastPlantSample = { value, at: now };
+  plantSamples.push(lastPlantSample);
+  plantSamples = plantSamples.filter((sample) => now - sample.at <= 24000).slice(-60);
+  if (plantRenderFrame == null) plantRenderFrame = requestAnimationFrame(renderPlantScope);
+}
+
+function renderPlantScope() {
+  plantRenderFrame = null;
+  if (!plantSamples.length) return;
+  const now = plantSamples.at(-1).at;
+  const path = plantSamples.map((sample, index) => {
+    const x = 600 - ((now - sample.at) / 24000) * 600;
+    const y = 142 - sample.value * 134;
+    return `${index ? "L" : "M"}${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(" ");
+  $("#plantTrace").setAttribute("d", path);
+  const values = plantSamples.map((sample) => sample.value);
+  const average = values.reduce((sum, item) => sum + item, 0) / values.length;
+  const latest = values.at(-1);
+  const previous = values[Math.max(0, values.length - 4)];
+  $("#signalNow").textContent = `${Math.round(latest * 100)}%`;
+  $("#signalAverage").textContent = `${Math.round(average * 100)}%`;
+  $("#signalLow").textContent = `${Math.round(Math.min(...values) * 100)}%`;
+  $("#signalHigh").textContent = `${Math.round(Math.max(...values) * 100)}%`;
+  $("#signalTrend").textContent = latest > previous + 0.02 ? "Rising" : latest < previous - 0.02 ? "Falling" : "Steady";
+}
+
+function renderMidiLeaves() {
+  const root = Number(model.state.root ?? 0);
+  $$(".midi-leaf").forEach((leaf) => {
+    const selected = Number(leaf.dataset.note) === root;
+    leaf.classList.toggle("root", selected);
+    leaf.setAttribute("aria-checked", String(selected));
+    leaf.disabled = !transport.connected;
+  });
+}
+
+function padValuesFromPoint(x, y) {
+  const safeX = Math.max(0, Math.min(1, x));
+  const safeY = Math.max(0, Math.min(1, y));
+  return { cutoff: Math.round(80 * Math.pow(150, safeX)), resonance: Number((0.3 + safeY * 5.7).toFixed(1)) };
+}
+
+function padPointFromValues(values) {
+  const cutoff = Math.max(80, Number(values.cutoff) || 80);
+  return [Math.max(0, Math.min(1, Math.log(cutoff / 80) / Math.log(150))), Math.max(0, Math.min(1, ((Number(values.resonance) || 0.3) - 0.3) / 5.7))];
+}
+
+function paintExpressionPad() {
+  const pad = $("#expressionPad");
+  const [x, y] = padPointFromValues(model.synth);
+  pad.style.setProperty("--pad-x", `${(x * 100).toFixed(2)}%`);
+  pad.style.setProperty("--pad-y", `${((1 - y) * 100).toFixed(2)}%`);
+  $("#expressionValues").textContent = transport.connected ? `${Math.round(Number(model.synth.cutoff) || 80)} Hz / ${Number(model.synth.resonance ?? 0.3).toFixed(1)}` : "Connect to shape sound";
+}
+
+function sendPadValues(values, immediate = false) {
+  pendingPadValues = values;
+  Object.assign(model.synth, values);
+  paintExpressionPad();
+  clearTimeout(padSendTimer);
+  const send = () => {
+    const next = pendingPadValues;
+    pendingPadValues = null;
+    padSendTimer = null;
+    if (!next) return;
+    transport.send(`SET cutoff ${next.cutoff}`).then(() => transport.send(`SET resonance ${next.resonance}`)).catch(handleError);
+  };
+  if (immediate) send();
+  else padSendTimer = setTimeout(send, 100);
+}
+
+function moveExpressionPad(clientX, clientY) {
+  const pad = $("#expressionPad");
+  const rect = pad.getBoundingClientRect();
+  sendPadValues(padValuesFromPoint((clientX - rect.left) / rect.width, 1 - (clientY - rect.top) / rect.height));
+}
+
+function initVisualControls() {
+  const leaves = NOTE_NAMES.map((name, note) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "midi-leaf";
+    button.dataset.note = String(note);
+    button.setAttribute("role", "radio");
+    button.setAttribute("aria-label", `${name} root note`);
+    button.innerHTML = `<svg viewBox="0 0 100 100" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="${LEAF_PATH}"></path></svg><span>${name}</span>`;
+    button.addEventListener("click", () => {
+      model.state.root = note;
+      renderMidiLeaves();
+      scheduleSet("root", note, null, true);
+    });
+    return button;
+  });
+  $("#midiLeaves").replaceChildren(...leaves);
+
+  const pad = $("#expressionPad");
+  pad.addEventListener("pointerdown", (event) => {
+    if (!transport.connected || event.button !== 0 || padPointerId != null) return;
+    event.preventDefault();
+    padPointerId = event.pointerId;
+    pad.setPointerCapture(event.pointerId);
+    pad.focus();
+    moveExpressionPad(event.clientX, event.clientY);
+  });
+  pad.addEventListener("pointermove", (event) => { if (event.pointerId === padPointerId) moveExpressionPad(event.clientX, event.clientY); });
+  const stop = (event) => {
+    if (event.pointerId !== padPointerId) return;
+    moveExpressionPad(event.clientX, event.clientY);
+    clearTimeout(padSendTimer);
+    sendPadValues(pendingPadValues ?? padValuesFromPoint(...padPointFromValues(model.synth)), true);
+    padPointerId = null;
+  };
+  pad.addEventListener("pointerup", stop);
+  pad.addEventListener("pointercancel", () => { padPointerId = null; });
+  pad.addEventListener("lostpointercapture", () => { padPointerId = null; });
+  pad.addEventListener("keydown", (event) => {
+    if (!transport.connected || !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return;
+    event.preventDefault();
+    const [x, y] = padPointFromValues(model.synth);
+    const step = event.shiftKey ? 0.01 : 0.04;
+    sendPadValues(padValuesFromPoint(x + (event.key === "ArrowRight" ? step : event.key === "ArrowLeft" ? -step : 0), y + (event.key === "ArrowUp" ? step : event.key === "ArrowDown" ? -step : 0)), true);
+  });
+}
+
 function initTabs() {
   $$(".tab").forEach((button) => button.addEventListener("click", () => {
     $$(".tab").forEach((tab) => tab.classList.toggle("active", tab === button));
@@ -583,6 +731,7 @@ initTabs();
 initActions();
 initInstall();
 initCompatibility();
+initVisualControls();
 renderAllControls();
 setConnectedUi(false);
 

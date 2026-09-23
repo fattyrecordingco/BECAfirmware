@@ -46,6 +46,10 @@ In Android Chrome, open the app and use **Install app** from the browser menu or
 - Live plant energy, connection state, AUX readiness, and note display.
 - Advanced serial console with bounded history and safe single-line commands.
 - Installable offline PWA with responsive phone and landscape layouts.
+- A live 24-second plant-energy graph with current, rolling average, low, high, and trend readouts.
+- A desktop-style 12-leaf MIDI display that highlights played pitch classes and doubles as an accessible root-note selector.
+- A touch and keyboard accessible 2D sound pad: horizontal movement shapes filter cutoff and vertical movement shapes resonance.
+- State-diff sampling keeps the graph to 60 bounded points; pad changes are paired and limited to 10 updates per second before serialized USB writes.
 
 ## Transport behavior
 
