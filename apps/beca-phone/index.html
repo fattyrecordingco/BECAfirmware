@@ -76,7 +76,7 @@
         <div class="usb-guide-copy">
           <p class="eyebrow">DIRECT USB</p>
           <h2 id="usbGuideTitle">Connect BECA</h2>
-          <p>Plug BECA directly into this phone, then tap <strong>Connect USB</strong>. Chrome should show a device picker first, followed by Android's access permission.</p>
+          <p>On Android or a supported desktop browser, connect BECA and tap <strong>Connect USB</strong>. On iPad/iPhone, browsers cannot access BECA’s USB serial adapter, even with a USB-C cable. Use the computer link below for live input.</p>
         </div>
         <div class="usb-checks" aria-label="USB connection diagnostics">
           <div><span>Browser</span><strong id="browserStatus">Checking…</strong></div>
@@ -128,6 +128,15 @@
       </nav>
 
       <section id="controller" class="tab-page active">
+        <article class="panel instrument-modes"><p class="eyebrow">INSTRUMENT</p><h2>How the plant plays</h2>
+          <div class="mode-buttons" role="group" aria-label="Instrument mode">
+            <button type="button" data-play-mode="0" aria-pressed="true">Notes</button>
+            <button type="button" data-play-mode="1" aria-pressed="false">Arpeggiator</button>
+            <button type="button" data-play-mode="2" aria-pressed="false">Chords</button>
+            <button type="button" data-play-mode="3" aria-pressed="false">Drums</button>
+          </div>
+          <p class="instrument-caption">Choose a mode, then Test sound. Connected mode changes also update BECA.</p>
+        </article>
         <div class="section-heading"><div><p class="eyebrow">ROUTING</p><h2>Audio output</h2></div><span id="auxReadiness" class="pill">Waiting for device</span></div>
         <div id="outputModes" class="output-grid" role="radiogroup" aria-label="Audio output mode"></div>
 
@@ -157,7 +166,9 @@
       <section id="synth" class="tab-page">
         <div class="section-heading"><div><p class="eyebrow">BECA ENGINE</p><h2>Sound design</h2></div><button id="resetPreset" class="text-button" type="button" disabled>Reset preset</button></div>
         <article class="panel expression-card" aria-labelledby="expressionTitle">
-          <div class="card-title"><div><p class="eyebrow">TOUCH THE SOUND</p><h2 id="expressionTitle">Tone / bite</h2></div><span class="pill green">2D</span></div>
+          <div class="card-title"><div><p class="eyebrow">TOUCH THE SOUND</p><h2 id="expressionTitle">Sound playground</h2></div><span class="pill green">2D</span></div>
+          <label class="playground-label" for="playgroundMode">Playground controls</label>
+          <select id="playgroundMode"><option value="tone">Tone / bite</option><option value="space">Delay / reverb</option><option value="envelope">Attack / release</option><option value="texture">Oscillator mix / detune</option></select>
           <div id="expressionPad" class="expression-pad" tabindex="0" role="group" aria-label="Cutoff and resonance trackpad" aria-describedby="expressionHelp" aria-disabled="true">
             <svg viewBox="0 0 400 220" preserveAspectRatio="none" aria-hidden="true"><path d="M100 0V220 M200 0V220 M300 0V220 M0 55H400 M0 110H400 M0 165H400"></path></svg>
             <span class="pad-y-label">soft → sharp</span>
@@ -165,15 +176,21 @@
             <span class="expression-crosshair" aria-hidden="true"></span>
             <span class="expression-point" aria-hidden="true"></span>
           </div>
-          <div class="expression-readout"><output id="expressionValues">Connect to shape sound</output><span>cutoff / resonance</span></div>
+          <div class="expression-readout"><output id="expressionValues">Connect to shape sound</output><span>X / Y</span></div>
           <p id="expressionHelp" class="instrument-caption">Drag to shape the synth. Connected settings also update BECA. Arrow keys move; Shift makes fine changes.</p>
         </article>
         <div id="synthControls" class="control-grid"></div>
+        <p class="instrument-caption">Drag knobs up or down. Use arrow keys for fine steps; Shift-drag for precision.</p>
       </section>
 
       <section id="performance" class="tab-page">
         <div class="section-heading"><div><p class="eyebrow">PLANT RESPONSE</p><h2>Performance</h2></div><button id="randomizeButton" class="text-button" type="button" disabled>Randomize</button></div>
         <div id="performanceControls" class="control-grid"></div>
+        <article class="panel arp-panel"><h2>Plant arpeggiator</h2>
+          <p class="instrument-caption">For sound on this phone or tablet. BECA provides tempo, swing and note gates; the plant’s energy selects a chord in your scale. Rising and falling signals move through its notes; sharper turns skip chord tones. AUX and external MIDI keep the firmware’s original pattern.</p>
+          <p id="arpReadout" role="status">Select Arpeggiator to explore the plant’s chord.</p>
+          <div id="arpControls" class="control-grid"></div>
+        </article>
         <article class="panel preset-card"><h2>Drum parts</h2><div id="drumParts" class="drum-parts"></div></article>
         <div class="section-heading"><div><p class="eyebrow">CONNECTED BECA</p><h2>Device settings</h2></div></div>
         <div id="deviceControls" class="control-grid"></div>
@@ -198,7 +215,7 @@
     </main>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
-    <footer><span>BECA phone control</span><span id="appVersion">v1.3.1</span></footer>
+    <footer><span>BECA phone control</span><span id="appVersion">v1.5.0</span></footer>
     <script type="module" src="./app.js"></script>
   </body>
 </html>

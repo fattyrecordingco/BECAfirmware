@@ -1,10 +1,20 @@
 # BECA Phone Control
 
-BECA Phone Control is an installable web instrument and controller for phones, tablets and desktops. Version 1.4 runs the original BECA C++ synthesizer locally through WebAssembly and AudioWorklet, including all 13 presets and eight drum voices. USB control uses the existing `@C` protocol at 115200 baud. The firmware's BLE-MIDI behavior is unchanged.
+BECA Phone Control is an installable web instrument and controller for phones, tablets and desktops. Version 1.5 uses BECA's C++ synthesizer through WebAssembly and AudioWorklet, including all 13 presets and eight drum voices, with higher-precision web delay and band-limited saw/square oscillators. USB control uses the existing `@C` protocol at 115200 baud. The firmware's BLE-MIDI behavior is unchanged.
+
+## Controller and plant arpeggiator (1.5)
+
+- **Instrument buttons:** Notes, Arpeggiator, Chords and Drums. Drum kit controls, part selection and channel-10 playback are available only in Drums; melodic notes are ignored in that mode. Switching modes clears the phone's voices and effect tails. Test sound previews the selected mode.
+- **Sound playground:** switch the touch surface between tone/bite, delay/reverb, attack/release and oscillator mix/detune. Numeric controls use knobs: drag vertically, Shift-drag for precision, or use keyboard arrows. Selectors retain native phone/tablet menus and screen-reader support.
+- **Plant arpeggiator:** live `@M` note-ons clock the phone's arpeggiator and original note-offs release the mapped pitches. Smoothed plant energy selects a scale degree and octave; a triad or seventh is built from that degree. Signal slope selects rising/falling order, with skips at turns or steep changes. Hysteresis reduces chord chatter. Choose Plant contour, Rising or Falling, chord size, one to three octaves (bounded by low/high octave settings), and signal response. The note monitor displays the notes actually played by the phone, and the arp readout lists its chord and contour.
+
+These arp changes affect **phone/tablet audio** without reflashing BECA. AUX and external MIDI retain the existing firmware pattern. BECA still supplies the clock, tempo, swing and gate; without live input, Test sound gives a short preview. No simulated plant data is drawn on the monitor. Arp-specific settings are local to the current page; other connected controls are sent to BECA.
+
+The web delay now stores floating-point samples instead of inheriting the firmware's 8-bit buffer, preserving quiet echoes and reducing quantization grit. Saw/square discontinuities are smoothed with PolyBLEP to reduce aliasing. This does not remove intentional oscillator harmonics, drive or resonant coloration. Regression checks verify quiet echoes and silence after release for every melodic preset. Both DSP changes are behind `BECA_WEB_AUDIO`; the ESP32 memory footprint and audio path remain unchanged.
 
 ## Listen on a phone or tablet
 
-Open the app over HTTPS (or localhost on a computer), tap **Listen on this device**, select a preset, and use **Test sound**. All synth controls work without hardware for previews; the plant graph stays empty until real data arrives. Performance, plant sensitivity and device controls require BECA. The layout supports phone and tablet portrait/landscape, and the manifest allows either orientation.
+Open the app over HTTPS (or localhost on a computer), tap **Listen on this device**, select a preset, and use **Test sound**. Synth controls, instrument mode, root/scale/octave and arp settings work without hardware for previews; the plant graph stays empty until real data arrives. Clock, plant sensitivity and device controls require BECA. The layout supports phone and tablet portrait/landscape, and the manifest allows either orientation.
 
 For live input on Android, connect USB and tap Listen. Listening selects **Serial MIDI** on BECA; **Serial MIDI + Aux** can also be selected when AUX is ready. The synth consumes live `@M` messages, including note-offs and channel-10 drums; it never synthesizes from the slower display snapshots or duplicates telemetry notes. Presets and parameters synchronize from BECA, and edits also update the connected board. Select the output route you want on BECA after stopping phone playback.
 
@@ -12,7 +22,7 @@ Audio follows the device's system output: built-in speaker, wired headphones or 
 
 ## iPad and browser-to-browser tablet link
 
-iPad/iPhone Safari and Chrome cannot directly access this board's USB serial bridge. Local synth previews work, but live plant input requires a connected computer in this web version. No direct iPad BLE-MIDI support is claimed.
+iPad/iPhone Safari and Chrome cannot directly access this board's USB serial bridge. A USB-C cable or installing the page to the Home Screen does not grant that browser capability. The app disables Connect USB and explains the supported route instead of asking for cable/OTG changes. See [Google's USB/Serial browser support notice](https://support.google.com/chrome/answer/12576972). Local synth previews work, but live plant input requires a connected computer in this web version. No direct iPad BLE-MIDI support is claimed; direct hardware access would require a separate native solution and hardware/protocol verification.
 
 1. Open the HTTPS app on the computer and tablet on the same local network. Connect BECA by USB in desktop Chrome/Edge.
 2. Expand **Link an iPad or tablet through a computer** on both devices.
@@ -37,7 +47,7 @@ npm run build
 npm run test:ui
 ```
 
-The build script also detects a workspace `.beca-cache/emsdk` installation. The engine requests 44.1 kHz audio, retains the original 16-bit rendering and eight-voice limit, and uses fixed WASM memory and 128-frame render blocks. The 48 kHz fallback is tested, but the fixed delay buffer has less maximum delay at that rate. There is no new enhanced engine or audio recording/export feature in this version. Reuse of the original DSP is not a claim of bit-identical analog speaker output.
+The build script also detects a workspace `.beca-cache/emsdk` installation. The engine requests 44.1 kHz audio, retains 16-bit output and the eight-voice limit, and uses fixed WASM memory and 128-frame render blocks. The 48 kHz fallback is tested, but the fixed delay buffer has less maximum delay at that rate. There is no audio recording/export feature in this version. Reuse of the original DSP is not a claim of bit-identical analog speaker output.
 
 Raw Sensor Sine uses the firmware's `raw` and `connected` plant fields, retaining the ADC-value-to-frequency mapping. Its phone update cadence is limited by serial plant telemetry; it is not sample-accurate to the onboard sensor loop. Test sound supplies 440 Hz temporarily for that preset.
 

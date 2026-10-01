@@ -7,6 +7,7 @@ uint32_t becaWebMillis = 0;
 static beca::SynthEngine engine;
 static uint64_t renderedFrames = 0;
 static uint32_t rate = 44100;
+static int playMode = 0;
 
 // Order matches PARAM_KEYS in audio-engine.js.
 #define PARAMS(X) \
@@ -24,6 +25,14 @@ EMSCRIPTEN_KEEPALIVE void init(int sampleRate) {
   renderedFrames = 0;
   becaWebMillis = 0;
   engine.start(0, 0, 0, rate, 128);
+  playMode = 0;
+  engine.setDrumsEnabled(false);
+}
+EMSCRIPTEN_KEEPALIVE void mode(int value) {
+  value = constrain(value, 0, 3);
+  if (value != playMode) { engine.allNotesOff(); engine.allDrumsOff(); }
+  playMode = value;
+  engine.setDrumsEnabled(playMode == 3);
 }
 EMSCRIPTEN_KEEPALIVE const int16_t* render(int frames) {
   frames = constrain(frames, 1, 128);
@@ -63,11 +72,12 @@ EMSCRIPTEN_KEEPALIVE void midi(int status, int note, int velocity) {
   if (command == 0xb0 && (note == 120 || note == 123)) {
     engine.allNotesOff(); engine.allDrumsOff();
   } else if ((status & 15) == 9) {
+    if (playMode != 3) return;
     const int notes[] = {36, 38, 42, 46, 45, 47, 51, 49};
     if (command == 0x90 && velocity) {
       for (int part = 0; part < 8; ++part) if (notes[part] == note) engine.drumHit(part, velocity);
     }
-  } else if (command == 0x90 && velocity) engine.noteOn(note, velocity);
+  } else if (command == 0x90 && velocity && playMode != 3) engine.noteOn(note, velocity);
   else if (command == 0x80 || (command == 0x90 && !velocity)) engine.noteOff(note);
 }
 EMSCRIPTEN_KEEPALIVE void sensor(int raw, int connected) {

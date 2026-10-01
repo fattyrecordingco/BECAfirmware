@@ -290,3 +290,25 @@ footer { display: flex; justify-content: space-between; width: min(1120px, calc(
   .listen-panel { flex-direction: row; }
   .listen-actions { display: grid; grid-template-columns: 1fr; }
 }
+/* Tactile controller controls retain native keyboard and screen-reader input. */
+.instrument-modes, .arp-panel { padding: 20px; margin-bottom: 20px; }
+.mode-buttons { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 16px 0; }
+.mode-buttons button { min-height: 52px; border: 1px solid var(--line); border-radius: 12px; background: #fff; color: var(--text); font-size: 12px; font-weight: 700; }
+.mode-buttons button[aria-pressed="true"] { background: var(--accent); color: #fff; border-color: var(--accent); }
+.control-card select, #playgroundMode { appearance: none; background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath d='m4 6 4 4 4-4' fill='none' stroke='%231c553e' stroke-width='2'/%3E%3C/svg%3E") no-repeat right 14px center; border: 1px solid var(--line); border-radius: 12px; padding: 12px 38px 12px 14px; color: var(--text); min-height: 48px; font-size: 14px; width: 100%; }
+.playground-label { display: block; font-size: 12px; margin: 16px 0 8px; }
+.knob-card { position: relative; min-height: 190px; --knob-angle: -135deg; }
+.knob-card label { flex-wrap: wrap; gap: 5px; }
+.knob-card .knob-face { display: block; width: 80px; height: 80px; margin: 20px auto 8px; border: 5px solid #dce6da; border-radius: 50%; background: #fff; box-shadow: 0 3px 0 #bfccbf, inset 0 0 0 1px var(--line); transform: rotate(var(--knob-angle)); pointer-events: none; }
+.knob-face::after { content: ''; position: absolute; width: 4px; height: 23px; left: calc(50% - 2px); top: 5px; border-radius: 3px; background: var(--accent); }
+.knob-card input.range { position: absolute; width: 88px; height: 88px; top: 50%; left: 50%; transform: translate(-50%, -40%); margin: 0; opacity: 0; touch-action: none; cursor: ns-resize; }
+.knob-card:focus-within .knob-face { outline: 2px solid var(--accent); outline-offset: 4px; }
+.knob-card:has(input:disabled) .knob-face { opacity: .4; }
+.knob-card .range-labels { max-width: 108px; margin: auto; }
+#arpReadout { font-size: 12px; line-height: 1.6; }
+@media (max-width: 760px) {
+  #synthControls, #performanceControls, #deviceControls, #arpControls { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .control-card { padding: 14px; }
+  .control-card label { font-size: 12px; }
+  .mode-buttons { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
