@@ -1,7 +1,7 @@
 {
-  "name": "BECA Phone Control",
+  "name": "BECA Plant Instrument",
   "short_name": "BECA",
-  "description": "Control the BECA onboard AUX synthesizer from an Android phone over USB-C serial.",
+  "description": "Play BECA’s original synth on your phone or tablet, with live plant and MIDI monitors.",
   "id": "./",
   "start_url": "./",
   "scope": "./",

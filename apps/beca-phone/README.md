@@ -1,6 +1,49 @@
 # BECA Phone Control
 
-BECA Phone Control is an installable extension of the desktop BECA Control experience for operating the onboard AUX synthesizer directly over a USB-C serial connection. It uses the firmware's existing `@C` protocol at 115200 baud and does not change BLE-MIDI behavior.
+BECA Phone Control is an installable web instrument and controller for phones, tablets and desktops. Version 1.4 runs the original BECA C++ synthesizer locally through WebAssembly and AudioWorklet, including all 13 presets and eight drum voices. USB control uses the existing `@C` protocol at 115200 baud. The firmware's BLE-MIDI behavior is unchanged.
+
+## Listen on a phone or tablet
+
+Open the app over HTTPS (or localhost on a computer), tap **Listen on this device**, select a preset, and use **Test sound**. All synth controls work without hardware for previews; the plant graph stays empty until real data arrives. Performance, plant sensitivity and device controls require BECA. The layout supports phone and tablet portrait/landscape, and the manifest allows either orientation.
+
+For live input on Android, connect USB and tap Listen. Listening selects **Serial MIDI** on BECA; **Serial MIDI + Aux** can also be selected when AUX is ready. The synth consumes live `@M` messages, including note-offs and channel-10 drums; it never synthesizes from the slower display snapshots or duplicates telemetry notes. Presets and parameters synchronize from BECA, and edits also update the connected board. Select the output route you want on BECA after stopping phone playback.
+
+Audio follows the device's system output: built-in speaker, wired headphones or a Bluetooth audio device. Bluetooth adds device-dependent delay. Audio must be enabled with a user tap. Background playback is not guaranteed by mobile browsers; hiding the page stops local audio; tap Listen when returning. If the OS suspends audio, tap Stop and then Listen after returning. **Silence all notes** clears voices and effect tails; unplugging USB or losing the tablet link stops local playback.
+
+## iPad and browser-to-browser tablet link
+
+iPad/iPhone Safari and Chrome cannot directly access this board's USB serial bridge. Local synth previews work, but live plant input requires a connected computer in this web version. No direct iPad BLE-MIDI support is claimed.
+
+1. Open the HTTPS app on the computer and tablet on the same local network. Connect BECA by USB in desktop Chrome/Edge.
+2. Expand **Link an iPad or tablet through a computer** on both devices.
+3. Create a computer code, copy it to the tablet's input, and choose **Join from tablet**.
+4. Copy the tablet's reply back into the computer's input and choose **Finish on computer**.
+5. Tap **Listen on this device** on the tablet. The graph, note monitor, presets and settings now receive live data through the computer.
+
+The encrypted WebRTC data channel carries control messages and events, not audio. Audio is synthesized on the tablet. Pairing is manual, supports one tablet, and uses local ICE candidates without a signaling server, STUN or TURN service. Keep the host page open and computer awake. Guest Wi-Fi, client isolation, browser privacy policies and firewall rules may prevent connection; same-network physical iPad validation is still required. Link codes grant control of BECA; share them only with the intended device. Close Link revokes the active session.
+
+While a tablet is linked, the host pauses its duplicate polling and the tablet supplies the normal heartbeat/state requests. Remote commands are allowlisted and limited to 24 requests per second, then passed through the existing serialized USB writer. Congestion closes the link instead of building an unbounded data-channel backlog. Loss of relay data for seven seconds disconnects the tablet. Do not operate both devices' controls continuously at once.
+
+## Shared sound engine and builds
+
+The audio build compiles the repository's `synth_engine.cpp`, `drum_engine.cpp` and `dsp_blocks.cpp`. `BECA_WEB_AUDIO` isolates the web adapter and single-threaded render entry point; ordinary Arduino builds still use I²S, FreeRTOS and watchdog-safe yielding. The firmware target and installed baseline remain Arduino ESP32 **2.0.14**. No BLE library changes are required.
+
+`beca-synth.wasm` is a checked-in deployment asset. `audio-build.json` fingerprints the sources and WASM binary; ordinary builds reject a stale artifact. Ordinary `npm run build` needs no Emscripten installation. When the shared sound source changes, install/activate **Emscripten 4.0.23**, set `EMSDK` (and `EMSDK_PYTHON` if needed), and run:
+
+```text
+npm run build:audio
+npm test
+npm run build
+npm run test:ui
+```
+
+The build script also detects a workspace `.beca-cache/emsdk` installation. The engine requests 44.1 kHz audio, retains the original 16-bit rendering and eight-voice limit, and uses fixed WASM memory and 128-frame render blocks. The 48 kHz fallback is tested, but the fixed delay buffer has less maximum delay at that rate. There is no new enhanced engine or audio recording/export feature in this version. Reuse of the original DSP is not a claim of bit-identical analog speaker output.
+
+Raw Sensor Sine uses the firmware's `raw` and `connected` plant fields, retaining the ADC-value-to-frequency mapping. Its phone update cadence is limited by serial plant telemetry; it is not sample-accurate to the onboard sensor loop. Test sound supplies 440 Hz temporarily for that preset.
+
+The plant graph retains at most 60 state-diff samples over 24 seconds. Parameters sent to the worklet are deduplicated. Sliders coalesce serial changes for 80 ms; the two-parameter expression pad sends at most four pairs per second plus the final release. No SSE endpoint or BLE stack is changed. New audio/link assets are included in the offline cache.
+
+Automated checks cover all presets, drum mapping, release, reset silence, raw sensor frequency/disconnection, actual browser AudioWorklet output, USB note playback, controls, offline reload, responsive layouts and a real two-browser WebRTC link. Chrome tests exercise audio and the tablet link. WebKit tests exercise layout and controls; Windows Playwright WebKit has no Web Audio implementation and fails offline navigation internally, so those two checks are explicitly skipped there. USB devices and real iPad/Bluetooth speaker behavior still require physical verification.
 
 ## Open the app
 
@@ -18,7 +61,7 @@ The GitHub Pages workflow publishes this folder as the site root. For local deve
 - BECA firmware with the serial control protocol used by this repository.
 - The published HTTPS app or a localhost development server.
 
-iPhone and iPad browsers do not expose BECA's USB serial bridge to web apps. The interface can load there, but direct USB connection is unavailable. Use an Android device for this version. Desktop Chromium browsers continue to use native Web Serial; Android uses the app's WebUSB drivers for every adapter recognized by the desktop app: CH340/CH341, CP210x, FTDI, and Espressif USB Serial/JTAG.
+iPhone and iPad browsers do not expose BECA's USB serial bridge to web apps. Use local previews or the tablet link described above. Desktop Chromium browsers use native Web Serial; Android uses the app's WebUSB drivers for CH340/CH341, CP210x, FTDI, and Espressif USB Serial/JTAG.
 
 ## Connect and use AUX
 
@@ -49,7 +92,7 @@ In Android Chrome, open the app and use **Install app** from the browser menu or
 - A live 24-second plant-energy graph with current, rolling average, low, high, and trend readouts.
 - A desktop-style 12-leaf MIDI display that highlights played pitch classes and doubles as an accessible root-note selector.
 - A touch and keyboard accessible 2D sound pad: horizontal movement shapes filter cutoff and vertical movement shapes resonance.
-- State-diff sampling keeps the graph to 60 bounded points; pad changes are paired and limited to 10 updates per second before serialized USB writes.
+- State-diff sampling keeps the graph to 60 bounded points; pad changes are paired and limited to four updates per second plus the final release before serialized USB writes.
 - The fixed-size live deck replaces the introductory banner and remains visible across Controller, Synth, Performance, and Console. Dynamic MIDI labels are clipped within reserved space so note activity cannot move the controls or cause page jitter.
 
 ## Transport behavior
@@ -82,7 +125,7 @@ The app uses `@C SET <key> <value>` for controls. It requests `TELEMETRY 0` duri
 
 **AUX is disabled:** wait for the startup countdown. If the firmware returns `aux not ready`, refresh state and retry after the displayed time.
 
-**No sound:** select Aux or Serial + Aux, make sure mute is off, connect the AUX cable, start at a low master level, and press **Test sound**. The test requires AUX mode and an active audio engine.
+**No sound on the phone/tablet:** tap **Listen on this device**, check the device's media volume/output and BECA's mute state, then press **Test sound**. For live notes, select Serial MIDI or Serial MIDI + Aux. Test sound now plays locally, including without BECA. For an onboard AUX test, select AUX and send `SYNTH_TEST` from the connected console.
 
 **Plant activity is absent:** open Console and run `PINS` and `PLANT`. Check electrode and jack connections. Plant jack detection may be disabled in some firmware builds, so raw readings are the useful diagnostic.
 

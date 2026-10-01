@@ -1,0 +1,5 @@
+{
+  "compiler": "Emscripten 4.0.23",
+  "sourceSha256": "4b7ab5431402ab4d463e2fdff7a85909e1fe0a743e39d62aaa23251bd72f63b4",
+  "wasmSha256": "8d2bfa16765f4c28f0e1a0d68aefb2ac51d8f3622458f1ff838ed811443d36cc"
+}

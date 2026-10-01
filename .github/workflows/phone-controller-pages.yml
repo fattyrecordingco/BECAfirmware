@@ -36,6 +36,8 @@ jobs:
           cache-dependency-path: apps/beca-phone/package-lock.json
       - name: Install dependencies
         run: npm ci
+      - name: Install browser test runtimes
+        run: npx playwright install --with-deps chrome webkit
       - name: Run protocol and PWA checks
         run: npm test
       - name: Run browser controller checks

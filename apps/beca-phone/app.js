@@ -1,7 +1,10 @@
 import { BecaSerial, formatValue } from "./protocol.js";
 import { WebUsbSerialProvider, shouldUseWebUsb } from "./webusb-serial.js";
+import { PhoneAudio } from "./phone-audio.js";
+import { BecaConnection } from "./tablet-link.js";
 
-const APP_VERSION = "1.3.1";
+const APP_VERSION = "1.4.0";
+const phoneAudio = new PhoneAudio();
 const NOTE_NAMES = ["C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B"];
 const LEAF_PATH = "M100 48.864C100 77.106 77.106 100 48.864 100H0V51.136C0 22.894 22.894 0 51.136 0H100v48.864ZM51.136 11.364c-21.965 0-39.772 17.807-39.772 39.772V81.17l42.005-42.005c2.219-2.219 5.817-2.219 8.036 0 2.219 2.219 2.219 5.817 0 8.036L19.967 88.636h28.897c21.965 0 39.772-17.807 39.772-39.772V11.364H51.136Z";
 const FALLBACK_PARAMS = {
@@ -19,11 +22,11 @@ const FALLBACK_PARAMS = {
 };
 
 const SYNTH_CONTROLS = [
-  { key: "wave_a", label: "Oscillator A", type: "select", options: ["Sine", "Triangle", "Saw", "Square"] },
-  { key: "wave_b", label: "Oscillator B", type: "select", options: ["Sine", "Triangle", "Saw", "Square"] },
+  { key: "wave_a", label: "Oscillator A", type: "select", options: ["Saw", "Square", "Triangle", "Sine"] },
+  { key: "wave_b", label: "Oscillator B", type: "select", options: ["Saw", "Square", "Triangle", "Sine"] },
   { key: "osc_mix", label: "Oscillator mix", min: 0, max: 1, step: 0.01, unit: "%", scale: 100 },
   { key: "mono", label: "Monophonic", type: "toggle" },
-  { key: "voices", label: "Polyphony", min: 1, max: 12, step: 1 },
+  { key: "voices", label: "Polyphony", min: 1, max: 8, step: 1 },
   { key: "attack", label: "Attack", step: 0.01, unit: " s" },
   { key: "decay", label: "Decay", step: 0.01, unit: " s" },
   { key: "sustain", label: "Sustain", step: 0.01, unit: "%", scale: 100 },
@@ -48,12 +51,22 @@ const PERFORMANCE_CONTROLS = [
   { key: "clock", label: "Plant clock", type: "toggle", source: "state" },
   { key: "bpm", label: "Tempo", step: 1, unit: " BPM", source: "state" },
   { key: "swing", label: "Swing", step: 1, unit: "%", source: "state" },
-  { key: "lo", label: "Low octave", step: 1, source: "state" },
-  { key: "hi", label: "High octave", step: 1, source: "state" },
+  { key: "lo", label: "Low octave", min: 1, max: 8, step: 1, source: "state" },
+  { key: "hi", label: "High octave", min: 1, max: 8, step: 1, source: "state" },
   { key: "rest", label: "Rest chance", step: 0.01, unit: "%", scale: 100, source: "state" },
   { key: "nr", label: "Avoid repeats", type: "toggle", source: "state" },
   { key: "ts", label: "Time signature", type: "select", optionKey: "time_signatures", source: "state", transformOut: (value) => value.replace("/", "-") },
   { key: "note_length", label: "Note length", type: "select", optionKey: "note_lengths", source: "state", valueKey: "note_length_idx" }
+];
+const DEVICE_CONTROLS = [
+  { key: "sync", valueKey: "daw_sync", label: "DAW clock sync", type: "toggle" },
+  { key: "bright", label: "LED brightness", min: 10, max: 255, step: 1 },
+  { key: "fx", label: "LED effect", type: "select", optionKey: "led_effects" },
+  { key: "pal", label: "LED palette", type: "select", optionKey: "led_palettes" },
+  { key: "vs", label: "LED speed", min: 0, max: 255, step: 1 },
+  { key: "vi", label: "LED intensity", min: 0, max: 255, step: 1 },
+  { key: "encoder_setting", label: "Encoder controls", type: "select", options: ["Sensitivity", "Preset", "Scale", "Root", "Tempo", "Swing", "Rest", "Low octave", "High octave", "Time signature", "Note length", "Filter", "Resonance"] },
+  { key: "encoder_volume_mode", label: "Encoder volume mode", type: "toggle" }
 ];
 const SENSITIVITY_CONTROL = { key: "sens", label: "Sensitivity", step: 0.01, source: "state" };
 
@@ -62,7 +75,7 @@ const $$ = (selector) => [...document.querySelectorAll(selector)];
 const isAndroid = shouldUseWebUsb();
 const webUsbProvider = navigator.usb?.requestDevice ? new WebUsbSerialProvider(navigator.usb) : null;
 const serialProvider = globalThis.__BECA_SERIAL__ ?? (isAndroid ? webUsbProvider ?? navigator.serial : navigator.serial ?? webUsbProvider);
-const transport = new BecaSerial(serialProvider);
+const transport = new BecaConnection(new BecaSerial(serialProvider));
 const transportName = serialProvider?.transportName ?? (serialProvider === navigator.serial ? "Web Serial" : "Android USB");
 const model = { params: structuredClone(FALLBACK_PARAMS), state: {}, synth: {}, plant: {}, notes: {} };
 const interaction = new Set();
@@ -81,6 +94,7 @@ let plantRenderFrame = null;
 let padPointerId = null;
 let padSendTimer = null;
 let pendingPadValues = null;
+let wasMuted = false;
 
 function showToast(message, type = "") {
   const toast = $("#toast");
@@ -155,6 +169,7 @@ function logLine(message, kind = "in") {
 }
 
 function setConnectedUi(connected) {
+  $("#connectButton").disabled = !connected && !transport.supported;
   $("#connectButton").classList.toggle("connected", connected);
   $("#connectButton span:last-child").textContent = connected ? "Disconnect" : "Connect USB";
   $("#deviceStatus").textContent = connected ? (verified ? "BECA connected" : "Checking device…") : "Not connected";
@@ -167,7 +182,53 @@ function setConnectedUi(connected) {
     element.disabled = !connected;
   });
   $("#expressionPad").setAttribute("aria-disabled", String(!connected));
+  enableLocalControls();
   renderOutputModes();
+}
+
+function enableLocalControls() {
+  if (!phoneAudio.presets) return;
+  $$('[data-source="synth"], .preset-button, #resetPreset, #testButton').forEach((element) => { element.disabled = false; });
+  $("#expressionPad").setAttribute("aria-disabled", "false");
+  if (!globalThis.AudioContext || !globalThis.AudioWorkletNode || !window.isSecureContext) $("#testButton").disabled = true;
+}
+
+function updateAudioStatus() {
+  if (!globalThis.AudioContext || !globalThis.AudioWorkletNode || !window.isSecureContext) {
+    $("#listenButton").disabled = true;
+    $("#audioStatus").textContent = "Live audio is not supported here. Use a current browser on HTTPS or localhost.";
+    return;
+  }
+  const active = phoneAudio.enabled;
+  $("#listenButton").textContent = active ? "Stop listening" : "Listen on this device";
+  $("#listenButton").setAttribute("aria-pressed", String(active));
+  $("#audioStatus").textContent = active
+    ? phoneAudio.context?.state !== "running" ? "Audio paused by browser — tap Stop, then Listen to resume."
+      : transport.connected ? "Live synth · select Serial MIDI or Serial MIDI + Aux for notes" : "Preview ready · connect BECA for live plant input"
+    : "Sound is off. Tap Listen to enable this device’s audio.";
+}
+
+async function startPhoneAudio() {
+  await phoneAudio.start(model.synth);
+  if (transport.connected) scheduleSet("outputmode", 1, null, true);
+  updateAudioStatus();
+}
+
+function applyLocalSetting(key, value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return;
+  if (["preset", "preset_live", "preset_reset"].includes(key)) {
+    const index = key === "preset_reset" ? Number(model.synth.preset) : numeric;
+    const preset = phoneAudio.presets?.[index];
+    if (preset) {
+      const master = model.synth.master;
+      model.synth = { ...preset, ...(key === "preset_live" && master != null ? { master } : {}) };
+      phoneAudio.panic();
+    }
+  } else if (key === "master" || SYNTH_CONTROLS.some((control) => control.key === key)) model.synth[key] = numeric;
+  else if (key === "mute") { if (numeric) phoneAudio.panic(); }
+  phoneAudio.setParams(model.synth);
+  renderSynth();
 }
 
 function waitForReply(tag, timeoutMs = 3500) {
@@ -198,7 +259,9 @@ async function verifyDevice() {
   await Promise.all([request("PARAMS"), request("STATE"), request("SYNTH"), request("PLANT"), request("NOTES")]);
   startPolling();
   setNotice();
-  showToast("BECA connected over USB-C.");
+  showToast(transport.remote ? "BECA linked through computer." : "BECA connected over USB-C.");
+  if (phoneAudio.enabled) scheduleSet("outputmode", 1, null, true);
+  updateAudioStatus();
 }
 
 function startPolling() {
@@ -245,6 +308,7 @@ async function toggleConnection() {
     await verifyDevice();
   } catch (error) {
     const friendlyError = connectionError(error);
+    $("#connectionHelp").open = true;
     setUsbCheck("#permissionStatus", error?.name === "NotFoundError" ? "No device selected" : "Connection failed", "error");
     setUsbCheck("#adapterStatus", "Check cable / OTG mode", "error");
     $("#usbDiagnostic").textContent = friendlyError.message;
@@ -284,6 +348,7 @@ function receive(parsed) {
       renderState();
     } else if (parsed.tag === "SYNTH" && parsed.payload) {
       model.synth = parsed.payload;
+      phoneAudio.setParams(model.synth);
       renderSynth();
     } else if (parsed.tag === "PLANT" && parsed.payload) {
       model.plant = parsed.payload;
@@ -308,8 +373,9 @@ function receive(parsed) {
       model.notes = { ...model.notes, notes: [...notes], last: parsed.payload.on ? note : model.notes.last, last_vel: parsed.payload.vel ?? model.notes.last_vel };
       renderNotes();
     }
-  } else if (parsed.type === "midi" && (parsed.status & 0xf0) === 0x90 && parsed.data2 > 0) {
-    updateLastNote(parsed.data1, parsed.data2);
+  } else if (parsed.type === "midi") {
+    if (!model.state.io_muted) phoneAudio.midi([parsed.status, parsed.data1, parsed.data2]);
+    if ((parsed.status & 0xf0) === 0x90 && parsed.data2 > 0) updateLastNote(parsed.data1, parsed.data2);
   }
 }
 
@@ -324,6 +390,7 @@ function updateLastNote(note, velocity) {
 }
 
 function renderPlant() {
+  phoneAudio.sensor(model.plant.raw, Number(model.plant.connected) !== 0 && !model.state.io_muted && !model.plant.plant_auto_mute);
   const value = Math.max(0, Math.min(1, Number(model.plant.value ?? 0)));
   $("#plantValue").textContent = transport.connected ? value.toFixed(2) : "—";
   const connected = Number(model.plant.connected ?? model.state.plant_jack ?? 0) !== 0;
@@ -342,6 +409,8 @@ function renderNotes() {
 
 function renderState() {
   const state = model.state;
+  if (state.io_muted && !wasMuted) phoneAudio.panic();
+  wasMuted = Boolean(state.io_muted);
   $("#outputStatus").textContent = state.outputname ?? model.params.output_modes?.[state.outputmode] ?? "—";
   $("#auxReadiness").textContent = !transport.connected
     ? "Waiting for device"
@@ -361,6 +430,10 @@ function renderState() {
   }
   renderMidiLeaves();
   renderModeRestrictions();
+  $$("[data-drum-part]").forEach((input) => {
+    input.disabled = !transport.connected;
+    input.checked = (Number(state.drumsel ?? 255) & (1 << Number(input.dataset.drumPart))) !== 0;
+  });
 }
 
 function renderSynth() {
@@ -424,10 +497,12 @@ function renderControlGroup(containerId, definitions, source) {
 function renderAllControls() {
   renderControlGroup("#synthControls", SYNTH_CONTROLS, "synth");
   renderControlGroup("#performanceControls", PERFORMANCE_CONTROLS, "state");
+  renderControlGroup("#deviceControls", DEVICE_CONTROLS, "state");
   renderOutputModes();
   renderPresets();
   renderState();
   renderSynth();
+  enableLocalControls();
 }
 
 function applyModelToControls(source, values) {
@@ -438,7 +513,7 @@ function applyModelToControls(source, values) {
     if (value === undefined || value === null) return;
     if (input.type === "checkbox") input.checked = Boolean(Number(value));
     else input.value = String(value);
-    const def = [...SYNTH_CONTROLS, ...PERFORMANCE_CONTROLS, SENSITIVITY_CONTROL].find((item) => item.key === key);
+    const def = [...SYNTH_CONTROLS, ...PERFORMANCE_CONTROLS, ...DEVICE_CONTROLS, SENSITIVITY_CONTROL].find((item) => item.key === key);
     const output = input.closest(".control-card")?.querySelector("output");
     if (def && output) output.textContent = displayControlValue(def, value);
   });
@@ -490,14 +565,16 @@ function renderModeRestrictions() {
   if (drumMode) drumMode.disabled = auxOnly;
   const drumKit = $("#control-drumkit");
   if (drumKit) {
-    drumKit.disabled = !transport.connected || auxOnly;
+    drumKit.disabled = !phoneAudio.presets && (!transport.connected || auxOnly);
     drumKit.title = auxOnly ? "The firmware does not run drums through AUX-only mode." : "";
   }
 }
 
 function scheduleSet(key, rawValue, transform, immediate = false) {
   const value = transform ? transform(String(rawValue)) : rawValue;
+  applyLocalSetting(key, value);
   clearTimeout(sendTimers.get(key));
+  if (!transport.connected) return;
   const send = () => {
     sendTimers.delete(key);
     transport.send(`SET ${key} ${value}`).catch(handleError);
@@ -563,23 +640,25 @@ function paintExpressionPad() {
   const [x, y] = padPointFromValues(model.synth);
   pad.style.setProperty("--pad-x", `${(x * 100).toFixed(2)}%`);
   pad.style.setProperty("--pad-y", `${((1 - y) * 100).toFixed(2)}%`);
-  $("#expressionValues").textContent = transport.connected ? `${Math.round(Number(model.synth.cutoff) || 80)} Hz / ${Number(model.synth.resonance ?? 0.3).toFixed(1)}` : "Connect to shape sound";
+  $("#expressionValues").textContent = transport.connected || phoneAudio.presets ? `${Math.round(Number(model.synth.cutoff) || 80)} Hz / ${Number(model.synth.resonance ?? 0.3).toFixed(1)}` : "Loading sound engine…";
 }
 
 function sendPadValues(values, immediate = false) {
   pendingPadValues = values;
   Object.assign(model.synth, values);
+  applyModelToControls("synth", model.synth);
   paintExpressionPad();
-  clearTimeout(padSendTimer);
   const send = () => {
     const next = pendingPadValues;
     pendingPadValues = null;
     padSendTimer = null;
     if (!next) return;
+    phoneAudio.setParams(model.synth);
+    if (!transport.connected) return;
     transport.send(`SET cutoff ${next.cutoff}`).then(() => transport.send(`SET resonance ${next.resonance}`)).catch(handleError);
   };
-  if (immediate) send();
-  else padSendTimer = setTimeout(send, 100);
+  if (immediate) { clearTimeout(padSendTimer); send(); }
+  else if (padSendTimer == null) padSendTimer = setTimeout(send, 250);
 }
 
 function moveExpressionPad(clientX, clientY) {
@@ -608,7 +687,7 @@ function initVisualControls() {
 
   const pad = $("#expressionPad");
   pad.addEventListener("pointerdown", (event) => {
-    if (!transport.connected || event.button !== 0 || padPointerId != null) return;
+    if ((!transport.connected && !phoneAudio.presets) || event.button !== 0 || padPointerId != null) return;
     event.preventDefault();
     padPointerId = event.pointerId;
     pad.setPointerCapture(event.pointerId);
@@ -627,7 +706,7 @@ function initVisualControls() {
   pad.addEventListener("pointercancel", () => { padPointerId = null; });
   pad.addEventListener("lostpointercapture", () => { padPointerId = null; });
   pad.addEventListener("keydown", (event) => {
-    if (!transport.connected || !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return;
+    if ((!transport.connected && !phoneAudio.presets) || !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return;
     event.preventDefault();
     const [x, y] = padPointFromValues(model.synth);
     const step = event.shiftKey ? 0.01 : 0.04;
@@ -647,10 +726,33 @@ function initTabs() {
 }
 
 function initActions() {
+  $("#drumParts").replaceChildren(...["Kick", "Snare", "Closed hat", "Open hat", "Low tom", "High tom", "Ride", "Crash"].map((name, part) => {
+    const label = document.createElement("label");
+    label.innerHTML = `<input type="checkbox" data-drum-part="${part}" disabled> ${name}`;
+    label.querySelector("input").addEventListener("change", () => {
+      const mask = $$("[data-drum-part]").reduce((value, input) => value | (input.checked ? 1 << Number(input.dataset.drumPart) : 0), 0);
+      model.state.drumsel = mask;
+      scheduleSet("drumsel", mask, null, true);
+    });
+    return label;
+  }));
+  $("#listenButton").addEventListener("click", async () => {
+    const button = $("#listenButton");
+    button.disabled = true;
+    try { if (phoneAudio.enabled) phoneAudio.stop(); else await startPhoneAudio(); }
+    catch (error) { phoneAudio.stop(); handleError(error); }
+    finally { button.disabled = false; }
+  });
+  $("#panicButton").addEventListener("click", () => phoneAudio.panic());
+  phoneAudio.addEventListener("statechange", updateAudioStatus);
+  phoneAudio.addEventListener("engineerror", () => handleError(new Error("Audio engine stopped. Reload to restart.")));
   $("#connectButton").addEventListener("click", () => toggleConnection().catch(handleError));
   $("#refreshButton").addEventListener("click", () => Promise.all([request("PARAMS"), request("STATE"), request("SYNTH"), request("PLANT"), request("NOTES")]).then(() => showToast("Device state refreshed.")).catch(handleError));
   $("#muteButton").addEventListener("click", () => scheduleSet("mute", model.state.io_muted ? 0 : 1, null, true));
-  $("#testButton").addEventListener("click", () => transport.send("SYNTH_TEST").catch(handleError));
+  $("#testButton").addEventListener("click", async () => {
+    try { if (!phoneAudio.enabled) await startPhoneAudio(); phoneAudio.test(); }
+    catch (error) { handleError(error); }
+  });
   $("#resetPreset").addEventListener("click", () => scheduleSet("preset_reset", 1, null, true));
   $("#randomizeButton").addEventListener("click", () => transport.send("RANDOMIZE").catch(handleError));
   $("#master").addEventListener("pointerdown", () => interaction.add("master"));
@@ -698,7 +800,7 @@ function initInstall() {
 
 function initCompatibility() {
   if (!transport.supported) {
-    setNotice("This browser cannot request USB devices. Open the HTTPS app directly in current Chrome or Edge—not an embedded browser inside another app. iPhone and iPad browsers cannot access BECA's USB serial bridge.");
+    setNotice("Sound previews work here. For live BECA input on iPad/iPhone, open ‘Link an iPad or tablet through a computer’ below. Direct USB requires Chrome/Edge on Android or a supported desktop browser.");
     $("#connectButton").disabled = true;
   } else if (!window.isSecureContext) {
     setNotice("USB access requires HTTPS. Open the published GitHub Pages app, or use localhost for development.", "error");
@@ -716,21 +818,75 @@ transport.addEventListener("connect", () => {
   setUsbCheck("#permissionStatus", "Permission granted", "ok");
   setUsbCheck("#adapterStatus", selectedAdapterLabel(), "ok");
 });
+transport.addEventListener("remoteconnect", () => {
+  $("#connectButton").disabled = false;
+  verifyDevice().then(() => {
+    $("#connectionMessage").textContent = "Live plant input and controls are linked through your computer.";
+    showToast("BECA linked through computer.");
+  }).catch(handleError);
+});
+transport.addEventListener("linkstate", () => {
+  if (!transport.remote && transport.usb.connected) {
+    if (transport.channel?.readyState === "open") stopPolling();
+    else startPolling();
+  }
+  $("#linkStatus").textContent = transport.channel?.readyState === "open"
+    ? "Linked. Keep the computer page open and awake. Tap Listen on the device you want to hear."
+    : "Not linked. Use the three steps above on the same local network.";
+});
+for (const [id, action] of [
+  ["linkOffer", () => transport.offer()],
+  ["linkAnswer", () => transport.answer($("#linkInput").value)],
+  ["linkFinish", () => transport.finish($("#linkInput").value)]
+]) {
+  $(`#${id}`).addEventListener("click", async () => {
+    const button = $(`#${id}`);
+    button.disabled = true;
+    $("#linkStatus").textContent = "Preparing local connection…";
+    try {
+      const code = await action();
+      if (code) $("#linkOutput").value = code;
+      $("#linkStatus").textContent = code ? "Code ready. Copy it to the other device and continue the steps above." : "Connecting… If this does not connect, check both devices are on the same non-isolated network.";
+    } catch (error) { $("#linkStatus").textContent = error.message; }
+    finally { button.disabled = false; }
+  });
+}
+$("#linkClose").addEventListener("click", () => transport.closeLink());
+$("#linkCopy").addEventListener("click", async () => {
+  try { await navigator.clipboard.writeText($("#linkOutput").value); showToast("Link code copied."); }
+  catch { $("#linkOutput").select(); showToast("Select and copy the code manually."); }
+});
 transport.addEventListener("sent", (event) => logLine(event.detail, "out"));
 transport.addEventListener("line", (event) => receive(event.detail));
 transport.addEventListener("transporterror", (event) => handleError(event.detail));
 transport.addEventListener("disconnect", () => {
+  phoneAudio.stop();
+  sendTimers.forEach(clearTimeout);
+  sendTimers.clear();
+  clearTimeout(padSendTimer);
+  padSendTimer = null;
+  pendingPadValues = null;
+  model.notes = {};
+  model.plant = {};
+  plantSamples = [];
+  lastPlantSample = null;
+  $("#plantTrace").setAttribute("d", "");
+  for (const id of ["signalNow", "signalAverage", "signalLow", "signalHigh"]) $(`#${id}`).textContent = "—";
+  $("#signalTrend").textContent = "Waiting";
   verified = false;
   stopPolling();
   setConnectedUi(false);
   logLine("Serial connection closed.", "system");
   refreshUsbDiagnostics();
+  renderNotes();
+  renderPlant();
 });
 
 navigator.usb?.addEventListener?.("connect", () => refreshUsbDiagnostics());
 navigator.usb?.addEventListener?.("disconnect", () => refreshUsbDiagnostics());
 
 document.addEventListener("visibilitychange", () => {
+  if (document.hidden) phoneAudio.stop();
   if (!document.hidden && transport.connected) {
     transport.send("PING").then(() => transport.send("STATE")).catch(handleError);
   }
@@ -745,6 +901,14 @@ initCompatibility();
 initVisualControls();
 renderAllControls();
 setConnectedUi(false);
+phoneAudio.load().then((presets) => {
+  if (!transport.connected) {
+    model.params.synth_presets = presets.map((preset) => preset.preset_name);
+    model.synth = { ...presets[0] };
+  }
+  renderAllControls();
+  updateAudioStatus();
+}).catch((error) => { $("#audioStatus").textContent = error.message; handleError(error); });
 
 if ("serviceWorker" in navigator && location.protocol !== "file:") {
   const hadServiceWorkerController = Boolean(navigator.serviceWorker.controller);

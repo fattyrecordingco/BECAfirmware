@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Arduino.h>
+#include "synth_platform.h"
 #include <math.h>
 
 namespace beca {

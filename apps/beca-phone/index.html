@@ -4,10 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="theme-color" content="#f6f4ef">
-    <meta name="description" content="Phone controller for BECA plant instruments over USB-C serial.">
+    <meta name="description" content="BECA plant instrument with an onboard web synth, live plant graph, MIDI monitor and sound design for phones and tablets.">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
-    <title>BECA Phone Control</title>
+    <title>BECA · Plant instrument</title>
     <link rel="manifest" href="./manifest.webmanifest">
     <link rel="icon" href="./icons/icon.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="./icons/icon-192.png">
@@ -30,22 +30,15 @@
 
     <main>
       <section id="compatibilityNotice" class="notice warning hidden" role="status"></section>
-      <section class="usb-guide panel" aria-labelledby="usbGuideTitle">
-        <div class="usb-guide-copy">
-          <p class="eyebrow">DIRECT USB</p>
-          <h2 id="usbGuideTitle">Connect BECA</h2>
-          <p>Plug BECA directly into this phone, then tap <strong>Connect USB</strong>. Chrome should show a device picker first, followed by Android's access permission.</p>
+      <section class="listen-panel panel" aria-labelledby="listenTitle">
+        <div><p class="eyebrow">BECA SOUND ENGINE</p><h2 id="listenTitle">Your device. Your sound.</h2>
+          <p id="audioStatus" role="status">Loading the original BECA synth…</p>
+          <p class="instrument-caption">Use this device’s speaker or choose headphones / Bluetooth in system audio settings. Bluetooth may add delay.</p>
         </div>
-        <div class="usb-checks" aria-label="USB connection diagnostics">
-          <div><span>Browser</span><strong id="browserStatus">Checking…</strong></div>
-          <div><span>Secure app</span><strong id="secureStatus">Checking…</strong></div>
-          <div><span>USB permission</span><strong id="permissionStatus">Not requested</strong></div>
-          <div><span>Adapter</span><strong id="adapterStatus">Waiting for selection</strong></div>
+        <div class="listen-actions">
+          <button id="listenButton" class="connect-button" type="button" aria-pressed="false">Listen on this device</button>
+          <button id="panicButton" class="text-button" type="button">Silence all notes</button>
         </div>
-        <details class="usb-details">
-          <summary>Connection help</summary>
-          <p id="usbDiagnostic">Use current Chrome or Edge, unlock the phone, connect without a USB hub, and make sure USB/OTG host mode is enabled in Android settings if your phone provides that option.</p>
-        </details>
       </section>
       <section id="liveDeck" class="live-deck panel" aria-labelledby="signalTitle">
         <header class="live-deck-header">
@@ -78,6 +71,48 @@
         </div>
       </section>
 
+      <details id="connectionHelp" class="connection-help"><summary>USB connection setup and diagnostics</summary>
+      <section class="usb-guide panel" aria-labelledby="usbGuideTitle">
+        <div class="usb-guide-copy">
+          <p class="eyebrow">DIRECT USB</p>
+          <h2 id="usbGuideTitle">Connect BECA</h2>
+          <p>Plug BECA directly into this phone, then tap <strong>Connect USB</strong>. Chrome should show a device picker first, followed by Android's access permission.</p>
+        </div>
+        <div class="usb-checks" aria-label="USB connection diagnostics">
+          <div><span>Browser</span><strong id="browserStatus">Checking…</strong></div>
+          <div><span>Secure app</span><strong id="secureStatus">Checking…</strong></div>
+          <div><span>USB permission</span><strong id="permissionStatus">Not requested</strong></div>
+          <div><span>Adapter</span><strong id="adapterStatus">Waiting for selection</strong></div>
+        </div>
+        <details class="usb-details">
+          <summary>Connection help</summary>
+          <p id="usbDiagnostic">Use current Chrome or Edge, unlock the phone, connect without a USB hub, and make sure USB/OTG host mode is enabled in Android settings if your phone provides that option.</p>
+        </details>
+      </section>
+      </details>
+      <details class="tablet-link panel">
+        <summary>Link an iPad or tablet through a computer</summary>
+        <p>Open this HTTPS web app on both devices on the same local network. Connect BECA by USB in Chrome on the computer. Keep both pages open and the computer awake. No native app is required.</p>
+        <ol>
+          <li>On the computer, create a code and copy it to the tablet.</li>
+          <li>On the tablet, paste the computer code below and choose Join. Copy its reply back to the computer.</li>
+          <li>On the computer, paste the tablet reply and choose Finish. Then tap Listen on the tablet.</li>
+        </ol>
+        <p class="instrument-caption">Codes link one tablet and grant control of BECA. Share them only with your own device. Guest Wi-Fi or isolated networks may block the link.</p>
+        <label for="linkInput">Code from the other device</label>
+        <textarea id="linkInput" rows="3" spellcheck="false" autocomplete="off" placeholder="Paste the connection code here"></textarea>
+        <div class="link-actions">
+          <button id="linkOffer" class="text-button" type="button">Create computer code</button>
+          <button id="linkAnswer" class="text-button" type="button">Join from tablet</button>
+          <button id="linkFinish" class="text-button" type="button">Finish on computer</button>
+          <button id="linkClose" class="text-button" type="button">Close link</button>
+        </div>
+        <label for="linkOutput">Your code to copy to the other device</label>
+        <textarea id="linkOutput" rows="3" readonly spellcheck="false"></textarea>
+        <button id="linkCopy" class="text-button" type="button">Copy code</button>
+        <p id="linkStatus" role="status">Not linked. iPad browsers cannot connect directly to BECA’s USB serial port.</p>
+      </details>
+
       <section class="status-strip" aria-label="Device status">
         <div><span>DEVICE</span><strong id="deviceStatus">Not connected</strong></div>
         <div><span>OUTPUT</span><strong id="outputStatus">—</strong></div>
@@ -106,9 +141,9 @@
           <article class="panel action-card">
             <p class="eyebrow">QUICK ACTIONS</p>
             <div class="action-row">
-              <button id="muteButton" class="action-button" type="button" disabled><span class="action-icon">◼</span><span>Mute</span></button>
-              <button id="testButton" class="action-button accent" type="button" disabled><span class="action-icon">♪</span><span>Test sound</span></button>
-              <button id="refreshButton" class="action-button" type="button" disabled><span class="action-icon">↻</span><span>Refresh</span></button>
+              <button id="muteButton" class="action-button" type="button" disabled><span class="action-icon" aria-hidden="true">◼</span><span>Mute</span></button>
+              <button id="testButton" class="action-button accent" type="button" disabled><span class="action-icon" aria-hidden="true">♪</span><span>Test sound</span></button>
+              <button id="refreshButton" class="action-button" type="button" disabled><span class="action-icon" aria-hidden="true">↻</span><span>Refresh</span></button>
             </div>
           </article>
         </div>
@@ -120,7 +155,7 @@
       </section>
 
       <section id="synth" class="tab-page">
-        <div class="section-heading"><div><p class="eyebrow">AUX ENGINE</p><h2>Sound design</h2></div><button id="resetPreset" class="text-button" type="button" disabled>Reset preset</button></div>
+        <div class="section-heading"><div><p class="eyebrow">BECA ENGINE</p><h2>Sound design</h2></div><button id="resetPreset" class="text-button" type="button" disabled>Reset preset</button></div>
         <article class="panel expression-card" aria-labelledby="expressionTitle">
           <div class="card-title"><div><p class="eyebrow">TOUCH THE SOUND</p><h2 id="expressionTitle">Tone / bite</h2></div><span class="pill green">2D</span></div>
           <div id="expressionPad" class="expression-pad" tabindex="0" role="group" aria-label="Cutoff and resonance trackpad" aria-describedby="expressionHelp" aria-disabled="true">
@@ -131,7 +166,7 @@
             <span class="expression-point" aria-hidden="true"></span>
           </div>
           <div class="expression-readout"><output id="expressionValues">Connect to shape sound</output><span>cutoff / resonance</span></div>
-          <p id="expressionHelp" class="instrument-caption">Drag to edit the AUX synth. Arrow keys move; Shift makes fine changes.</p>
+          <p id="expressionHelp" class="instrument-caption">Drag to shape the synth. Connected settings also update BECA. Arrow keys move; Shift makes fine changes.</p>
         </article>
         <div id="synthControls" class="control-grid"></div>
       </section>
@@ -139,6 +174,9 @@
       <section id="performance" class="tab-page">
         <div class="section-heading"><div><p class="eyebrow">PLANT RESPONSE</p><h2>Performance</h2></div><button id="randomizeButton" class="text-button" type="button" disabled>Randomize</button></div>
         <div id="performanceControls" class="control-grid"></div>
+        <article class="panel preset-card"><h2>Drum parts</h2><div id="drumParts" class="drum-parts"></div></article>
+        <div class="section-heading"><div><p class="eyebrow">CONNECTED BECA</p><h2>Device settings</h2></div></div>
+        <div id="deviceControls" class="control-grid"></div>
       </section>
 
       <section id="console" class="tab-page">
