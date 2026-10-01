@@ -43,7 +43,7 @@ Raw Sensor Sine uses the firmware's `raw` and `connected` plant fields, retainin
 
 The plant graph retains at most 60 state-diff samples over 24 seconds. Parameters sent to the worklet are deduplicated. Sliders coalesce serial changes for 80 ms; the two-parameter expression pad sends at most four pairs per second plus the final release. No SSE endpoint or BLE stack is changed. New audio/link assets are included in the offline cache.
 
-Automated checks cover all presets, drum mapping, release, reset silence, raw sensor frequency/disconnection, actual browser AudioWorklet output, USB note playback, controls, offline reload, responsive layouts and a real two-browser WebRTC link. Chrome tests exercise audio and the tablet link. WebKit tests exercise layout and controls; Windows Playwright WebKit has no Web Audio implementation and fails offline navigation internally, so those two checks are explicitly skipped there. USB devices and real iPad/Bluetooth speaker behavior still require physical verification.
+Automated checks cover all presets, drum mapping, release, reset silence, raw sensor frequency/disconnection, actual browser AudioWorklet output, USB note playback, controls, offline reload, responsive layouts and a real two-browser WebRTC link. Chrome tests exercise audio, offline reload and the tablet link. WebKit tests exercise layout, controls and audio on Linux; Windows Playwright WebKit has no Web Audio implementation, so audio checks skip when that capability is missing. Playwright WebKit fails offline navigation internally on both Windows and Linux, so its offline-reload check is skipped. Offline use on physical Safari, USB devices and real iPad/Bluetooth speaker behavior still require physical verification.
 
 ## Open the app
 

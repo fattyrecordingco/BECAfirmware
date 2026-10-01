@@ -161,7 +161,7 @@ test("has no serious automated accessibility violations", async ({ page }) => {
 });
 
 test("registers an offline shell that survives a reload", async ({ page, context, browserName }) => {
-  test.skip(browserName === "webkit" && process.platform === "win32", "Windows Playwright WebKit fails offline navigation internally; verify on physical Safari.");
+  test.skip(browserName === "webkit", "Playwright WebKit fails offline navigation internally on Windows and Linux; verify on physical Safari.");
   await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller)), { timeout: 10_000 }).toBe(true);
   await context.setOffline(true);
   await page.reload({ waitUntil: "domcontentloaded" });
