@@ -11,6 +11,7 @@ export async function installMockSerial(page) {
     const replies = [];
     let wake;
     globalThis.__MOCK_WRITES = [];
+    globalThis.__MOCK_PLANT = {value:0.42,connected:1};
     const push = (line) => {
       replies.push(encoder.encode(`${line}\n`));
       if (wake) { wake(); wake = null; }
@@ -22,7 +23,7 @@ export async function installMockSerial(page) {
       else if (tag === "PARAMS") push('@R PARAMS {"modes":["Notes","Arpeggiator","Chords","Drum Machine"],"scales":["Major","Minor"],"time_signatures":["4-4"],"note_lengths":["1/8"],"output_modes":["BLE MIDI","Serial MIDI","Aux audio","Serial MIDI + Aux","Wi-Fi MIDI"],"live_preset":true,"synth_presets":["Warm Pad","Soft Keys"],"ranges":{"bpm":[20,240],"swing":[0,60],"sens":[0,0.5],"lo":[1,8],"hi":[1,8],"rest":[0,0.8],"attack":[0,5],"decay":[0,5],"sustain":[0,1],"release":[0.01,10],"cutoff":[20,18000],"resonance":[0.1,10],"delay_ms":[0,800],"delay_feedback":[0,0.95],"delay_mix":[0,1],"drive":[0,1],"detune":[0,8],"gain_trim":[0.45,1]}}');
       else if (tag === "STATE") push(`@R STATE ${JSON.stringify(state)}`);
       else if (tag === "SYNTH") push(`@R SYNTH ${JSON.stringify(synth)}`);
-      else if (tag === "PLANT") push('@R PLANT {"value":0.42,"connected":1}');
+      else if (tag === "PLANT") push(`@R PLANT ${JSON.stringify(globalThis.__MOCK_PLANT)}`);
       else if (tag === "NOTES") push('@R NOTES {"held":1,"notes":[60],"last":60,"last_vel":88}');
       else if (tag === "SET") {
         const [, , key, value] = command.split(/\s+/);
@@ -138,6 +139,59 @@ test("all sections work at phone width without horizontal overflow", async ({ pa
   await expect(page.locator(".vite-error-overlay")).toHaveCount(0);
 });
 
+test("instrument buttons gate drum controls and expose plant arp settings", async ({page}) => {
+  await expect(page.locator('[data-play-mode="3"]')).toBeEnabled();
+  await page.locator('[data-play-mode="3"]').click();
+  await expect(page.locator('[data-play-mode="3"]')).toHaveAttribute("aria-pressed","true");
+  await page.getByRole("button", {name:"Synth",exact:true}).click();
+  await expect(page.locator("#control-drumkit")).toBeEnabled();
+  await page.locator("#control-drumkit").selectOption("2");
+  await page.getByRole("button", {name:"Performance",exact:true}).click();
+  await expect(page.locator('[data-drum-part="0"]')).toBeEnabled();
+  await page.locator("#control-mode").selectOption("1");
+  await expect(page.locator('[data-drum-part="0"]')).toBeDisabled();
+  await expect(page.locator("#control-arp_pattern")).toBeEnabled();
+  await page.locator("#control-arp_pattern").selectOption("2");
+  await page.getByRole("button", {name:"Synth",exact:true}).click();
+  await expect(page.locator("#control-drumkit")).toBeDisabled();
+  expect(await page.evaluate(()=>globalThis.__MOCK_WRITES)).toEqual([]);
+});
+
+test("playground switches parameter pairs and knobs support keyboard adjustment", async ({page}) => {
+  await page.getByRole("button", {name:"Connect USB",exact:true}).click();
+  await page.getByRole("button", {name:"Synth",exact:true}).click();
+  await page.locator("#playgroundMode").selectOption("space");
+  await page.locator("#expressionPad").click({position:{x:100,y:80}});
+  await expect.poll(()=>page.evaluate(()=>globalThis.__MOCK_WRITES.some((line)=>line.startsWith("@C SET delay_mix ")))).toBe(true);
+  await expect.poll(()=>page.evaluate(()=>globalThis.__MOCK_WRITES.some((line)=>line.startsWith("@C SET reverb ")))).toBe(true);
+  await expect(page.locator("#expressionValues")).toContainText("Delay");
+  const knob = page.locator("#control-attack");
+  const before = Number(await knob.inputValue());
+  await knob.focus(); await knob.press("ArrowUp");
+  expect(Number(await knob.inputValue())).toBeGreaterThan(before);
+  await expect.poll(()=>page.evaluate(()=>globalThis.__MOCK_WRITES.some((line)=>line.startsWith("@C SET attack ")))).toBe(true);
+  await knob.scrollIntoViewIfNeeded();
+  const box = await knob.boundingBox();
+  const initial = Number(await knob.inputValue());
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 - 20, {steps:5});
+  await page.mouse.up();
+  expect(Number(await knob.inputValue())).toBeGreaterThan(initial);
+});
+
+test("unsupported USB browsers show the iPad limitation and computer route", async ({page}) => {
+  await page.addInitScript(() => {
+    delete globalThis.__BECA_SERIAL__;
+    Object.defineProperty(navigator,"serial",{value:undefined,configurable:true});
+    Object.defineProperty(navigator,"usb",{value:undefined,configurable:true});
+  });
+  await page.reload();
+  await expect(page.locator("#connectButton")).toBeDisabled();
+  await expect(page.locator("#connectionMessage")).toContainText("Direct USB is unavailable");
+  await expect(page.locator("#compatibilityNotice")).toContainText("through a computer");
+});
+
 test("uses the desktop BECA light design and brand assets", async ({ page }) => {
   await expect(page.locator(".brand img")).toHaveAttribute("src", "./icons/wordmark.svg");
   const theme = await page.evaluate(() => ({
@@ -221,6 +275,29 @@ test("standalone previews retain all original presets and editable synth setting
   expect(await page.evaluate(() => globalThis.__MOCK_WRITES)).toEqual([]);
   expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
   await page.screenshot({ path: testInfo.outputPath("synth-layout.png"), fullPage: true });
+});
+
+test("live arp monitor follows mapped chord tones and releases the correct note", async ({page}) => {
+  test.skip(!await page.evaluate(()=>Boolean(window.AudioContext && window.AudioWorkletNode)), "AudioWorklet unavailable in this runtime.");
+  await page.getByRole("button",{name:"Connect USB",exact:true}).click();
+  await expect(page.locator("#presetName")).toHaveText("Warm Pad");
+  await page.evaluate(()=> { globalThis.__MOCK_PLANT = {value:0,raw:440,connected:1}; });
+  await page.locator('[data-play-mode="1"]').click();
+  await expect.poll(()=>page.evaluate(()=>globalThis.__MOCK_WRITES)).toContain("@C SET mode 1");
+  await page.locator("#listenButton").click();
+  await expect(page.locator("#listenButton")).toHaveAttribute("aria-pressed","true");
+  await page.evaluate(()=> {
+    globalThis.__MOCK_PUSH('@R PLANT {"value":0,"raw":440,"connected":1}');
+    globalThis.__MOCK_PUSH('@M 90 46 60');
+  });
+  await expect(page.locator("#midiReadout")).toHaveText("C2");
+  await page.evaluate(()=>globalThis.__MOCK_PUSH('@M 90 47 60'));
+  await expect(page.locator("#midiReadout")).toHaveText("E2");
+  await page.evaluate(()=>globalThis.__MOCK_PUSH('@M 80 46 00'));
+  await expect(page.locator("#midiReadout")).toHaveText("E2");
+  await page.evaluate(()=>globalThis.__MOCK_PUSH('@M 80 47 00'));
+  await expect(page.locator("#midiReadout")).toHaveText("No notes");
+  await expect(page.locator("#noteStatus")).toContainText("E2");
 });
 
 test("tablet browser link forwards live input and settings without direct USB", async ({ page, context }, testInfo) => {

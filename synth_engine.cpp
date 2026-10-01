@@ -622,6 +622,30 @@ SynthEngine::Voice* SynthEngine::allocVoice(uint8_t note, bool monoMode, uint8_t
   return oldest;
 }
 
+#ifdef BECA_WEB_AUDIO
+// Smooth discontinuities above the audible band in the phone engine.
+static float polyBlep(float phase, float step) {
+  if (phase < step) {
+    const float t = phase / step;
+    return t + t - t * t - 1.0f;
+  }
+  if (phase > 1.0f - step) {
+    const float t = (phase - 1.0f) / step;
+    return t * t + t + t + 1.0f;
+  }
+  return 0.0f;
+}
+static float bandLimit(float sample, uint8_t wave, float phase, float step) {
+  if (wave == 0) return sample - polyBlep(phase, step);
+  if (wave == 1) {
+    float shifted = phase + 0.5f;
+    if (shifted >= 1.0f) shifted -= 1.0f;
+    return sample + polyBlep(phase, step) - polyBlep(shifted, step);
+  }
+  return sample;
+}
+#endif
+
 float SynthEngine::osc(uint8_t waveform, float phase) const {
   switch (waveform) {
     case 0:  // saw
@@ -780,8 +804,13 @@ void SynthEngine::renderBlock(const SynthParams& p) {
       v.phaseB += incB[vi];
       if (v.phaseB >= 1.0f) v.phaseB -= 1.0f;
 
+#ifdef BECA_WEB_AUDIO
+      const float a = bandLimit(osc(p.waveA, v.phaseA), p.waveA, v.phaseA, incA[vi]);
+      const float b = bandLimit(osc(p.waveB, v.phaseB), p.waveB, v.phaseB, incB[vi]);
+#else
       const float a = osc(p.waveA, v.phaseA);
       const float b = osc(p.waveB, v.phaseB);
+#endif
       const float s = ((1.0f - p.oscMix) * a + p.oscMix * b) * env * v.vel;
       synthSum += s;
     }
@@ -802,12 +831,20 @@ void SynthEngine::renderBlock(const SynthParams& p) {
     float mixR = synthR + drumR;
 
     const uint32_t readPos = (delayPos_ + kMaxDelaySamples - delaySamples) % kMaxDelaySamples;
+#ifdef BECA_WEB_AUDIO
+    const float d = delay_[readPos];
+#else
     const float d = static_cast<float>(delay_[readPos]) / 127.0f;
+#endif
 
     const float writeL = dsp::clampf(mixL + d * p.delayFeedback, -1.0f, 1.0f);
     const float writeR = dsp::clampf(mixR + d * p.delayFeedback, -1.0f, 1.0f);
     const float writeMono = 0.5f * (writeL + writeR);
+#ifdef BECA_WEB_AUDIO
+    delay_[delayPos_] = writeMono;
+#else
     delay_[delayPos_] = static_cast<int8_t>(writeMono * 127.0f);
+#endif
 
     mixL = mixL * (1.0f - p.delayMix) + d * p.delayMix;
     mixR = mixR * (1.0f - p.delayMix) + d * p.delayMix;

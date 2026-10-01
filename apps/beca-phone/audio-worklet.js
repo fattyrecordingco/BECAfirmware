@@ -6,12 +6,18 @@ class BecaProcessor extends AudioWorkletProcessor {
     this.engine = instantiateEngine(new WebAssembly.Module(options.processorOptions.bytes));
     this.engine.init(sampleRate);
     this.samples = new Int16Array(this.engine.memory.buffer);
+    this.mode = 0;
+    this.params = {};
     this.port.onmessage = ({ data }) => {
       if (data.type === "params") {
+        this.params = data.params;
         for (let i = 0; i < PARAM_KEYS.length; i++) {
-          const value = Number(data.params[PARAM_KEYS[i]]);
+          const value = i === 0 && this.mode === 3 && Number(data.params.preset) === 12 ? 0 : Number(data.params[PARAM_KEYS[i]]);
           if (Number.isFinite(value)) this.engine.set_param(i, value);
         }
+      } else if (data.type === "mode") {
+        this.mode = Number(data.mode);
+        this.engine.mode(this.mode);
       } else if (data.type === "midi") this.engine.midi(...data.bytes);
       else if (data.type === "sensor") this.engine.sensor(data.raw, data.connected);
       else if (data.type === "panic") {

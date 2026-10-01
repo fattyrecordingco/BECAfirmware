@@ -172,7 +172,11 @@ class SynthEngine {
   float lastResonance_;
   bool filterDirty_;
 
+#ifdef BECA_WEB_AUDIO
+  float delay_[kMaxDelaySamples];
+#else
   int8_t delay_[kMaxDelaySamples];
+#endif
   uint32_t delayPos_;
   float revMemL_;
   float revMemR_;

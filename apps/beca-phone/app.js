@@ -2,8 +2,9 @@ import { BecaSerial, formatValue } from "./protocol.js";
 import { WebUsbSerialProvider, shouldUseWebUsb } from "./webusb-serial.js";
 import { PhoneAudio } from "./phone-audio.js";
 import { BecaConnection } from "./tablet-link.js";
+import { ARP_DEFAULTS } from "./plant-arp.js";
 
-const APP_VERSION = "1.4.0";
+const APP_VERSION = "1.5.0";
 const phoneAudio = new PhoneAudio();
 const NOTE_NAMES = ["C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B"];
 const LEAF_PATH = "M100 48.864C100 77.106 77.106 100 48.864 100H0V51.136C0 22.894 22.894 0 51.136 0H100v48.864ZM51.136 11.364c-21.965 0-39.772 17.807-39.772 39.772V81.17l42.005-42.005c2.219-2.219 5.817-2.219 8.036 0 2.219 2.219 2.219 5.817 0 8.036L19.967 88.636h28.897c21.965 0 39.772-17.807 39.772-39.772V11.364H51.136Z";
@@ -68,6 +69,20 @@ const DEVICE_CONTROLS = [
   { key: "encoder_setting", label: "Encoder controls", type: "select", options: ["Sensitivity", "Preset", "Scale", "Root", "Tempo", "Swing", "Rest", "Low octave", "High octave", "Time signature", "Note length", "Filter", "Resonance"] },
   { key: "encoder_volume_mode", label: "Encoder volume mode", type: "toggle" }
 ];
+const ARP_CONTROLS = [
+  { key: "arp_pattern", label: "Arp order", type: "select", options: ["Plant contour", "Rising", "Falling"] },
+  { key: "arp_chord", label: "Chord size", type: "select", options: ["Triad", "Seventh"] },
+  { key: "arp_span", label: "Arp octave span", min: 1, max: 3, step: 1 },
+  { key: "arp_response", label: "Signal response", min: 0.05, max: 1, step: 0.01 }
+];
+const LOCAL_PERFORMANCE = new Set(["mode", "scale", "root", "lo", "hi", "drumsel", ...ARP_CONTROLS.map((c) => c.key)]);
+const PAD_MODES = {
+  tone: [{key:"cutoff", label:"Cutoff", min:80, max:12000, log:true, digits:0}, {key:"resonance", label:"Resonance", min:0.3, max:6, digits:1}],
+  space: [{key:"delay_mix", label:"Delay", min:0, max:1, digits:2}, {key:"reverb", label:"Reverb", min:0, max:1, digits:2}],
+  envelope: [{key:"attack", label:"Attack", min:0, max:5, digits:2}, {key:"release", label:"Release", min:0.01, max:10, digits:2}],
+  texture: [{key:"osc_mix", label:"Oscillator mix", min:0, max:1, digits:2}, {key:"detune", label:"Detune", min:0, max:8, digits:2}]
+};
+let padMode = "tone";
 const SENSITIVITY_CONTROL = { key: "sens", label: "Sensitivity", step: 0.01, source: "state" };
 
 const $ = (selector) => document.querySelector(selector);
@@ -77,7 +92,7 @@ const webUsbProvider = navigator.usb?.requestDevice ? new WebUsbSerialProvider(n
 const serialProvider = globalThis.__BECA_SERIAL__ ?? (isAndroid ? webUsbProvider ?? navigator.serial : navigator.serial ?? webUsbProvider);
 const transport = new BecaConnection(new BecaSerial(serialProvider));
 const transportName = serialProvider?.transportName ?? (serialProvider === navigator.serial ? "Web Serial" : "Android USB");
-const model = { params: structuredClone(FALLBACK_PARAMS), state: {}, synth: {}, plant: {}, notes: {} };
+const model = { params: structuredClone(FALLBACK_PARAMS), state: {mode:0, scale:0, root:0, lo:2, hi:5, drumsel:255, ...ARP_DEFAULTS}, synth: {}, plant: {}, notes: {} };
 const interaction = new Set();
 const sendTimers = new Map();
 const pendingReplies = new Map();
@@ -175,7 +190,7 @@ function setConnectedUi(connected) {
   $("#deviceStatus").textContent = connected ? (verified ? "BECA connected" : "Checking device…") : "Not connected";
   $("#connectionMessage").textContent = connected
     ? (verified ? `Direct ${transportName} control is active. Your changes are sent to BECA in real time.` : "Opening the USB link and checking for BECA…")
-    : isAndroid
+    : !transport.supported ? "Direct USB is unavailable here. Use the computer link below for live plant input." : isAndroid
       ? "Connect BECA with a USB-C OTG/data cable, then tap Connect USB and approve the device permission."
       : "Connect your device to BECA with a USB data cable.";
   $$('button[data-requires-connection], button[data-command], .preset-button, .midi-leaf, input[data-key], select[data-key], #muteButton, #testButton, #refreshButton, #resetPreset, #randomizeButton, #commandInput, #commandForm button[type="submit"]').forEach((element) => {
@@ -189,6 +204,9 @@ function setConnectedUi(connected) {
 function enableLocalControls() {
   if (!phoneAudio.presets) return;
   $$('[data-source="synth"], .preset-button, #resetPreset, #testButton').forEach((element) => { element.disabled = false; });
+  $$('[data-key]').filter((element) => LOCAL_PERFORMANCE.has(element.dataset.key)).forEach((element) => { element.disabled = false; });
+  $$("[data-play-mode]").forEach((button) => { button.disabled = false; });
+  renderModeRestrictions();
   $("#expressionPad").setAttribute("aria-disabled", "false");
   if (!globalThis.AudioContext || !globalThis.AudioWorkletNode || !window.isSecureContext) $("#testButton").disabled = true;
 }
@@ -209,6 +227,7 @@ function updateAudioStatus() {
 }
 
 async function startPhoneAudio() {
+  phoneAudio.setPerformance(model.state);
   await phoneAudio.start(model.synth);
   if (transport.connected) scheduleSet("outputmode", 1, null, true);
   updateAudioStatus();
@@ -227,6 +246,13 @@ function applyLocalSetting(key, value) {
     }
   } else if (key === "master" || SYNTH_CONTROLS.some((control) => control.key === key)) model.synth[key] = numeric;
   else if (key === "mute") { if (numeric) phoneAudio.panic(); }
+  else if (LOCAL_PERFORMANCE.has(key)) {
+    model.state[key] = numeric;
+    if (key === "lo" && numeric > model.state.hi) model.state.hi = numeric;
+    if (key === "hi" && numeric < model.state.lo) model.state.lo = numeric;
+    phoneAudio.setPerformance(model.state);
+    renderState();
+  }
   phoneAudio.setParams(model.synth);
   renderSynth();
 }
@@ -344,7 +370,7 @@ function receive(parsed) {
       model.params = { ...model.params, ...parsed.payload, ranges: { ...model.params.ranges, ...parsed.payload.ranges } };
       renderAllControls();
     } else if (parsed.tag === "STATE" && parsed.payload) {
-      model.state = parsed.payload;
+      model.state = { ...model.state, ...parsed.payload };
       renderState();
     } else if (parsed.tag === "SYNTH" && parsed.payload) {
       model.synth = parsed.payload;
@@ -368,14 +394,14 @@ function receive(parsed) {
     } else if (parsed.telemetryType === "midi") {
       const note = Number(parsed.payload.note);
       const notes = new Set(Array.isArray(model.notes.notes) ? model.notes.notes.map(Number) : []);
-      if (parsed.payload.on) { notes.add(note); updateLastNote(note, parsed.payload.vel); }
+      if (parsed.payload.on) { notes.add(note); if (!phoneAudio.enabled) updateLastNote(note, parsed.payload.vel); }
       else notes.delete(note);
       model.notes = { ...model.notes, notes: [...notes], last: parsed.payload.on ? note : model.notes.last, last_vel: parsed.payload.vel ?? model.notes.last_vel };
       renderNotes();
     }
   } else if (parsed.type === "midi") {
     if (!model.state.io_muted) phoneAudio.midi([parsed.status, parsed.data1, parsed.data2]);
-    if ((parsed.status & 0xf0) === 0x90 && parsed.data2 > 0) updateLastNote(parsed.data1, parsed.data2);
+    if (!phoneAudio.enabled && (parsed.status & 0xf0) === 0x90 && parsed.data2 > 0) updateLastNote(parsed.data1, parsed.data2);
   }
 }
 
@@ -390,6 +416,7 @@ function updateLastNote(note, velocity) {
 }
 
 function renderPlant() {
+  phoneAudio.plant(model.plant.value, Boolean(Number(model.plant.connected)) && !model.state.io_muted && !model.plant.plant_auto_mute);
   phoneAudio.sensor(model.plant.raw, Number(model.plant.connected) !== 0 && !model.state.io_muted && !model.plant.plant_auto_mute);
   const value = Math.max(0, Math.min(1, Number(model.plant.value ?? 0)));
   $("#plantValue").textContent = transport.connected ? value.toFixed(2) : "—";
@@ -399,8 +426,9 @@ function renderPlant() {
 }
 
 function renderNotes() {
-  const notes = Array.isArray(model.notes.notes) ? model.notes.notes : [];
-  if (notes.length) updateLastNote(notes.at(-1), model.notes.last_vel ?? model.notes.vel);
+  const notes = phoneAudio.enabled ? [...phoneAudio.activeNotes] : Array.isArray(model.notes.notes) ? model.notes.notes : [];
+  if (phoneAudio.enabled && phoneAudio.lastNote != null) updateLastNote(phoneAudio.lastNote, phoneAudio.lastVelocity);
+  else if (notes.length) updateLastNote(notes.at(-1), model.notes.last_vel ?? model.notes.vel);
   else if (model.notes.last) updateLastNote(model.notes.last, model.notes.last_vel);
   const activePitchClasses = new Set(notes.map((note) => Number(note) % 12));
   $$(".midi-leaf").forEach((leaf) => leaf.classList.toggle("playing", activePitchClasses.has(Number(leaf.dataset.note))));
@@ -409,6 +437,7 @@ function renderNotes() {
 
 function renderState() {
   const state = model.state;
+  phoneAudio.setPerformance(state);
   if (state.io_muted && !wasMuted) phoneAudio.panic();
   wasMuted = Boolean(state.io_muted);
   $("#outputStatus").textContent = state.outputname ?? model.params.output_modes?.[state.outputmode] ?? "—";
@@ -420,7 +449,7 @@ function renderState() {
   $("#muteButton span:last-child").textContent = state.io_muted ? "Unmute" : "Mute";
   $("#muteButton").classList.toggle("accent", Boolean(state.io_muted));
   $("#presetName").textContent = state.preset_name ?? model.synth.preset_name ?? "—";
-  if (state.last) updateLastNote(state.last, state.vel);
+  if (state.last && !phoneAudio.enabled) updateLastNote(state.last, state.vel);
   renderOutputModes();
   renderPresetSelection();
   applyModelToControls("state", state);
@@ -431,9 +460,10 @@ function renderState() {
   renderMidiLeaves();
   renderModeRestrictions();
   $$("[data-drum-part]").forEach((input) => {
-    input.disabled = !transport.connected;
+    input.disabled = Number(state.mode) !== 3 || (!transport.connected && !phoneAudio.presets);
     input.checked = (Number(state.drumsel ?? 255) & (1 << Number(input.dataset.drumPart))) !== 0;
   });
+  $$("[data-play-mode]").forEach((button) => button.setAttribute("aria-pressed", String(Number(button.dataset.playMode) === Number(state.mode))));
 }
 
 function renderSynth() {
@@ -456,6 +486,47 @@ function controlRange(def) {
 function displayControlValue(def, raw) {
   const scaled = Number(raw) * (def.scale ?? 1);
   return `${formatValue(scaled, def.step && def.step < 0.1 ? 2 : 0)}${def.unit ?? ""}`;
+}
+function paintKnob(input) {
+  if (input.type !== "range") return;
+  const fraction = (Number(input.value) - Number(input.min)) / (Number(input.max) - Number(input.min) || 1);
+  input.closest(".control-card")?.style.setProperty("--knob-angle", `${-135 + fraction * 270}deg`);
+  input.setAttribute("aria-valuetext", input.closest(".control-card")?.querySelector("output")?.textContent ?? input.value);
+}
+
+function attachKnob(input, card) {
+  if (input.type !== "range") return;
+  card.classList.add("knob-card");
+  const face = document.createElement("span");
+  face.className = "knob-face";
+  face.setAttribute("aria-hidden", "true");
+  input.before(face);
+  let drag = null;
+  input.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0 || input.disabled) return;
+    event.preventDefault();
+    input.focus();
+    input.setPointerCapture(event.pointerId);
+    drag = { id:event.pointerId, y:event.clientY, value:Number(input.value) };
+  });
+  input.addEventListener("pointermove", (event) => {
+    if (!drag || drag.id !== event.pointerId) return;
+    const step = Number(input.step) || 1;
+    const value = drag.value + (drag.y - event.clientY) / (event.shiftKey ? 1500 : 150) * (Number(input.max) - Number(input.min));
+    input.value = String(Math.round(value / step) * step);
+    input.dispatchEvent(new Event("input", {bubbles:true}));
+  });
+  const finish = () => {
+    if (!drag) return;
+    drag = null;
+    interaction.delete(input.dataset.key);
+    input.dispatchEvent(new Event("change", {bubbles:true}));
+  };
+  input.addEventListener("pointerup", finish);
+  input.addEventListener("pointercancel", finish);
+  input.addEventListener("lostpointercapture", finish);
+  input.addEventListener("input", () => paintKnob(input));
+  paintKnob(input);
 }
 
 function buildControl(def, source) {
@@ -486,6 +557,7 @@ function buildControl(def, source) {
     const raw = def.type === "toggle" ? (input.checked ? "1" : "0") : input.value;
     scheduleSet(def.key, raw, def.transformOut, true);
   });
+  attachKnob(input, card);
   return card;
 }
 
@@ -498,6 +570,7 @@ function renderAllControls() {
   renderControlGroup("#synthControls", SYNTH_CONTROLS, "synth");
   renderControlGroup("#performanceControls", PERFORMANCE_CONTROLS, "state");
   renderControlGroup("#deviceControls", DEVICE_CONTROLS, "state");
+  renderControlGroup("#arpControls", ARP_CONTROLS, "state");
   renderOutputModes();
   renderPresets();
   renderState();
@@ -513,9 +586,10 @@ function applyModelToControls(source, values) {
     if (value === undefined || value === null) return;
     if (input.type === "checkbox") input.checked = Boolean(Number(value));
     else input.value = String(value);
-    const def = [...SYNTH_CONTROLS, ...PERFORMANCE_CONTROLS, ...DEVICE_CONTROLS, SENSITIVITY_CONTROL].find((item) => item.key === key);
+    const def = [...SYNTH_CONTROLS, ...PERFORMANCE_CONTROLS, ...DEVICE_CONTROLS, ...ARP_CONTROLS, SENSITIVITY_CONTROL].find((item) => item.key === key);
     const output = input.closest(".control-card")?.querySelector("output");
     if (def && output) output.textContent = displayControlValue(def, value);
+    paintKnob(input);
   });
 }
 
@@ -565,14 +639,19 @@ function renderModeRestrictions() {
   if (drumMode) drumMode.disabled = auxOnly;
   const drumKit = $("#control-drumkit");
   if (drumKit) {
-    drumKit.disabled = !phoneAudio.presets && (!transport.connected || auxOnly);
-    drumKit.title = auxOnly ? "The firmware does not run drums through AUX-only mode." : "";
+    drumKit.disabled = Number(model.state.mode) !== 3 || (!phoneAudio.presets && !transport.connected);
+    drumKit.title = "Available only in Drum Machine mode.";
   }
+  $$("[data-drum-part]").forEach((input) => { input.disabled = Number(model.state.mode) !== 3 || (!transport.connected && !phoneAudio.presets); });
+  const drumButton = $('[data-play-mode="3"]');
+  if (drumButton) drumButton.disabled = (transport.connected && auxOnly) || (!transport.connected && !phoneAudio.presets);
+  $("#arpControls").querySelectorAll("input, select").forEach((input) => { input.disabled = Number(model.state.mode) !== 1; });
 }
 
 function scheduleSet(key, rawValue, transform, immediate = false) {
   const value = transform ? transform(String(rawValue)) : rawValue;
   applyLocalSetting(key, value);
+  if (key.startsWith("arp_")) return;
   clearTimeout(sendTimers.get(key));
   if (!transport.connected) return;
   const send = () => {
@@ -625,14 +704,17 @@ function renderMidiLeaves() {
 }
 
 function padValuesFromPoint(x, y) {
-  const safeX = Math.max(0, Math.min(1, x));
-  const safeY = Math.max(0, Math.min(1, y));
-  return { cutoff: Math.round(80 * Math.pow(150, safeX)), resonance: Number((0.3 + safeY * 5.7).toFixed(1)) };
+  return Object.fromEntries(PAD_MODES[padMode].map((axis, i) => {
+    const value = Math.max(0, Math.min(1, i ? y : x));
+    return [axis.key, Number((axis.log ? axis.min * Math.pow(axis.max / axis.min, value) : axis.min + value * (axis.max - axis.min)).toFixed(axis.digits))];
+  }));
 }
 
 function padPointFromValues(values) {
-  const cutoff = Math.max(80, Number(values.cutoff) || 80);
-  return [Math.max(0, Math.min(1, Math.log(cutoff / 80) / Math.log(150))), Math.max(0, Math.min(1, ((Number(values.resonance) || 0.3) - 0.3) / 5.7))];
+  return PAD_MODES[padMode].map((axis) => {
+    const value = Math.max(axis.min, Number(values[axis.key]) || axis.min);
+    return Math.max(0, Math.min(1, axis.log ? Math.log(value / axis.min) / Math.log(axis.max / axis.min) : (value - axis.min) / (axis.max - axis.min)));
+  });
 }
 
 function paintExpressionPad() {
@@ -640,7 +722,9 @@ function paintExpressionPad() {
   const [x, y] = padPointFromValues(model.synth);
   pad.style.setProperty("--pad-x", `${(x * 100).toFixed(2)}%`);
   pad.style.setProperty("--pad-y", `${((1 - y) * 100).toFixed(2)}%`);
-  $("#expressionValues").textContent = transport.connected || phoneAudio.presets ? `${Math.round(Number(model.synth.cutoff) || 80)} Hz / ${Number(model.synth.resonance ?? 0.3).toFixed(1)}` : "Loading sound engine…";
+  $("#expressionValues").textContent = transport.connected || phoneAudio.presets ? padMode === "tone" ? `${Math.round(Number(model.synth.cutoff) || 80)} Hz / ${Number(model.synth.resonance ?? 0.3).toFixed(1)}` : PAD_MODES[padMode].map((axis) => `${axis.label} ${Number(model.synth[axis.key] ?? axis.min).toFixed(axis.digits)}`).join(" / ") : "Loading sound engine…";
+  $(".pad-x-label").textContent = PAD_MODES[padMode][0].label;
+  $(".pad-y-label").textContent = PAD_MODES[padMode][1].label;
 }
 
 function sendPadValues(values, immediate = false) {
@@ -655,7 +739,7 @@ function sendPadValues(values, immediate = false) {
     if (!next) return;
     phoneAudio.setParams(model.synth);
     if (!transport.connected) return;
-    transport.send(`SET cutoff ${next.cutoff}`).then(() => transport.send(`SET resonance ${next.resonance}`)).catch(handleError);
+    (async () => { for (const [key, value] of Object.entries(next)) await transport.send(`SET ${key} ${value}`); })().catch(handleError);
   };
   if (immediate) { clearTimeout(padSendTimer); send(); }
   else if (padSendTimer == null) padSendTimer = setTimeout(send, 250);
@@ -668,6 +752,13 @@ function moveExpressionPad(clientX, clientY) {
 }
 
 function initVisualControls() {
+  $("#playgroundMode").addEventListener("change", (event) => {
+    if (pendingPadValues) sendPadValues(pendingPadValues, true);
+    padMode = event.target.value;
+    paintExpressionPad();
+    $("#expressionPad").setAttribute("aria-label", `${PAD_MODES[padMode].map((a) => a.label).join(" and ")} trackpad`);
+  });
+  $$("[data-play-mode]").forEach((button) => button.addEventListener("click", () => scheduleSet("mode", button.dataset.playMode, null, true)));
   const leaves = NOTE_NAMES.map((name, note) => {
     const button = document.createElement("button");
     button.type = "button";
@@ -745,6 +836,10 @@ function initActions() {
   });
   $("#panicButton").addEventListener("click", () => phoneAudio.panic());
   phoneAudio.addEventListener("statechange", updateAudioStatus);
+  phoneAudio.addEventListener("noteschange", () => {
+    renderNotes();
+    $("#arpReadout").textContent = phoneAudio.arp.chord.length ? `${phoneAudio.arp.chord.map(noteLabel).join(" · ")} — ${phoneAudio.arp.order}` : "Waiting for the next note. Plant energy chooses the chord; signal contour chooses its order.";
+  });
   phoneAudio.addEventListener("engineerror", () => handleError(new Error("Audio engine stopped. Reload to restart.")));
   $("#connectButton").addEventListener("click", () => toggleConnection().catch(handleError));
   $("#refreshButton").addEventListener("click", () => Promise.all([request("PARAMS"), request("STATE"), request("SYNTH"), request("PLANT"), request("NOTES")]).then(() => showToast("Device state refreshed.")).catch(handleError));
