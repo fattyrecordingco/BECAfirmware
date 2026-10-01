@@ -1,4 +1,4 @@
-const CACHE_NAME = "beca-phone-v1.3.1";
+const CACHE_NAME = "beca-phone-v1.4.0";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -6,6 +6,11 @@ const APP_SHELL = [
   "./app.js",
   "./protocol.js",
   "./webusb-serial.js",
+  "./tablet-link.js",
+  "./phone-audio.js",
+  "./audio-engine.js",
+  "./audio-worklet.js",
+  "./beca-synth.wasm",
   "./manifest.webmanifest",
   "./icons/icon.svg",
   "./icons/wordmark.svg",
@@ -40,7 +45,7 @@ self.addEventListener("fetch", (event) => {
         }
         return response;
       })
-      .catch(() => caches.match(event.request).then((cached) => cached || caches.match("./index.html")))
+      .catch(() => caches.match(event.request).then((cached) => cached || (event.request.mode === "navigate" ? caches.match("./index.html") : Response.error())))
   );
 });
 

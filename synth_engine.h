@@ -1,7 +1,9 @@
 #pragma once
 
-#include <Arduino.h>
+#include "synth_platform.h"
+#ifndef BECA_WEB_AUDIO
 #include <driver/i2s.h>
+#endif
 
 #include "drum_engine.h"
 
@@ -77,6 +79,10 @@ class SynthEngine {
 
   static const char* presetName(uint8_t index);
   static void presetDefaults(uint8_t index, SynthParams& out);
+
+#ifdef BECA_WEB_AUDIO
+  const int16_t* renderWeb(uint16_t frames);
+#endif
 
  private:
   struct Voice {

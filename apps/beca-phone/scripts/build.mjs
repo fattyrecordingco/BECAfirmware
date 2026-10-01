@@ -1,11 +1,13 @@
 import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { verifyAudioBuild } from "./audio-sources.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const output = resolve(root, "dist");
-const files = ["index.html", "app.css", "app.js", "protocol.js", "webusb-serial.js", "manifest.webmanifest", "service-worker.js"];
+const files = ["index.html", "app.css", "app.js", "protocol.js", "webusb-serial.js", "tablet-link.js", "phone-audio.js", "audio-engine.js", "audio-worklet.js", "beca-synth.wasm", "manifest.webmanifest", "service-worker.js"];
 
+await verifyAudioBuild();
 await rm(output, { recursive: true, force: true });
 await mkdir(resolve(output, "icons"), { recursive: true });
 for (const file of files) await cp(resolve(root, file), resolve(output, file));

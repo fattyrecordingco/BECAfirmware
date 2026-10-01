@@ -312,6 +312,7 @@ bool SynthEngine::start(int pinBck, int pinWs, int pinData, uint32_t sampleRate,
   sampleRate_ = sampleRate < 22050 ? 22050 : sampleRate;
   blockSize_ = static_cast<uint16_t>(constrain(static_cast<int>(blockSize), 32, static_cast<int>(kBlockMax)));
 
+#ifndef BECA_WEB_AUDIO
   i2s_config_t cfg = {};
   cfg.mode = static_cast<i2s_mode_t>(I2S_MODE_MASTER | I2S_MODE_TX);
   cfg.sample_rate = static_cast<int>(sampleRate_);
@@ -337,6 +338,7 @@ bool SynthEngine::start(int pinBck, int pinWs, int pinData, uint32_t sampleRate,
     return false;
   }
   i2s_zero_dma_buffer(i2sPort_);
+#endif
 
   memset(delay_, 0, sizeof(delay_));
   delayPos_ = 0;
@@ -369,6 +371,7 @@ bool SynthEngine::start(int pinBck, int pinWs, int pinData, uint32_t sampleRate,
   fadeStep_ = 1.0f / static_cast<float>((sampleRate_ * 20) / 1000);
 
   running_ = true;
+#ifndef BECA_WEB_AUDIO
   taskAlive_ = true;
   // Keep audio task at same priority as loop task so web/Wi-Fi servicing is not starved.
   BaseType_t ok = xTaskCreatePinnedToCore(taskTrampoline, "beca_audio", 6144, this, 1, &audioTaskHandle_, 1);
@@ -379,11 +382,13 @@ bool SynthEngine::start(int pinBck, int pinWs, int pinData, uint32_t sampleRate,
     audioTaskHandle_ = nullptr;
     return false;
   }
+#endif
 
   return true;
 }
 
 void SynthEngine::stop() {
+#ifndef BECA_WEB_AUDIO
   if (!running_) return;
   fadeOut(20);
   delay(24);
@@ -399,6 +404,9 @@ void SynthEngine::stop() {
   i2s_driver_uninstall(i2sPort_);
 
   audioTaskHandle_ = nullptr;
+#else
+  running_ = false;
+#endif
   memset(offSched_, 0, sizeof(offSched_));
   allNotesOff();
   allDrumsOff();
@@ -569,11 +577,13 @@ bool SynthEngine::popEvent(Event& out) {
   return ok;
 }
 
+#ifndef BECA_WEB_AUDIO
 void SynthEngine::taskTrampoline(void* arg) {
   SynthEngine* self = static_cast<SynthEngine*>(arg);
   if (self) self->audioTask();
   vTaskDelete(nullptr);
 }
+#endif
 
 SynthEngine::Voice* SynthEngine::allocVoice(uint8_t note, bool monoMode, uint8_t maxVoices) {
   if (monoMode) {
@@ -862,6 +872,20 @@ void SynthEngine::renderSensorSine(const SynthParams& p) {
   }
 }
 
+#ifdef BECA_WEB_AUDIO
+const int16_t* SynthEngine::renderWeb(uint16_t frames) {
+  blockSize_ = min(frames, kBlockMax);
+  service(millis());
+  SynthParams p;
+  getParams(p);
+  drum_.setKit(p.drumKit);
+  prepareRenderMode(p);
+  Event event;
+  while (popEvent(event)) handleEvent(event, p);
+  renderBlock(p);
+  return i2sBlock_;
+}
+#else
 void SynthEngine::audioTask() {
   while (running_) {
     SynthParams p;
@@ -889,5 +913,6 @@ void SynthEngine::audioTask() {
 
   taskAlive_ = false;
 }
+#endif
 
 }  // namespace beca
