@@ -13,6 +13,7 @@ export class PhoneAudio extends EventTarget {
     this.activeNotes = new Set();
   }
   async load() {
+    if (!globalThis.WebAssembly) throw new Error("This browser cannot load the BECA synth. Update the browser for WebAssembly support.");
     if (!this.loading) this.loading = (async () => {
       const response = await fetch(new URL("./beca-synth.wasm", import.meta.url));
       if (!response.ok) throw new Error("The BECA sound engine could not be loaded. Reload the app.");

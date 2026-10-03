@@ -50,6 +50,9 @@ export class BecaConnection extends EventTarget {
     this.dispatchEvent(new Event("linkstate"));
   }
   setupPeer(remote) {
+    if (typeof globalThis.RTCPeerConnection !== "function" || !globalThis.isSecureContext) {
+      throw new Error("The computer link needs WebRTC on HTTPS. Update your browser and open the published app.");
+    }
     this.closeLink();
     this.remote = remote;
     this.peer = new RTCPeerConnection({ iceServers: [] });

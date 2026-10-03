@@ -5,7 +5,7 @@ import { verifyAudioBuild } from "./audio-sources.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const output = resolve(root, "dist");
-const files = ["index.html", "app.css", "app.js", "protocol.js", "webusb-serial.js", "tablet-link.js", "phone-audio.js", "plant-arp.js", "audio-engine.js", "audio-worklet.js", "beca-synth.wasm", "manifest.webmanifest", "service-worker.js"];
+const files = ["index.html", "app.css", "app.js", "protocol.js", "webusb-serial.js", "tablet-link.js", "phone-audio.js", "plant-arp.js", "compatibility.js", "audio-engine.js", "audio-worklet.js", "beca-synth.wasm", "manifest.webmanifest", "service-worker.js"];
 
 await verifyAudioBuild();
 await rm(output, { recursive: true, force: true });

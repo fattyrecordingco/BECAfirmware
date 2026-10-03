@@ -458,6 +458,8 @@ If `DAW Sync` is on and no DAW clock is being received, BECA remains safe and st
 
 ## Troubleshooting
 
+Phone app **1.5.1** adds separate guidance for missing USB power, browser support and interrupted connections, including OnePlus OTG checks. Device controls wait for the initial settings before enabling edits. The connected CH340 board passed laptop serial and preset checks; physical phone compatibility still depends on power, cable and browser capabilities. See the [phone compatibility table and troubleshooting](apps/beca-phone/README.md#requirements).
+
 ### Device not detected
 
 - confirm the cable is a data cable

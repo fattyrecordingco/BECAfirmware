@@ -83,6 +83,14 @@
           <div><span>Secure app</span><strong id="secureStatus">Checking…</strong></div>
           <div><span>USB permission</span><strong id="permissionStatus">Not requested</strong></div>
           <div><span>Adapter</span><strong id="adapterStatus">Waiting for selection</strong></div>
+          <div><span>Sound</span><strong id="audioCapability">Checking…</strong></div>
+          <div><span>Without phone USB</span><strong id="relayCapability">Checking…</strong></div>
+        </div>
+        <div class="connection-advice">
+          <label for="connectionIssue">What is happening?</label>
+          <select id="connectionIssue"><option value="missing">BECA has power but is not listed</option><option value="power">BECA has no lights / no power</option><option value="lost">Connection stops during use</option></select>
+          <p id="connectionAdvice" role="status"></p>
+          <p>Phone/OS names alone do not guarantee compatibility. Direct USB needs a working host/power connection and browser access. Modern iPhone/iPad browsers can play the synth and use the computer link, but cannot access BECA’s USB serial port directly.</p>
         </div>
         <details class="usb-details">
           <summary>Connection help</summary>
@@ -215,7 +223,7 @@
     </main>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
-    <footer><span>BECA phone control</span><span id="appVersion">v1.5.0</span></footer>
+    <footer><span>BECA phone control</span><span id="appVersion">v1.5.1</span></footer>
     <script type="module" src="./app.js"></script>
   </body>
 </html>

@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { LineFramer, WriteQueue, normalizeCommand, parseSerialLine } from "../protocol.js";
+import { BecaSerial, LineFramer, WriteQueue, normalizeCommand, parseSerialLine } from "../protocol.js";
+import { capabilities, connectionHelp } from "../compatibility.js";
 
 test("LineFramer preserves fragmented data and strips CR", () => {
   const framer = new LineFramer();
@@ -30,4 +31,34 @@ test("WriteQueue serializes writes in order", async () => {
   await Promise.all([queue.enqueue("one"), queue.enqueue("two"), queue.enqueue("three")]);
   assert.deepEqual(values, ["one", "two", "three"]);
   queue.clear();
+});
+
+test("serial decoding preserves Unicode split across USB packets", async () => {
+  const bytes = new TextEncoder().encode('@R STATE {"name":"BECA 🌱"}\n');
+  const split = bytes.indexOf(0xf0) + 2;
+  const port = {
+    open:async()=>{}, close:async()=>{},
+    readable:new ReadableStream({start(controller){controller.enqueue(bytes.slice(0,split));controller.enqueue(bytes.slice(split));controller.close();}}),
+    writable:new WritableStream({write(){}})
+  };
+  const serial = new BecaSerial({requestPort:async()=>port});
+  const received=[];
+  serial.addEventListener("line",(event)=>received.push(event.detail));
+  const closed = new Promise((resolve)=>serial.addEventListener("disconnect",resolve,{once:true}));
+  await serial.connect(); await closed;
+  assert.equal(received[0].payload.name,"BECA 🌱");
+});
+
+test("compatibility is based on exposed APIs, including iPad desktop user agents", () => {
+  const env={isSecureContext:true,navigator:{userAgent:"Android 11; ONEPLUS A6003",usb:{requestDevice(){}}},WebAssembly:{},AudioContext:function(){},AudioWorkletNode:function(){},RTCPeerConnection:function(){}};
+  assert.equal(capabilities(env).usb,true);
+  assert.equal(capabilities(env).audio,true);
+  const ipad=capabilities({...env,navigator:{userAgent:"Macintosh",platform:"MacIntel",maxTouchPoints:5}});
+  assert.equal(ipad.ios,true); assert.equal(ipad.usb,false); assert.equal(ipad.relay,true);
+  assert.match(connectionHelp("missing",ipad),/CH340/);
+  assert.match(connectionHelp("power",ipad),/cannot turn USB power on/);
+  const insecure=capabilities({...env,isSecureContext:false});
+  assert.equal(insecure.usb,false); assert.equal(insecure.audio,false); assert.equal(insecure.relay,false);
+  assert.match(connectionHelp("missing",insecure),/HTTPS/);
+  assert.equal(capabilities({...env,RTCPeerConnection:undefined}).relay,false);
 });
