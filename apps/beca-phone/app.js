@@ -3,8 +3,9 @@ import { WebUsbSerialProvider, shouldUseWebUsb } from "./webusb-serial.js";
 import { PhoneAudio } from "./phone-audio.js";
 import { BecaConnection } from "./tablet-link.js";
 import { ARP_DEFAULTS } from "./plant-arp.js";
+import { capabilities, connectionHelp } from "./compatibility.js";
 
-const APP_VERSION = "1.5.0";
+const APP_VERSION = "1.5.1";
 const phoneAudio = new PhoneAudio();
 const NOTE_NAMES = ["C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B"];
 const LEAF_PATH = "M100 48.864C100 77.106 77.106 100 48.864 100H0V51.136C0 22.894 22.894 0 51.136 0H100v48.864ZM51.136 11.364c-21.965 0-39.772 17.807-39.772 39.772V81.17l42.005-42.005c2.219-2.219 5.817-2.219 8.036 0 2.219 2.219 2.219 5.817 0 8.036L19.967 88.636h28.897c21.965 0 39.772-17.807 39.772-39.772V11.364H51.136Z";
@@ -92,11 +93,12 @@ const webUsbProvider = navigator.usb?.requestDevice ? new WebUsbSerialProvider(n
 const serialProvider = globalThis.__BECA_SERIAL__ ?? (isAndroid ? webUsbProvider ?? navigator.serial : navigator.serial ?? webUsbProvider);
 const transport = new BecaConnection(new BecaSerial(serialProvider));
 const transportName = serialProvider?.transportName ?? (serialProvider === navigator.serial ? "Web Serial" : "Android USB");
-const model = { params: structuredClone(FALLBACK_PARAMS), state: {mode:0, scale:0, root:0, lo:2, hi:5, drumsel:255, ...ARP_DEFAULTS}, synth: {}, plant: {}, notes: {} };
+const model = { params: JSON.parse(JSON.stringify(FALLBACK_PARAMS)), state: {mode:0, scale:0, root:0, lo:2, hi:5, drumsel:255, ...ARP_DEFAULTS}, synth: {}, plant: {}, notes: {} };
 const interaction = new Set();
 const sendTimers = new Map();
 const pendingReplies = new Map();
 let verified = false;
+let connecting = false;
 let heartbeatTimer = null;
 let statePollTimer = null;
 let synthPollTimer = null;
@@ -142,6 +144,10 @@ function selectedAdapterLabel() {
 }
 
 async function refreshUsbDiagnostics() {
+  const caps = capabilities();
+  setUsbCheck("#audioCapability", caps.audio ? "Web synth available" : "Update browser for audio", caps.audio ? "ok" : "error");
+  setUsbCheck("#relayCapability", caps.relay ? "Computer link available" : "Computer link unavailable", caps.relay ? "ok" : "error");
+  $("#connectionAdvice").textContent = connectionHelp($("#connectionIssue").value, caps);
   const embeddedBrowser = /; wv\)|FBAN|FBAV|Instagram/i.test(navigator.userAgent);
   const usbReady = Boolean(webUsbProvider);
   const serialReady = Boolean(navigator.serial?.requestPort);
@@ -184,7 +190,8 @@ function logLine(message, kind = "in") {
 }
 
 function setConnectedUi(connected) {
-  $("#connectButton").disabled = !connected && !transport.supported;
+  $("#listenButton").disabled = connecting || !capabilities().audio;
+  $("#connectButton").disabled = connecting || (!connected && !transport.supported);
   $("#connectButton").classList.toggle("connected", connected);
   $("#connectButton span:last-child").textContent = connected ? "Disconnect" : "Connect USB";
   $("#deviceStatus").textContent = connected ? (verified ? "BECA connected" : "Checking device…") : "Not connected";
@@ -194,25 +201,26 @@ function setConnectedUi(connected) {
       ? "Connect BECA with a USB-C OTG/data cable, then tap Connect USB and approve the device permission."
       : "Connect your device to BECA with a USB data cable.";
   $$('button[data-requires-connection], button[data-command], .preset-button, .midi-leaf, input[data-key], select[data-key], #muteButton, #testButton, #refreshButton, #resetPreset, #randomizeButton, #commandInput, #commandForm button[type="submit"]').forEach((element) => {
-    element.disabled = !connected;
+    element.disabled = !connected || !verified;
   });
-  $("#expressionPad").setAttribute("aria-disabled", String(!connected));
+  $("#expressionPad").setAttribute("aria-disabled", String(!connected || !verified));
   enableLocalControls();
   renderOutputModes();
 }
 
 function enableLocalControls() {
+  if (connecting || (transport.connected && !verified)) return;
   if (!phoneAudio.presets) return;
   $$('[data-source="synth"], .preset-button, #resetPreset, #testButton').forEach((element) => { element.disabled = false; });
   $$('[data-key]').filter((element) => LOCAL_PERFORMANCE.has(element.dataset.key)).forEach((element) => { element.disabled = false; });
   $$("[data-play-mode]").forEach((button) => { button.disabled = false; });
   renderModeRestrictions();
   $("#expressionPad").setAttribute("aria-disabled", "false");
-  if (!globalThis.AudioContext || !globalThis.AudioWorkletNode || !window.isSecureContext) $("#testButton").disabled = true;
+  if (!capabilities().audio) $("#testButton").disabled = true;
 }
 
 function updateAudioStatus() {
-  if (!globalThis.AudioContext || !globalThis.AudioWorkletNode || !window.isSecureContext) {
+  if (!capabilities().audio) {
     $("#listenButton").disabled = true;
     $("#audioStatus").textContent = "Live audio is not supported here. Use a current browser on HTTPS or localhost.";
     return;
@@ -271,7 +279,16 @@ function waitForReply(tag, timeoutMs = 3500) {
 
 async function request(tag, awaitReply = false) {
   const reply = awaitReply ? waitForReply(tag) : null;
-  await transport.send(tag);
+  // A failed send must also settle its pending response timeout.
+  if (reply) reply.catch(() => {});
+  try { await transport.send(tag); }
+  catch (error) {
+    if (reply) {
+      const waiter = pendingReplies.get(tag);
+      if (waiter) { clearTimeout(waiter.timer); pendingReplies.delete(tag); waiter.reject(error); }
+    }
+    throw error;
+  }
   return reply;
 }
 
@@ -279,10 +296,11 @@ async function verifyDevice() {
   const ping = request("PING", true);
   const payload = await ping;
   if (!payload?.ok) throw new Error("The selected serial device did not identify as BECA.");
-  verified = true;
-  setConnectedUi(true);
   await transport.send("TELEMETRY 1");
-  await Promise.all([request("PARAMS"), request("STATE"), request("SYNTH"), request("PLANT"), request("NOTES")]);
+  await Promise.all(["PARAMS", "STATE", "SYNTH", "PLANT", "NOTES"].map((tag) => request(tag, true)));
+  verified = true;
+  connecting = false;
+  setConnectedUi(true);
   startPolling();
   setNotice();
   showToast(transport.remote ? "BECA linked through computer." : "BECA connected over USB-C.");
@@ -319,10 +337,14 @@ function handleError(error) {
 }
 
 async function toggleConnection() {
+  if (connecting) return;
   if (transport.connected) {
     await transport.disconnect();
     return;
   }
+  connecting = true;
+  setConnectedUi(false);
+  $$("[data-play-mode]").forEach((button) => { button.disabled = true; });
   try {
     setNotice();
     setUsbCheck("#permissionStatus", "Opening device picker…");
@@ -341,12 +363,15 @@ async function toggleConnection() {
     handleError(friendlyError);
     await transport.disconnect(false);
     setNotice(friendlyError.message, "error");
+  } finally {
+    connecting = false;
+    setConnectedUi(transport.connected);
   }
 }
 
 function connectionError(error) {
   if (error?.name === "NotFoundError") {
-    return new Error("Chrome did not receive a BECA adapter selection. Reconnect BECA directly, enable USB/OTG host mode if your phone offers it, tap Connect USB again, and choose CH340/CH341, CP210x, FTDI, or Espressif USB Serial/JTAG.");
+    return new Error("No USB adapter was selected. Check that BECA has power and enable OTG on OnePlus/OxygenOS if needed. If C-to-C gives no lights, follow the OTG adapter/cable steps in connection help. Then tap Connect USB and select CH340/CH341, CP210x, FTDI, or Espressif USB Serial/JTAG.");
   }
   if (error?.name === "SecurityError") {
     return new Error("Android blocked USB access. Open this HTTPS app directly in Chrome, not inside another app, then allow the USB permission.");
@@ -428,7 +453,7 @@ function renderPlant() {
 function renderNotes() {
   const notes = phoneAudio.enabled ? [...phoneAudio.activeNotes] : Array.isArray(model.notes.notes) ? model.notes.notes : [];
   if (phoneAudio.enabled && phoneAudio.lastNote != null) updateLastNote(phoneAudio.lastNote, phoneAudio.lastVelocity);
-  else if (notes.length) updateLastNote(notes.at(-1), model.notes.last_vel ?? model.notes.vel);
+  else if (notes.length) updateLastNote(notes[notes.length - 1], model.notes.last_vel ?? model.notes.vel);
   else if (model.notes.last) updateLastNote(model.notes.last, model.notes.last_vel);
   const activePitchClasses = new Set(notes.map((note) => Number(note) % 12));
   $$(".midi-leaf").forEach((leaf) => leaf.classList.toggle("playing", activePitchClasses.has(Number(leaf.dataset.note))));
@@ -460,7 +485,7 @@ function renderState() {
   renderMidiLeaves();
   renderModeRestrictions();
   $$("[data-drum-part]").forEach((input) => {
-    input.disabled = Number(state.mode) !== 3 || (!transport.connected && !phoneAudio.presets);
+    input.disabled = connecting || (transport.connected && !verified) || Number(state.mode) !== 3 || (!transport.connected && !phoneAudio.presets);
     input.checked = (Number(state.drumsel ?? 255) & (1 << Number(input.dataset.drumPart))) !== 0;
   });
   $$("[data-play-mode]").forEach((button) => button.setAttribute("aria-pressed", String(Number(button.dataset.playMode) === Number(state.mode))));
@@ -543,7 +568,7 @@ function buildControl(def, source) {
     card.innerHTML = `<label for="control-${def.key}"><span>${def.label}</span><output id="output-${def.key}">—</output></label><input id="control-${def.key}" class="range" type="range" min="${min}" max="${max}" step="${def.step ?? 0.01}" data-key="${def.key}" data-value-key="${valueKey}" data-source="${source}"><div class="range-labels"><span>${formatValue(min)}</span><span>${formatValue(max)}</span></div>`;
   }
   const input = card.querySelector("input, select");
-  input.disabled = !transport.connected;
+  input.disabled = !transport.connected || !verified;
   input.addEventListener("pointerdown", () => interaction.add(def.key));
   input.addEventListener("pointerup", () => interaction.delete(def.key));
   input.addEventListener("blur", () => interaction.delete(def.key));
@@ -606,7 +631,7 @@ function renderOutputModes() {
     button.setAttribute("aria-checked", current === index ? "true" : "false");
     button.innerHTML = `<strong>${label || `Mode ${index}`}</strong><span>${descriptions[index] ?? "Output routing"}</span>`;
     const auxBlocked = (index === 2 || index === 3) && model.state.aux_ready === 0;
-    button.disabled = !transport.connected || !label || auxBlocked;
+    button.disabled = !transport.connected || !verified || !label || auxBlocked;
     if (auxBlocked) button.title = `AUX starts in ${Math.ceil((model.state.aux_wait_ms ?? 0) / 1000)} seconds`;
     button.addEventListener("click", () => scheduleSet("outputmode", index, null, true));
     return button;
@@ -620,7 +645,7 @@ function renderPresets() {
     button.type = "button";
     button.className = "preset-button";
     button.textContent = name;
-    button.disabled = !transport.connected;
+    button.disabled = !transport.connected || !verified;
     button.dataset.preset = String(index);
     button.addEventListener("click", () => scheduleSet(model.params.live_preset ? "preset_live" : "preset", index, null, true));
     return button;
@@ -634,6 +659,10 @@ function renderPresetSelection() {
 }
 
 function renderModeRestrictions() {
+  if (connecting || (transport.connected && !verified)) {
+    $$('[data-key], [data-play-mode], [data-drum-part], .midi-leaf').forEach((input) => { input.disabled = true; });
+    return;
+  }
   const auxOnly = Number(model.state.outputmode) === 2;
   const drumMode = $("#control-mode option[value=\"3\"]");
   if (drumMode) drumMode.disabled = auxOnly;
@@ -649,6 +678,7 @@ function renderModeRestrictions() {
 }
 
 function scheduleSet(key, rawValue, transform, immediate = false) {
+  if (connecting || (transport.connected && !verified)) return;
   const value = transform ? transform(String(rawValue)) : rawValue;
   applyLocalSetting(key, value);
   if (key.startsWith("arp_")) return;
@@ -675,7 +705,7 @@ function samplePlant(value) {
 function renderPlantScope() {
   plantRenderFrame = null;
   if (!plantSamples.length) return;
-  const now = plantSamples.at(-1).at;
+  const now = plantSamples[plantSamples.length - 1].at;
   const path = plantSamples.map((sample, index) => {
     const x = 600 - ((now - sample.at) / 24000) * 600;
     const y = 142 - sample.value * 134;
@@ -684,7 +714,7 @@ function renderPlantScope() {
   $("#plantTrace").setAttribute("d", path);
   const values = plantSamples.map((sample) => sample.value);
   const average = values.reduce((sum, item) => sum + item, 0) / values.length;
-  const latest = values.at(-1);
+  const latest = values[values.length - 1];
   const previous = values[Math.max(0, values.length - 4)];
   $("#signalNow").textContent = `${Math.round(latest * 100)}%`;
   $("#signalAverage").textContent = `${Math.round(average * 100)}%`;
@@ -699,7 +729,7 @@ function renderMidiLeaves() {
     const selected = Number(leaf.dataset.note) === root;
     leaf.classList.toggle("root", selected);
     leaf.setAttribute("aria-checked", String(selected));
-    leaf.disabled = !transport.connected;
+    leaf.disabled = !transport.connected || !verified;
   });
 }
 
@@ -728,6 +758,7 @@ function paintExpressionPad() {
 }
 
 function sendPadValues(values, immediate = false) {
+  if (connecting || (transport.connected && !verified)) return;
   pendingPadValues = values;
   Object.assign(model.synth, values);
   applyModelToControls("synth", model.synth);
@@ -894,8 +925,14 @@ function initInstall() {
 }
 
 function initCompatibility() {
+  const caps = capabilities();
+  $("#connectionIssue").addEventListener("change", () => refreshUsbDiagnostics());
+  if (!caps.relay) {
+    ["#linkOffer", "#linkAnswer", "#linkFinish"].forEach((id) => { $(id).disabled = true; });
+    $("#linkStatus").textContent = "The computer link needs WebRTC on HTTPS. Update your browser or open this app in another supported browser.";
+  }
   if (!transport.supported) {
-    setNotice("Sound previews work here. For live BECA input on iPad/iPhone, open ‘Link an iPad or tablet through a computer’ below. Direct USB requires Chrome/Edge on Android or a supported desktop browser.");
+    setNotice(`${caps.audio ? "Sound previews are available." : "Update your browser for sound previews."} For live BECA input, open ‘Link an iPad or tablet through a computer’ below${caps.relay ? "." : " in a browser with WebRTC support."} Direct USB requires a browser with WebUSB or Web Serial access; iPad/iPhone browsers cannot use this board’s USB serial adapter.`);
     $("#connectButton").disabled = true;
   } else if (!window.isSecureContext) {
     setNotice("USB access requires HTTPS. Open the published GitHub Pages app, or use localhost for development.", "error");
@@ -955,6 +992,8 @@ transport.addEventListener("sent", (event) => logLine(event.detail, "out"));
 transport.addEventListener("line", (event) => receive(event.detail));
 transport.addEventListener("transporterror", (event) => handleError(event.detail));
 transport.addEventListener("disconnect", () => {
+  for (const waiter of pendingReplies.values()) { clearTimeout(waiter.timer); waiter.reject(new Error("BECA disconnected before replying.")); }
+  pendingReplies.clear();
   phoneAudio.stop();
   sendTimers.forEach(clearTimeout);
   sendTimers.clear();

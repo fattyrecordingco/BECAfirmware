@@ -5,7 +5,7 @@ import { verifyAudioBuild } from "./audio-sources.mjs";
 await verifyAudioBuild();
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const required = ["index.html", "app.css", "app.js", "protocol.js", "webusb-serial.js", "tablet-link.js", "phone-audio.js", "plant-arp.js", "audio-engine.js", "audio-worklet.js", "beca-synth.wasm", "manifest.webmanifest", "service-worker.js", "icons/icon.svg", "icons/wordmark.svg", "icons/icon-192.png", "icons/icon-512.png"];
+const required = ["index.html", "app.css", "app.js", "protocol.js", "webusb-serial.js", "tablet-link.js", "phone-audio.js", "plant-arp.js", "compatibility.js", "audio-engine.js", "audio-worklet.js", "beca-synth.wasm", "manifest.webmanifest", "service-worker.js", "icons/icon.svg", "icons/wordmark.svg", "icons/icon-192.png", "icons/icon-512.png"];
 for (const file of required) {
   const info = await stat(resolve(root, file));
   if (!info.isFile() || info.size === 0) throw new Error(`${file} is missing or empty`);

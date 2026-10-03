@@ -22,7 +22,10 @@ export async function installMockSerial(page) {
       if (tag === "PING") push('@R PING {"ok":1}');
       else if (tag === "PARAMS") push('@R PARAMS {"modes":["Notes","Arpeggiator","Chords","Drum Machine"],"scales":["Major","Minor"],"time_signatures":["4-4"],"note_lengths":["1/8"],"output_modes":["BLE MIDI","Serial MIDI","Aux audio","Serial MIDI + Aux","Wi-Fi MIDI"],"live_preset":true,"synth_presets":["Warm Pad","Soft Keys"],"ranges":{"bpm":[20,240],"swing":[0,60],"sens":[0,0.5],"lo":[1,8],"hi":[1,8],"rest":[0,0.8],"attack":[0,5],"decay":[0,5],"sustain":[0,1],"release":[0.01,10],"cutoff":[20,18000],"resonance":[0.1,10],"delay_ms":[0,800],"delay_feedback":[0,0.95],"delay_mix":[0,1],"drive":[0,1],"detune":[0,8],"gain_trim":[0.45,1]}}');
       else if (tag === "STATE") push(`@R STATE ${JSON.stringify(state)}`);
-      else if (tag === "SYNTH") push(`@R SYNTH ${JSON.stringify(synth)}`);
+      else if (tag === "SYNTH") {
+        if (globalThis.__MOCK_SYNTH_DELAY) setTimeout(()=>push(`@R SYNTH ${JSON.stringify(synth)}`),globalThis.__MOCK_SYNTH_DELAY);
+        else push(`@R SYNTH ${JSON.stringify(synth)}`);
+      }
       else if (tag === "PLANT") push(`@R PLANT ${JSON.stringify(globalThis.__MOCK_PLANT)}`);
       else if (tag === "NOTES") push('@R NOTES {"held":1,"notes":[60],"last":60,"last_vel":88}');
       else if (tag === "SET") {
@@ -76,6 +79,7 @@ test("shows live plant data and the leaf MIDI root selector", async ({ page }) =
 
 test("keeps the live deck stable across notes, modes, and sensitivity changes", async ({ page }) => {
   await page.getByRole("button", { name: "Connect USB" }).click();
+  await expect(page.locator("#deviceStatus")).toHaveText("BECA connected");
   const deck = page.locator("#liveDeck");
   const tabs = page.locator(".tabs");
   const before = await Promise.all([deck.boundingBox(), tabs.boundingBox()]);
@@ -192,14 +196,49 @@ test("unsupported USB browsers show the iPad limitation and computer route", asy
   await expect(page.locator("#compatibilityNotice")).toContainText("through a computer");
 });
 
+test("connection help separates missing power from browser support", async ({page}, testInfo) => {
+  await page.locator("#connectionHelp summary").first().click();
+  await page.locator("#connectionIssue").selectOption("power");
+  await expect(page.locator("#connectionAdvice")).toContainText("OnePlus/OxygenOS");
+  await expect(page.locator("#connectionAdvice")).toContainText("OTG-to-USB-A");
+  await expect(page.locator("#connectionAdvice")).toContainText("cannot turn USB power on");
+  await expect(page.locator("#relayCapability")).toContainText("available");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+  await page.screenshot({path:testInfo.outputPath("connection-help.png"),fullPage:true});
+});
+
+test("connection waits for initial settings before enabling instrument changes", async ({page}) => {
+  await page.evaluate(()=> { globalThis.__MOCK_SYNTH_DELAY=700; });
+  await page.getByRole("button",{name:"Connect USB",exact:true}).click();
+  await expect(page.locator("#deviceStatus")).toHaveText("Checking device…");
+  await expect(page.locator('[data-play-mode="1"]')).toBeDisabled();
+  await expect(page.locator("#connectButton")).toBeDisabled();
+  await expect(page.locator("#deviceStatus")).toHaveText("BECA connected");
+  await expect(page.locator('[data-play-mode="1"]')).toBeEnabled();
+});
+
+test("older browser helpers are optional and unavailable WebRTC has a clear fallback", async ({page}) => {
+  await page.addInitScript(() => {
+    globalThis.structuredClone = undefined;
+    Array.prototype.at = undefined;
+    globalThis.RTCPeerConnection = undefined;
+  });
+  await page.reload();
+  await expect(page.locator("#presetGrid .preset-button")).toHaveCount(13);
+  await expect(page.locator("#linkAnswer")).toBeDisabled();
+  await expect(page.locator("#linkStatus")).toContainText("WebRTC");
+  await page.getByRole("button",{name:"Connect USB",exact:true}).click();
+  await expect(page.locator("#deviceStatus")).toHaveText("BECA connected");
+  await expect(page.locator("#plantValue")).toHaveText("0.42");
+});
+
 test("uses the desktop BECA light design and brand assets", async ({ page }) => {
   await expect(page.locator(".brand img")).toHaveAttribute("src", "./icons/wordmark.svg");
-  const theme = await page.evaluate(() => ({
+  await expect.poll(() => page.evaluate(() => ({
     scheme: getComputedStyle(document.documentElement).colorScheme,
-    background: getComputedStyle(document.body).backgroundColor,
+    background: getComputedStyle(document.documentElement).backgroundColor,
     accent: getComputedStyle(document.documentElement).getPropertyValue("--accent").trim()
-  }));
-  expect(theme).toEqual({ scheme: "light", background: "rgb(246, 244, 239)", accent: "#008351" });
+  }))).toEqual({ scheme: "light", background: "rgb(246, 244, 239)", accent: "#008351" });
 });
 
 test("has no serious automated accessibility violations", async ({ page }) => {

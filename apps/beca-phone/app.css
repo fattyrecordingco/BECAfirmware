@@ -312,3 +312,7 @@ footer { display: flex; justify-content: space-between; width: min(1120px, calc(
   .control-card label { font-size: 12px; }
   .mode-buttons { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+.connection-advice { grid-column: 1 / -1; font-size: 12px; line-height: 1.7; }
+.connection-advice label { display: block; font-weight: 700; margin-bottom: 8px; }
+.connection-advice select { width: 100%; max-width: 440px; min-height: 48px; border: 1px solid var(--line); border-radius: 10px; padding: 10px; color: var(--text); background: #fff; font: inherit; }
+#connectionAdvice { padding: 14px; border-left: 3px solid var(--accent); background: var(--panel-ghost); }

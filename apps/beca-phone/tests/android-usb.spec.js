@@ -50,6 +50,11 @@ test("Android requests WebUSB permission and connects to BECA", async ({ page },
       async transferOut(_endpoint, bytes) {
         const command = decoder.decode(bytes).trim();
         if (command === "@C PING") push('@R PING {"ok":1}');
+        else if (command === "@C PARAMS") push('@R PARAMS {"modes":["Notes","Arpeggiator","Chords","Drum Machine"]}');
+        else if (command === "@C STATE") push('@R STATE {"mode":0,"outputmode":1}');
+        else if (command === "@C SYNTH") push('@R SYNTH {"preset":0,"master":0.5}');
+        else if (command === "@C PLANT") push('@R PLANT {"value":0.2,"connected":1}');
+        else if (command === "@C NOTES") push('@R NOTES {"notes":[]}');
         return { status: "ok", bytesWritten: bytes.byteLength };
       }
     };

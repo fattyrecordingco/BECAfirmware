@@ -2,6 +2,12 @@
 
 BECA Phone Control is an installable web instrument and controller for phones, tablets and desktops. Version 1.5 uses BECA's C++ synthesizer through WebAssembly and AudioWorklet, including all 13 presets and eight drum voices, with higher-precision web delay and band-limited saw/square oscillators. USB control uses the existing `@C` protocol at 115200 baud. The firmware's BLE-MIDI behavior is unchanged.
 
+## Connection refinements (1.5.1)
+
+Connection help now distinguishes missing power, unavailable browser APIs and an interrupted connection. Audio and computer-link support are detected from browser capabilities. Controls wait for the initial device settings before sending changes; serial text decoding preserves names split across USB packets. The app no longer needs `structuredClone` or `Array.at` on older browsers. Existing command coalescing, bounded telemetry and state-diff rendering remain in place.
+
+On 3 October 2026, the connected CH340 BECA passed the laptop serial check: all 13 presets, 40 bounded plant samples, and replies within 16 ms. Additional muted tests exercised every preset at three master levels and restored the original settings. This verifies the board and laptop connection, not physical OnePlus or iPad compatibility. Firmware remains targeted at ESP32 core **2.0.14**; this update changes no firmware or BLE libraries.
+
 ## Controller and plant arpeggiator (1.5)
 
 - **Instrument buttons:** Notes, Arpeggiator, Chords and Drums. Drum kit controls, part selection and channel-10 playback are available only in Drums; melodic notes are ignored in that mode. Switching modes clears the phone's voices and effect tails. Test sound previews the selected mode.
@@ -65,6 +71,20 @@ The GitHub Pages workflow publishes this folder as the site root. For local deve
 
 ## Requirements
 
+Compatibility depends on browser capabilities, USB host power and the cable, not just the phone model or OS number:
+
+| Device/browser | Local synth | Live plant input |
+| --- | --- | --- |
+| Android Chromium with WebUSB and Web Audio | Yes | USB with OTG power and permission, or computer link |
+| Desktop Chromium with Web Serial | Yes | USB; can host the tablet link |
+| iPhone/iPad browser with Web Audio and WebRTC | Yes | Computer link; no direct USB serial access |
+| Other browsers with Web Audio and WebRTC | Yes | Computer link |
+| Browser without AudioWorklet or WebAssembly | Unavailable | Update the browser; supported controller functions may still work |
+
+All audio routes require HTTPS and a user tap. Layout tests use emulated phone/tablet viewports; they are not physical certification of every phone or OS. A web update cannot provide USB APIs or power that the operating system withholds.
+
+For direct Android USB:
+
 - An Android phone or tablet.
 - Current Chrome or Edge on Android with WebUSB enabled.
 - A USB-C OTG/data cable. Charge-only cables cannot work.
@@ -91,7 +111,7 @@ In Android Chrome, open the app and use **Install app** from the browser menu or
 
 ## Features
 
-- Verified 115200-baud Android WebUSB connection for CH340/CH341, CP210x, FTDI, and Espressif USB Serial/JTAG bridges, desktop Web Serial fallback, visible permission diagnostics, and cable-removal handling.
+- 115200-baud Android WebUSB drivers for CH340/CH341, CP210x, FTDI, and Espressif USB Serial/JTAG bridges, desktop Web Serial fallback, permission diagnostics, and cable-removal handling. Driver behavior has automated coverage; physical serial checks used the connected CH340 board on a laptop.
 - The same light cream, white, and BECA green design system, desktop wordmark, typography, borders, controls, and flower app icon as BECA Setup/Control.
 - AUX, Serial + AUX, Serial, BLE, and firmware-advertised Wi-Fi MIDI routing.
 - Master level, mute, test chord, presets, oscillators, ADSR, filter, reverb, delay, drive, detune, and voice controls.
@@ -125,7 +145,9 @@ The app uses `@C SET <key> <value>` for controls. It requests `TELEMETRY 0` duri
 
 ## Troubleshooting
 
-**No USB permission or device picker appears:** first read the four diagnostics at the top of the app. **Browser** must say `WebUSB ready` or `Web Serial fallback`, and **Secure app** must say `HTTPS ready`. Open the page directly in current Chrome or Edge, not an email/social app. Unlock the phone, enable OTG/USB host mode if the phone has that setting, connect BECA directly without a hub, press **Connect USB**, and choose USB-Serial/CH340/CP210x/FTDI/Espressif. Some phones disable OTG automatically after a few minutes, so disconnect and re-enable it before retrying.
+**OnePlus 6 / OxygenOS 11: BECA has no power over USB-C:** search phone Settings for **OTG**, enable OTG storage/connection and reconnect immediately. Recheck it after inactivity; OnePlus documents automatic OTG shutoff in its [OxygenOS-era manual](https://service.oneplus.com/content/dam/support/user-manuals/common/OnePlus_Nord_CE_5G_User_Manual_EN.pdf), although menu names vary by model. The web app cannot turn USB power on. Try a known data cable. If C-to-C still gives no lights, try a phone USB-C OTG-to-USB-A adapter followed by a USB-A-to-C data cable to BECA. This requires no board modification. If that works, investigate the C-to-C cable and board CC termination: USB-C uses CC pins to establish attachment and power roles ([TI reference](https://www.ti.com/product/TUSB322I)). That result alone does not prove a board defect. If BECA powers up but resets, try a powered USB data hub suitable for the phone. Check power before browser permissions.
+
+**No USB permission or device picker appears:** first read the connection diagnostics at the top of the app. **Browser** must say `WebUSB ready` or `Web Serial fallback`, and **Secure app** must say `HTTPS ready`. Open the page directly in current Chrome or Edge, not an email/social app. Unlock the phone, enable OTG/USB host mode if the phone has that setting, connect BECA directly without a hub, press **Connect USB**, and choose USB-Serial/CH340/CP210x/FTDI/Espressif. Some phones disable OTG automatically after a few minutes, so disconnect and re-enable it before retrying.
 
 **The chooser opens but is empty:** verify BECA is powered from the phone and that Android shows a USB attachment notification. The v1.2 chooser includes the same four adapter families as the desktop detector. If Android itself shows no USB attachment at all, the failure is below the web app: check the phone's OTG/host support, connector orientation/adapter, and whether BECA needs separate power.
 

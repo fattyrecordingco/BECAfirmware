@@ -124,6 +124,7 @@ export class BecaSerial extends EventTarget {
     this.reading = false;
     this.intentionalClose = false;
     this.framer = new LineFramer();
+    this.decoder = new TextDecoder();
     this.queue = new WriteQueue((value) => this.#writeNow(value));
   }
 
@@ -139,6 +140,7 @@ export class BecaSerial extends EventTarget {
     if (!this.supported) throw new Error("Web Serial is not available in this browser.");
     if (this.connected) return;
     this.intentionalClose = false;
+    this.decoder = new TextDecoder();
     this.port = await this.serialProvider.requestPort();
     await this.port.open({ baudRate: BAUD_RATE, bufferSize: 4096 });
     this.writer = this.port.writable.getWriter();
@@ -166,7 +168,7 @@ export class BecaSerial extends EventTarget {
         const { value, done } = await this.reader.read();
         if (done) break;
         if (!value) continue;
-        const text = new TextDecoder().decode(value, { stream: true });
+        const text = this.decoder.decode(value, { stream: true });
         for (const line of this.framer.push(text)) {
           this.dispatchEvent(new CustomEvent("line", { detail: parseSerialLine(line) }));
         }
