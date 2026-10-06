@@ -11,6 +11,7 @@ export class PhoneAudio extends EventTarget {
     this.arp = new PlantArp();
     this.noteMap = new Map();
     this.activeNotes = new Set();
+    this.startGeneration = 0;
   }
   async load() {
     if (!globalThis.WebAssembly) throw new Error("This browser cannot load the BECA synth. Update the browser for WebAssembly support.");
@@ -36,20 +37,34 @@ export class PhoneAudio extends EventTarget {
     if (!globalThis.AudioContext || !globalThis.AudioWorkletNode || !globalThis.isSecureContext) {
       throw new Error("Live audio needs a current browser with AudioWorklet on HTTPS or localhost.");
     }
+    const generation = ++this.startGeneration;
+    if (this.context?.state === "closed") { this.context = null; this.node = null; this.lastParams = null; }
     // Create/resume before awaiting downloads to retain the user's audio gesture.
     if (!this.context) {
       this.context = new AudioContext({ latencyHint: "interactive", sampleRate: 44100 });
-      this.context.onstatechange = () => this.dispatchEvent(new Event("statechange"));
+      this.context.onstatechange = () => {
+        if (this.enabled && this.context.state !== "running") this.stop();
+        else this.dispatchEvent(new Event("statechange"));
+      };
     }
     const resume = this.context.resume();
-    await this.load();
-    await resume;
+    await Promise.all([this.load(), resume]);
+    if (generation !== this.startGeneration) return;
+    if (this.context.state !== "running") throw new Error("Audio was interrupted. Keep the app visible, then tap Listen again.");
     if (!this.node) {
       await this.context.audioWorklet.addModule(new URL("./audio-worklet.js", import.meta.url));
+      if (generation !== this.startGeneration) return;
       this.node = new AudioWorkletNode(this.context, "beca-synth", {
         numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2], processorOptions: { bytes: this.bytes }
       });
-      this.node.onprocessorerror = () => { this.stop(); this.dispatchEvent(new Event("engineerror")); };
+      this.node.onprocessorerror = () => {
+        this.stop();
+        this.node.disconnect();
+        this.node = null;
+        this.gain?.disconnect();
+        this.lastParams = null;
+        this.dispatchEvent(new Event("engineerror"));
+      };
       this.gain = this.context.createGain();
       this.gain.gain.value = 0;
       this.node.connect(this.gain).connect(this.context.destination);
@@ -61,8 +76,12 @@ export class PhoneAudio extends EventTarget {
     this.dispatchEvent(new Event("statechange"));
   }
   stop() {
+    ++this.startGeneration;
     this.enabled = false;
-    if (this.gain) this.gain.gain.setValueAtTime(0, this.context.currentTime);
+    if (this.gain) {
+      this.gain.gain.cancelScheduledValues(this.context.currentTime);
+      this.gain.gain.setValueAtTime(0, this.context.currentTime);
+    }
     this.panic();
     this.dispatchEvent(new Event("statechange"));
   }

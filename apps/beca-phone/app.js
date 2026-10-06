@@ -4,8 +4,9 @@ import { PhoneAudio } from "./phone-audio.js";
 import { BecaConnection } from "./tablet-link.js";
 import { ARP_DEFAULTS } from "./plant-arp.js";
 import { capabilities, connectionHelp } from "./compatibility.js";
+import { appleNativeProvider } from "./apple-native.js";
 
-const APP_VERSION = "1.5.1";
+const APP_VERSION = "1.6.0";
 const phoneAudio = new PhoneAudio();
 const NOTE_NAMES = ["C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B"];
 const LEAF_PATH = "M100 48.864C100 77.106 77.106 100 48.864 100H0V51.136C0 22.894 22.894 0 51.136 0H100v48.864ZM51.136 11.364c-21.965 0-39.772 17.807-39.772 39.772V81.17l42.005-42.005c2.219-2.219 5.817-2.219 8.036 0 2.219 2.219 2.219 5.817 0 8.036L19.967 88.636h28.897c21.965 0 39.772-17.807 39.772-39.772V11.364H51.136Z";
@@ -90,7 +91,8 @@ const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
 const isAndroid = shouldUseWebUsb();
 const webUsbProvider = navigator.usb?.requestDevice ? new WebUsbSerialProvider(navigator.usb) : null;
-const serialProvider = globalThis.__BECA_SERIAL__ ?? (isAndroid ? webUsbProvider ?? navigator.serial : navigator.serial ?? webUsbProvider);
+const nativeProvider = appleNativeProvider();
+const serialProvider = nativeProvider ?? globalThis.__BECA_SERIAL__ ?? (isAndroid ? webUsbProvider ?? navigator.serial : navigator.serial ?? webUsbProvider);
 const transport = new BecaConnection(new BecaSerial(serialProvider));
 const transportName = serialProvider?.transportName ?? (serialProvider === navigator.serial ? "Web Serial" : "Android USB");
 const model = { params: JSON.parse(JSON.stringify(FALLBACK_PARAMS)), state: {mode:0, scale:0, root:0, lo:2, hi:5, drumsel:255, ...ARP_DEFAULTS}, synth: {}, plant: {}, notes: {} };
@@ -193,11 +195,12 @@ function setConnectedUi(connected) {
   $("#listenButton").disabled = connecting || !capabilities().audio;
   $("#connectButton").disabled = connecting || (!connected && !transport.supported);
   $("#connectButton").classList.toggle("connected", connected);
-  $("#connectButton span:last-child").textContent = connected ? "Disconnect" : "Connect USB";
+  $("#connectButton span:last-child").textContent = connected ? "Disconnect" : nativeProvider ? "Connect BECA" : "Connect USB";
   $("#deviceStatus").textContent = connected ? (verified ? "BECA connected" : "Checking device…") : "Not connected";
   $("#connectionMessage").textContent = connected
     ? (verified ? `Direct ${transportName} control is active. Your changes are sent to BECA in real time.` : "Opening the USB link and checking for BECA…")
-    : !transport.supported ? "Direct USB is unavailable here. Use the computer link below for live plant input." : isAndroid
+    : nativeProvider ? "Enter BECA’s Wi-Fi address above and select its MIDI source. No computer is needed."
+    : !transport.supported ? "Use BECA’s direct Wi-Fi controller for settings and AUX, or native BLE-MIDI in a music app. The computer link supplies live input to this browser synth." : isAndroid
       ? "Connect BECA with a USB-C OTG/data cable, then tap Connect USB and approve the device permission."
       : "Connect your device to BECA with a USB data cable.";
   $$('button[data-requires-connection], button[data-command], .preset-button, .midi-leaf, input[data-key], select[data-key], #muteButton, #testButton, #refreshButton, #resetPreset, #randomizeButton, #commandInput, #commandForm button[type="submit"]').forEach((element) => {
@@ -230,14 +233,14 @@ function updateAudioStatus() {
   $("#listenButton").setAttribute("aria-pressed", String(active));
   $("#audioStatus").textContent = active
     ? phoneAudio.context?.state !== "running" ? "Audio paused by browser — tap Stop, then Listen to resume."
-      : transport.connected ? "Live synth · select Serial MIDI or Serial MIDI + Aux for notes" : "Preview ready · connect BECA for live plant input"
+      : transport.connected ? nativeProvider ? "Live synth · select BECA’s native MIDI source above and BLE MIDI output" : "Live synth · select Serial MIDI or Serial MIDI + Aux for notes" : "Preview ready · connect BECA for live plant input"
     : "Sound is off. Tap Listen to enable this device’s audio.";
 }
 
 async function startPhoneAudio() {
   phoneAudio.setPerformance(model.state);
   await phoneAudio.start(model.synth);
-  if (transport.connected) scheduleSet("outputmode", 1, null, true);
+  if (phoneAudio.enabled && transport.connected) scheduleSet("outputmode", serialProvider?.audioOutputMode ?? 1, null, true);
   updateAudioStatus();
 }
 
@@ -268,12 +271,12 @@ function applyLocalSetting(key, value) {
 function waitForReply(tag, timeoutMs = 3500) {
   return new Promise((resolve, reject) => {
     const old = pendingReplies.get(tag);
-    if (old) clearTimeout(old.timer);
+    if (old) { clearTimeout(old.timer); old.reject(new Error(`A newer ${tag} request replaced this one.`)); }
     const timer = setTimeout(() => {
       pendingReplies.delete(tag);
-      reject(new Error(`BECA did not answer ${tag}. Check the cable and close other serial apps.`));
+      reject(new Error(`BECA did not answer ${tag}. ${nativeProvider ? "Check its Wi-Fi address and Local Network permission." : "Check the cable and close other serial apps."}`));
     }, timeoutMs);
-    pendingReplies.set(tag, { resolve, timer });
+    pendingReplies.set(tag, { resolve, reject, timer });
   });
 }
 
@@ -295,7 +298,7 @@ async function request(tag, awaitReply = false) {
 async function verifyDevice() {
   const ping = request("PING", true);
   const payload = await ping;
-  if (!payload?.ok) throw new Error("The selected serial device did not identify as BECA.");
+  if (!payload?.ok) throw new Error("The selected device did not identify as BECA.");
   await transport.send("TELEMETRY 1");
   await Promise.all(["PARAMS", "STATE", "SYNTH", "PLANT", "NOTES"].map((tag) => request(tag, true)));
   verified = true;
@@ -303,23 +306,31 @@ async function verifyDevice() {
   setConnectedUi(true);
   startPolling();
   setNotice();
-  showToast(transport.remote ? "BECA linked through computer." : "BECA connected over USB-C.");
-  if (phoneAudio.enabled) scheduleSet("outputmode", 1, null, true);
+  showToast(transport.remote ? "BECA linked through computer." : nativeProvider ? "BECA connected directly over Wi-Fi." : "BECA connected over USB-C.");
+  if (phoneAudio.enabled) scheduleSet("outputmode", serialProvider?.audioOutputMode ?? 1, null, true);
   updateAudioStatus();
 }
 
 function startPolling() {
   stopPolling();
+  const busy = new Set();
+  const poll = async (name, tags) => {
+    if (document.hidden || !transport.connected || busy.has(name)) return;
+    busy.add(name);
+    try { for (const tag of tags) await transport.send(tag); }
+    catch (error) { handleError(error); }
+    finally { busy.delete(name); }
+  };
   heartbeatTimer = setInterval(() => {
-    if (!document.hidden && transport.connected) transport.send("PING").catch(handleError);
+    poll("heartbeat", ["PING"]);
   }, 1500);
   statePollTimer = setInterval(() => {
     if (!document.hidden && transport.connected) {
-      transport.send("STATE").then(() => transport.send("PLANT")).then(() => transport.send("NOTES")).catch(handleError);
+      poll("state", ["STATE", "PLANT", "NOTES"]);
     }
   }, 500);
   synthPollTimer = setInterval(() => {
-    if (!document.hidden && transport.connected) transport.send("SYNTH").catch(handleError);
+    poll("synth", ["SYNTH"]);
   }, 2000);
 }
 
@@ -370,6 +381,7 @@ async function toggleConnection() {
 }
 
 function connectionError(error) {
+  if (nativeProvider) return error instanceof Error ? error : new Error(String(error));
   if (error?.name === "NotFoundError") {
     return new Error("No USB adapter was selected. Check that BECA has power and enable OTG on OnePlus/OxygenOS if needed. If C-to-C gives no lights, follow the OTG adapter/cable steps in connection help. Then tap Connect USB and select CH340/CH341, CP210x, FTDI, or Espressif USB Serial/JTAG.");
   }
@@ -926,6 +938,12 @@ function initInstall() {
 
 function initCompatibility() {
   const caps = capabilities();
+  if (nativeProvider) {
+    $("#appleConnectionHelp").hidden = true;
+    $("#connectionHelp").hidden = true;
+    $(".tablet-link").hidden = true;
+    return;
+  }
   $("#connectionIssue").addEventListener("change", () => refreshUsbDiagnostics());
   if (!caps.relay) {
     ["#linkOffer", "#linkAnswer", "#linkFinish"].forEach((id) => { $(id).disabled = true; });
@@ -946,7 +964,7 @@ function initCompatibility() {
 }
 
 transport.addEventListener("connect", () => {
-  logLine("Serial port opened at 115200 baud.", "system");
+  logLine(nativeProvider ? "Opened direct Apple Wi-Fi control and native MIDI." : "Serial port opened at 115200 baud.", "system");
   setUsbCheck("#permissionStatus", "Permission granted", "ok");
   setUsbCheck("#adapterStatus", selectedAdapterLabel(), "ok");
 });
@@ -1010,7 +1028,7 @@ transport.addEventListener("disconnect", () => {
   verified = false;
   stopPolling();
   setConnectedUi(false);
-  logLine("Serial connection closed.", "system");
+  logLine("BECA connection closed.", "system");
   refreshUsbDiagnostics();
   renderNotes();
   renderPlant();

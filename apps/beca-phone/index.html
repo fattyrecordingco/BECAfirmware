@@ -71,6 +71,16 @@
         </div>
       </section>
 
+      <details id="appleConnectionHelp" class="connection-help">
+        <summary>Connect directly on iPhone, iPad or Mac</summary>
+        <section class="panel">
+          <h2>BECA without a computer</h2>
+          <p>Power BECA from a charger or power bank. Join its setup Wi-Fi, then <a href="http://192.168.4.1/" target="_blank" rel="noopener">open its Wi-Fi controller</a> in Safari. If BECA has joined your router, open its current local IP address instead. This controller changes BECA’s settings and AUX sound directly.</p>
+          <p>For live sound in a native music app, choose <strong>BLE MIDI</strong> output on BECA, open that app’s <strong>Bluetooth MIDI</strong> panel and connect <strong>BECA BLE-MIDI</strong>. On Mac, use Audio MIDI Setup → MIDI Studio → Bluetooth. Pair through the MIDI panel.</p>
+          <p>The BECA Apple app combines these direct Wi-Fi controls with native MIDI and the BECA synth. It requires installation of the native app; installing this web page on the Home Screen does not add MIDI access. The browser synth below uses the computer link for live input.</p>
+          <p>Allow Local Network and Bluetooth when prompted. Keep the app visible while playing. If the setup network reports no internet, stay connected and open Safari manually.</p>
+        </section>
+      </details>
       <details id="connectionHelp" class="connection-help"><summary>USB connection setup and diagnostics</summary>
       <section class="usb-guide panel" aria-labelledby="usbGuideTitle">
         <div class="usb-guide-copy">
@@ -212,7 +222,7 @@
             <button type="button" data-command="SYNTH">SYNTH</button><button type="button" data-command="PLANT">PLANT</button>
             <button type="button" data-command="NOTES">NOTES</button><button type="button" data-command="PINS">PINS</button>
           </div>
-          <div id="consoleLog" class="console-log" role="log" aria-live="polite"><p class="log-system">Ready. Connect USB to begin.</p></div>
+          <div id="consoleLog" class="console-log" role="log" aria-live="polite"><p class="log-system">Ready. Connect BECA to begin.</p></div>
           <form id="commandForm" class="command-form">
             <label class="sr-only" for="commandInput">Serial command</label>
             <input id="commandInput" type="text" autocomplete="off" placeholder="SET cutoff 4200" disabled>
@@ -223,7 +233,7 @@
     </main>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
-    <footer><span>BECA phone control</span><span id="appVersion">v1.5.1</span></footer>
+    <footer><span>BECA phone control</span><span id="appVersion">v1.6.0</span></footer>
     <script type="module" src="./app.js"></script>
   </body>
 </html>

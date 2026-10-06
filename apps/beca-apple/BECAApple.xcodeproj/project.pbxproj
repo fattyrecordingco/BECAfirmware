@@ -1,0 +1,29 @@
+// !$*UTF8*$!
+{ archiveVersion = 1; classes = {}; objectVersion = 56; objects = {
+00000000000000000000000A = {isa = PBXBuildFile; fileRef = 000000000000000000000014; };
+000000000000000000000014 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BECAAppleApp.swift; sourceTree = "<group>"; };
+00000000000000000000000B = {isa = PBXBuildFile; fileRef = 000000000000000000000015; };
+000000000000000000000015 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleSession.swift; sourceTree = "<group>"; };
+00000000000000000000000C = {isa = PBXBuildFile; fileRef = 000000000000000000000016; };
+000000000000000000000016 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalWebServer.swift; sourceTree = "<group>"; };
+00000000000000000000000D = {isa = PBXBuildFile; fileRef = 000000000000000000000017; };
+000000000000000000000017 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MIDIStream.swift; sourceTree = "<group>"; };
+00000000000000000000001E = {isa = PBXFileReference; lastKnownFileType = folder; path = Web; sourceTree = "<group>"; };
+00000000000000000000001F = {isa = PBXBuildFile; fileRef = 00000000000000000000001E; };
+000000000000000000000020 = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+000000000000000000000021 = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BECAApple.app; sourceTree = BUILT_PRODUCTS_DIR; };
+000000000000000000000028 = {isa = PBXGroup; children = (000000000000000000000029, 00000000000000000000002A); sourceTree = "<group>"; };
+000000000000000000000029 = {isa = PBXGroup; children = (000000000000000000000014, 000000000000000000000015, 000000000000000000000016, 000000000000000000000017, 00000000000000000000001E, 000000000000000000000020); path = BECAApple; sourceTree = "<group>"; };
+00000000000000000000002A = {isa = PBXGroup; children = (000000000000000000000021); name = Products; sourceTree = "<group>"; };
+000000000000000000000032 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (00000000000000000000000A, 00000000000000000000000B, 00000000000000000000000C, 00000000000000000000000D); runOnlyForDeploymentPostprocessing = 0; };
+000000000000000000000033 = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (00000000000000000000001F); runOnlyForDeploymentPostprocessing = 0; };
+000000000000000000000034 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+00000000000000000000003C = {isa = PBXNativeTarget; buildConfigurationList = 000000000000000000000047; buildPhases = (000000000000000000000032, 000000000000000000000034, 000000000000000000000033); buildRules = (); dependencies = (); name = BECAApple; productName = BECAApple; productReference = 000000000000000000000021; productType = "com.apple.product-type.application"; };
+00000000000000000000003D = {isa = PBXProject; attributes = {BuildIndependentTargetsInParallel = YES; LastUpgradeCheck = 1600; TargetAttributes = {00000000000000000000003C = {CreatedOnToolsVersion = 16.0; }; }; }; buildConfigurationList = 000000000000000000000046; compatibilityVersion = "Xcode 14.0"; developmentRegion = en; hasScannedForEncodings = 0; knownRegions = (en, Base); mainGroup = 000000000000000000000028; productRefGroup = 00000000000000000000002A; projectDirPath = ""; projectRoot = ""; targets = (00000000000000000000003C); };
+000000000000000000000046 = {isa = XCConfigurationList; buildConfigurations = (000000000000000000000050, 000000000000000000000051); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+000000000000000000000047 = {isa = XCConfigurationList; buildConfigurations = (000000000000000000000052, 000000000000000000000053); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+000000000000000000000050 = {isa = XCBuildConfiguration; buildSettings = {CLANG_ENABLE_MODULES = YES; SWIFT_VERSION = 5.0; SWIFT_OPTIMIZATION_LEVEL = "-Onone"; SDKROOT = auto; }; name = Debug; };
+000000000000000000000052 = {isa = XCBuildConfiguration; buildSettings = {CODE_SIGN_STYLE = Automatic; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = BECAApple/Info.plist; IPHONEOS_DEPLOYMENT_TARGET = 15.0; MACOSX_DEPLOYMENT_TARGET = 12.0; PRODUCT_BUNDLE_IDENTIFIER = com.fattyrecording.beca.apple; PRODUCT_NAME = "$(TARGET_NAME)"; SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx"; SUPPORTS_MACCATALYST = NO; TARGETED_DEVICE_FAMILY = "1,2"; SWIFT_EMIT_LOC_STRINGS = YES; ENABLE_APP_SANDBOX = NO;}; name = Debug; };
+000000000000000000000051 = {isa = XCBuildConfiguration; buildSettings = {CLANG_ENABLE_MODULES = YES; SWIFT_VERSION = 5.0; SWIFT_OPTIMIZATION_LEVEL = "-O"; SDKROOT = auto; }; name = Release; };
+000000000000000000000053 = {isa = XCBuildConfiguration; buildSettings = {CODE_SIGN_STYLE = Automatic; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = BECAApple/Info.plist; IPHONEOS_DEPLOYMENT_TARGET = 15.0; MACOSX_DEPLOYMENT_TARGET = 12.0; PRODUCT_BUNDLE_IDENTIFIER = com.fattyrecording.beca.apple; PRODUCT_NAME = "$(TARGET_NAME)"; SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx"; SUPPORTS_MACCATALYST = NO; TARGETED_DEVICE_FAMILY = "1,2"; SWIFT_EMIT_LOC_STRINGS = YES; ENABLE_APP_SANDBOX = NO;}; name = Release; };
+}; rootObject = 00000000000000000000003D; }

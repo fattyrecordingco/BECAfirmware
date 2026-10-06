@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>BECA Control</title>
     <style>
       :root {
@@ -1181,7 +1181,7 @@
                 </div>
                 <div class="segmented" id="output-group"></div>
                 <p class="panel-copy" id="wifi-midi-hint" hidden>
-                  Connect BECA and your computer to the same Wi-Fi in Settings, then open a network MIDI session on your computer.
+                  For Mac, open Audio MIDI Setup → MIDI Studio → Configure Network Driver. On iPhone/iPad, use a native music app with network MIDI support. For Bluetooth, select BLE MIDI output and connect BECA BLE-MIDI in the music app’s Bluetooth MIDI panel.
                 </p>
               </article>
 
@@ -1710,9 +1710,13 @@
         }
 
         async function getJson(path) {
-          const response = await fetch(path, { cache: "no-store" });
-          if (!response.ok) throw new Error(`${path} returned ${response.status}`);
-          return response.json();
+          const controller = new AbortController();
+          const timer = window.setTimeout(() => controller.abort(), 4000);
+          try {
+            const response = await fetch(path, { cache: "no-store", signal: controller.signal });
+            if (!response.ok) throw new Error(`${path} returned ${response.status}`);
+            return await response.json();
+          } finally { window.clearTimeout(timer); }
         }
 
         async function postForm(path, form) {
@@ -1991,16 +1995,38 @@
 
         let fallbackPollTimer = null;
         let fallbackPolling = false;
+        let liveEvents = null;
+        let liveWatchdog = null;
+        let streamFallbackTimer = null;
+        let pollGeneration = 0;
+        let lastLiveAt = 0;
+        let lastLiveSignature = "";
+
+        function stopRealtime() {
+          liveEvents?.close();
+          liveEvents = null;
+          window.clearTimeout(streamFallbackTimer);
+          streamFallbackTimer = null;
+          window.clearInterval(liveWatchdog);
+          liveWatchdog = null;
+          stopFallbackPolling();
+        }
 
         function applyLivePayload(payload) {
           if (!payload || typeof payload !== "object") return;
-          if (payload.state) applyStatePayload(payload.state);
+          const signature = JSON.stringify([payload.state, payload.notes, payload.drum]);
+          if (signature !== lastLiveSignature) {
+            if (payload.state) applyStatePayload(payload.state);
+            if (payload.notes) applyNotesPayload(payload.notes);
+            if (payload.drum) applyDrumPayload(payload.drum);
+            lastLiveSignature = signature;
+          }
           if (payload.plant) addPlantPoint(payload.plant.value || 0);
-          if (payload.notes) applyNotesPayload(payload.notes);
-          if (payload.drum) applyDrumPayload(payload.drum);
+
         }
 
         function stopFallbackPolling() {
+          ++pollGeneration;
           fallbackPolling = false;
           if (fallbackPollTimer !== null) {
             window.clearTimeout(fallbackPollTimer);
@@ -2009,17 +2035,20 @@
         }
 
         function startFallbackPolling() {
-          if (fallbackPolling) return;
+          if (fallbackPolling || document.hidden) return;
           fallbackPolling = true;
+          const generation = pollGeneration;
           const tick = async () => {
-            if (!fallbackPolling) return;
+            if (!fallbackPolling || document.hidden) return;
             try {
-              applyLivePayload(await getJson("/api/live"));
+              const payload = await getJson("/api/live");
+              if (generation !== pollGeneration || document.hidden) return;
+              applyLivePayload(payload);
               setConnection("BECA live", "status-live");
             } catch (error) {
-              setConnection("Reconnecting...", "status-warn");
+              if (generation === pollGeneration && !document.hidden) setConnection("Reconnecting...", "status-warn");
             } finally {
-              if (fallbackPolling) fallbackPollTimer = window.setTimeout(tick, 700);
+              if (fallbackPolling && generation === pollGeneration) fallbackPollTimer = window.setTimeout(tick, 700);
             }
           };
           tick();
@@ -2058,52 +2087,52 @@
         }
 
         function setupRealtime() {
+          stopRealtime();
+          if (document.hidden) return;
           const events = new EventSource("/events");
-          let streamHealthy = false;
-          const streamFallbackTimer = window.setTimeout(() => {
-            if (streamHealthy) return;
-            events.close();
-            startFallbackPolling();
-          }, 1800);
-          events.addEventListener("hello", () => {
-            setConnection("BECA live", "status-live");
-          });
-          events.addEventListener("state", (event) => {
-            try {
-              streamHealthy = true;
-              window.clearTimeout(streamFallbackTimer);
-              stopFallbackPolling();
-              applyStatePayload(JSON.parse(event.data));
-            } catch (error) {}
-          });
-          events.addEventListener("scope", (event) => {
-            streamHealthy = true;
+          liveEvents = events;
+          lastLiveAt = Date.now();
+          const failed = () => {
+            if (liveEvents !== events) return;
+            stopRealtime();
+            if (!document.hidden) {
+              setConnection("Reconnecting...", "status-warn");
+              startFallbackPolling();
+            }
+          };
+          const healthy = () => {
+            if (liveEvents !== events || document.hidden) return false;
+            lastLiveAt = Date.now();
             window.clearTimeout(streamFallbackTimer);
             stopFallbackPolling();
-            addPlantPoint(event.data);
+            return true;
+          };
+          // Visible streams send scope at 16 Hz; six seconds means the link stalled.
+          liveWatchdog = window.setInterval(() => {
+            if (Date.now() - lastLiveAt > 6000) failed();
+          }, 1000);
+          streamFallbackTimer = window.setTimeout(failed, 1800);
+          events.addEventListener("hello", () => {
+            if (liveEvents === events) setConnection("BECA live", "status-live");
+          });
+          events.addEventListener("state", (event) => {
+            try { if (healthy()) applyStatePayload(JSON.parse(event.data)); } catch (error) {}
+          });
+          events.addEventListener("scope", (event) => {
+            if (healthy()) addPlantPoint(event.data);
           });
           events.addEventListener("note", (event) => {
-            streamHealthy = true;
+            if (!healthy()) return;
             const [, velRaw, , listRaw] = String(event.data).split("|");
-            const list = (listRaw || "")
-              .split(",")
-              .map((value) => Number(value))
-              .filter(Number.isFinite);
+            const list = (listRaw || "").split(",").map(Number).filter(Number.isFinite);
             applyNotesPayload({ notes: list, vel: Number(velRaw || 0) });
           });
           events.addEventListener("drum", (event) => {
-            streamHealthy = true;
-            const [hit, sel] = String(event.data)
-              .split("|")
-              .map((value) => Number(value || 0));
+            if (!healthy()) return;
+            const [hit, sel] = String(event.data).split("|").map((value) => Number(value || 0));
             applyDrumPayload({ hit, sel });
           });
-          events.onerror = () => {
-            window.clearTimeout(streamFallbackTimer);
-            events.close();
-            setConnection("Reconnecting...", "status-warn");
-            startFallbackPolling();
-          };
+          events.onerror = failed;
         }
 
         function bindEvents() {
@@ -2272,8 +2301,20 @@
             }
           }, 80);
           await refreshAll();
-          setupRealtime();
+          if (!document.hidden) setupRealtime();
         }
+
+        document.addEventListener("visibilitychange", () => {
+          if (document.hidden) stopRealtime();
+          else {
+            lastLiveSignature = "";
+            refreshAll().then(() => setupRealtime());
+          }
+        });
+        window.addEventListener("pagehide", stopRealtime);
+        window.addEventListener("pageshow", (event) => {
+          if (event.persisted && !document.hidden) refreshAll().then(() => setupRealtime());
+        });
 
         init().catch((error) => {
           setConnection("BECA unavailable", "status-error");

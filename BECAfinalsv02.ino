@@ -288,12 +288,8 @@ static inline void bleKickAdvertising() {
   NimBLEAdvertising* adv = NimBLEDevice::getAdvertising();
   if (!adv) return;
 
-  // Start advertising even if it thinks it already is (this is the "kick")
+  // Reuse the library's payload; NimBLE 1.4.3 can duplicate UUIDs on rebuild.
   adv->start();
-
-  // Optional: these hints can improve compatibility with some Windows BT stacks
-  adv->setMinPreferred(0x06);
-  adv->setMaxPreferred(0x12);
 }
 
 struct PendingNoteOff {

@@ -1,4 +1,4 @@
-const CACHE_NAME = "beca-phone-v1.5.1";
+const CACHE_NAME = "beca-phone-v1.6.0";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -7,7 +7,7 @@ const APP_SHELL = [
   "./protocol.js",
   "./webusb-serial.js",
   "./tablet-link.js",
-  "./phone-audio.js", "./plant-arp.js", "./compatibility.js",
+  "./phone-audio.js", "./plant-arp.js", "./compatibility.js", "./apple-native.js",
   "./audio-engine.js",
   "./audio-worklet.js",
   "./beca-synth.wasm",
@@ -29,7 +29,7 @@ self.addEventListener("install", (event) => {
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))))
+      .then((keys) => Promise.all(keys.filter((key) => key.startsWith("beca-phone-") && key !== CACHE_NAME).map((key) => caches.delete(key))))
       .then(() => self.clients.claim())
   );
 });

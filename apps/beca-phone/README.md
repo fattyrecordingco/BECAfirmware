@@ -1,6 +1,12 @@
 # BECA Phone Control
 
-BECA Phone Control is an installable web instrument and controller for phones, tablets and desktops. Version 1.5 uses BECA's C++ synthesizer through WebAssembly and AudioWorklet, including all 13 presets and eight drum voices, with higher-precision web delay and band-limited saw/square oscillators. USB control uses the existing `@C` protocol at 115200 baud. The firmware's BLE-MIDI behavior is unchanged.
+BECA Phone Control is an installable web instrument and controller for phones, tablets and desktops. Version 1.6 uses BECA's C++ synthesizer through WebAssembly and AudioWorklet, including all 13 presets and eight drum voices, with higher-precision web delay and band-limited saw/square oscillators. USB control uses the existing `@C` protocol at 115200 baud. The firmware's BLE-MIDI behavior is unchanged.
+
+## Direct Apple app transport (1.6)
+
+The [BECA Apple app project](../beca-apple/README.md) bundles this controller and synth and adds native Wi-Fi settings plus CoreMIDI notes, without a computer during use. Listening selects **BLE MIDI** on that transport; browser USB and tablet-link transports retain **Serial MIDI**. This is native app source awaiting Mac/Xcode and physical iPhone/iPad validation, not a released app or a new browser API. The browser also has direct Apple connection instructions for Safari Wi-Fi control and native music apps.
+
+Audio interruption clears voices and effect tails; hiding/stopping the app while its synth is still loading cannot restart sound later. A processor failure can recreate the AudioWorklet on the next Listen tap. Poll groups skip busy ticks; the command queue has a 128-entry cap. Safari engine tests now include iPhone, iPad and desktop Mac layouts. Native and browser transports share the existing 80 ms control coalescing, parameter differences and bounded graph history. The service worker preserves unrelated caches when updating the BECA app.
 
 ## Connection refinements (1.5.1)
 
@@ -28,7 +34,7 @@ Audio follows the device's system output: built-in speaker, wired headphones or 
 
 ## iPad and browser-to-browser tablet link
 
-iPad/iPhone Safari and Chrome cannot directly access this board's USB serial bridge. A USB-C cable or installing the page to the Home Screen does not grant that browser capability. The app disables Connect USB and explains the supported route instead of asking for cable/OTG changes. See [Google's USB/Serial browser support notice](https://support.google.com/chrome/answer/12576972). Local synth previews work, but live plant input requires a connected computer in this web version. No direct iPad BLE-MIDI support is claimed; direct hardware access would require a separate native solution and hardware/protocol verification.
+iPad/iPhone Safari and Chrome cannot directly access this board's USB serial bridge. A USB-C cable or installing the page to the Home Screen does not grant that browser capability. The app disables Connect USB and explains the supported route instead of asking for cable/OTG changes. See [Google's USB/Serial browser support notice](https://support.google.com/chrome/answer/12576972). Local synth previews work, but live plant input in this browser synth requires a connected computer. Direct Safari settings/AUX and native BLE-MIDI are available separately; the BECA Apple project adds a direct native synth path after installation and validation. No direct iPad BLE-MIDI support is claimed; direct hardware access uses the separate native Apple project and still requires physical hardware/protocol verification before release.
 
 1. Open the HTTPS app on the computer and tablet on the same local network. Connect BECA by USB in desktop Chrome/Edge.
 2. Expand **Link an iPad or tablet through a computer** on both devices.

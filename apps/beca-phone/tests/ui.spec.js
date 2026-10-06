@@ -40,7 +40,7 @@ export async function installMockSerial(page) {
     };
     const port = {
       readable: { getReader: () => ({ read: async () => { while (!replies.length) await new Promise((resolve) => { wake = resolve; }); return { value: replies.shift(), done: false }; }, cancel: async () => { if (wake) wake(); }, releaseLock: () => {} }) },
-      writable: { getWriter: () => ({ write: async (bytes) => { const command = decoder.decode(bytes).trim(); globalThis.__MOCK_WRITES.push(command); respond(command); }, close: async () => {}, releaseLock: () => {} }) },
+      writable: { getWriter: () => ({ write: async (bytes) => { const command = decoder.decode(bytes).trim(); globalThis.__MOCK_WRITES.push(command); if (command === globalThis.__MOCK_FAIL_COMMAND) throw new Error("BECA test connection lost"); respond(command); }, close: async () => {}, releaseLock: () => {} }) },
       open: async () => {}, close: async () => {}
     };
     globalThis.__BECA_SERIAL__ = { requestPort: async () => port };
@@ -184,7 +184,7 @@ test("playground switches parameter pairs and knobs support keyboard adjustment"
   expect(Number(await knob.inputValue())).toBeGreaterThan(initial);
 });
 
-test("unsupported USB browsers show the iPad limitation and computer route", async ({page}) => {
+test("unsupported USB browsers offer direct Apple routes and the browser computer link", async ({page}) => {
   await page.addInitScript(() => {
     delete globalThis.__BECA_SERIAL__;
     Object.defineProperty(navigator,"serial",{value:undefined,configurable:true});
@@ -192,8 +192,66 @@ test("unsupported USB browsers show the iPad limitation and computer route", asy
   });
   await page.reload();
   await expect(page.locator("#connectButton")).toBeDisabled();
-  await expect(page.locator("#connectionMessage")).toContainText("Direct USB is unavailable");
+  await expect(page.locator("#connectionMessage")).toContainText("direct Wi-Fi controller");
   await expect(page.locator("#compatibilityNotice")).toContainText("through a computer");
+  await page.locator("#appleConnectionHelp summary").click();
+  await expect(page.locator('#appleConnectionHelp a')).toHaveAttribute("href", "http://192.168.4.1/");
+  await expect(page.locator("#appleConnectionHelp")).toContainText("BECA BLE-MIDI");
+});
+
+async function installMockAppleBridge(page) {
+  await page.addInitScript(() => {
+    let reader;
+    let writer;
+    Object.defineProperty(window, "webkit", { configurable: true, value: { messageHandlers: { beca: { async postMessage(message) {
+      try {
+        let result = null;
+        if (message.action === "open") {
+          const port = await globalThis.__BECA_SERIAL__.requestPort();
+          reader = port.readable.getReader(); writer = port.writable.getWriter();
+        } else if (message.action === "command") {
+          await writer.write(new TextEncoder().encode(message.command));
+          result = new TextDecoder().decode((await reader.read()).value).trim();
+        }
+        globalThis.__BECA_NATIVE_REPLY__({ id: message.id, result });
+      } catch (error) { globalThis.__BECA_NATIVE_REPLY__({ id: message.id, error: error.message }); }
+    } } } } });
+  });
+  await page.reload();
+}
+
+test("Apple app transport loads settings directly and selects BLE for local sound", async ({ page }) => {
+  await installMockAppleBridge(page);
+  await page.getByRole("button", { name: "Connect BECA", exact: true }).click();
+  await expect(page.locator("#deviceStatus")).toHaveText("BECA connected");
+  await expect(page.locator("#plantValue")).toHaveText("0.42");
+  await expect(page.locator("#connectionMessage")).toContainText("Apple Wi-Fi + MIDI");
+  await expect(page.locator(".tablet-link")).toBeHidden();
+  await page.getByRole("radio", { name: "D root note" }).click();
+  await expect.poll(() => page.evaluate(() => globalThis.__MOCK_WRITES)).toContain("@C SET root 2");
+  await page.getByRole("button", { name: "Synth", exact: true }).click();
+  await page.locator("#control-wave_a").selectOption("3");
+  await expect.poll(() => page.evaluate(() => globalThis.__MOCK_WRITES)).toContain("@C SET wave_a 3");
+  await page.locator("#expressionPad").click({ position: { x: 100, y: 80 } });
+  await expect.poll(() => page.evaluate(() => globalThis.__MOCK_WRITES.some((line) => line.startsWith("@C SET cutoff ")))).toBe(true);
+  await page.getByRole("button", { name: "Controller", exact: true }).click();
+  await page.locator('[data-play-mode="3"]').click();
+  await page.getByRole("button", { name: "Synth", exact: true }).click();
+  await page.locator("#control-drumkit").selectOption("2");
+  await expect.poll(() => page.evaluate(() => globalThis.__MOCK_WRITES)).toContain("@C SET drumkit 2");
+  await page.evaluate(() => { globalThis.__MOCK_PLANT.value = 0.67; });
+  await expect(page.locator("#plantValue")).toHaveText("0.67");
+  await page.getByRole("button", { name: "Controller", exact: true }).click();
+  await page.locator('[data-play-mode="0"]').click();
+  await expect.poll(() => page.evaluate(() => globalThis.__MOCK_WRITES)).toContain("@C SET mode 0");
+  if (await page.evaluate(() => Boolean(window.AudioContext && window.AudioWorkletNode))) {
+    await page.locator("#listenButton").click();
+    await expect.poll(() => page.evaluate(() => globalThis.__MOCK_WRITES)).toContain("@C SET outputmode 0");
+    await page.evaluate(() => globalThis.__BECA_NATIVE_LINE__("@M 90 3C 64"));
+    await expect(page.locator("#midiReadout")).toHaveText("C4");
+  }
+  await page.getByRole("button", { name: "Disconnect", exact: true }).click();
+  await expect(page.locator("#deviceStatus")).toHaveText("Not connected");
 });
 
 test("connection help separates missing power from browser support", async ({page}, testInfo) => {
@@ -215,6 +273,23 @@ test("connection waits for initial settings before enabling instrument changes",
   await expect(page.locator("#connectButton")).toBeDisabled();
   await expect(page.locator("#deviceStatus")).toHaveText("BECA connected");
   await expect(page.locator('[data-play-mode="1"]')).toBeEnabled();
+});
+
+for (const native of [false, true]) test(`failed ${native ? "Apple native" : "USB"} device verification releases pending replies and allows reconnect`, async ({ page }) => {
+  if (native) await installMockAppleBridge(page);
+  const errors = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.evaluate(() => { globalThis.__MOCK_FAIL_COMMAND = "@C PING"; });
+  const connectName = native ? "Connect BECA" : "Connect USB";
+  await page.getByRole("button", { name: connectName, exact: true }).click();
+  await expect(page.locator("#deviceStatus")).toHaveText("Not connected");
+  await expect(page.locator("#consoleLog")).toContainText("BECA test connection lost");
+  await expect(page.locator("#connectButton")).toBeEnabled();
+  await page.evaluate(() => { globalThis.__MOCK_FAIL_COMMAND = null; });
+  await page.getByRole("button", { name: connectName, exact: true }).click();
+  await expect(page.locator("#deviceStatus")).toHaveText("BECA connected");
+  await expect(page.locator("#plantValue")).toHaveText("0.42");
+  expect(errors).toEqual([]);
 });
 
 test("older browser helpers are optional and unavailable WebRTC has a clear fallback", async ({page}) => {

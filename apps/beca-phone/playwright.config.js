@@ -23,7 +23,9 @@ export default defineConfig({
     { name: "phone-landscape", use: { ...devices["Pixel 7 landscape"] } },
     { name: "tablet-portrait", use: { ...devices["Desktop Chrome"], viewport: { width: 820, height: 1180 }, isMobile: true, hasTouch: true } },
     { name: "tablet-landscape", use: { ...devices["Desktop Chrome"], viewport: { width: 1180, height: 820 }, isMobile: true, hasTouch: true } },
+    { name: "iphone-webkit", use: { ...devices["iPhone 13"], browserName: "webkit", channel: undefined } },
+    { name: "mac-webkit", use: { ...devices["Desktop Safari"], browserName: "webkit", channel: undefined } },
     { name: "ipad-webkit", use: { ...devices["iPad (gen 7)"], browserName: "webkit", channel: undefined } },
     { name: "desktop", use: { ...devices["Desktop Chrome"], viewport: { width: 1280, height: 900 } } }
-  ].map((project) => project.name === "ipad-webkit" ? project : { ...project, use: { ...project.use, channel: "chrome" } })
+  ].map((project) => project.name.endsWith("webkit") ? project : { ...project, use: { ...project.use, channel: "chrome" } })
 });

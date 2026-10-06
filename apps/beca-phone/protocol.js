@@ -80,6 +80,7 @@ export class WriteQueue {
 
   enqueue(value) {
     return new Promise((resolve, reject) => {
+      if (this.items.length >= 128) { reject(new Error("BECA command queue is full. Wait for the connection to recover.")); return; }
       this.items.push({ value, resolve, reject });
       this.#start();
     });

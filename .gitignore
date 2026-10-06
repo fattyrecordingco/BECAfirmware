@@ -62,4 +62,7 @@ installers/linux/*
 .pio/
 .pioenvs/
 .piolibdeps/
+apps/beca-apple/BECAApple/Web/
+apps/beca-apple/build/
+**/xcuserdata/
 apps/beca-setup/src-tauri/resources/firmware/

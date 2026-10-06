@@ -1,6 +1,6 @@
 {
   "name": "beca-phone-controller",
-  "version": "1.5.1",
+  "version": "1.6.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -8,7 +8,7 @@
     "build": "node ./scripts/build.mjs",
     "build:audio": "node ./scripts/build-audio.mjs",
     "preview": "vite preview",
-    "test": "node --test ./tests/protocol.test.mjs ./tests/webusb-serial.test.mjs ./tests/audio.test.mjs && node ./scripts/verify.mjs",
+    "test": "node --test ./tests/apple-native.test.mjs ./tests/phone-audio.test.mjs ./tests/protocol.test.mjs ./tests/webusb-serial.test.mjs ./tests/audio.test.mjs && node ./scripts/verify.mjs",
     "test:ui": "playwright test"
   },
   "devDependencies": {

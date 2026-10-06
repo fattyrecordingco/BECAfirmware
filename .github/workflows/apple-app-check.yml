@@ -1,0 +1,32 @@
+name: Apple app checks
+on:
+  workflow_dispatch:
+  push:
+    paths: ['apps/beca-apple/**', 'apps/beca-phone/**', '.github/workflows/apple-app-check.yml']
+  pull_request:
+    paths: ['apps/beca-apple/**', 'apps/beca-phone/**', '.github/workflows/apple-app-check.yml']
+jobs:
+  native:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node apps/beca-apple/prepare.mjs
+      - name: MIDI stream regression checks
+        run: |
+          swiftc apps/beca-apple/BECAApple/MIDIStream.swift apps/beca-apple/tests/main.swift -o "$RUNNER_TEMP/beca-midi-check"
+          "$RUNNER_TEMP/beca-midi-check"
+      - name: Compile iPhone and iPad app
+        run: xcodebuild -project apps/beca-apple/BECAApple.xcodeproj -scheme BECAApple -destination 'generic/platform=iOS Simulator' -derivedDataPath build/apple-ios CODE_SIGNING_ALLOWED=NO build
+      - name: Compile Mac app
+        run: xcodebuild -project apps/beca-apple/BECAApple.xcodeproj -scheme BECAApple -destination 'generic/platform=macOS' -derivedDataPath build/apple-mac ARCHS='arm64 x86_64' ONLY_ACTIVE_ARCH=NO CODE_SIGNING_ALLOWED=NO build
+      - name: Install browser test dependencies
+        working-directory: apps/beca-phone
+        run: |
+          npm ci
+          npx playwright install webkit
+      - name: Safari engine layout and audio checks
+        working-directory: apps/beca-phone
+        run: npx playwright test --project=iphone-webkit --project=ipad-webkit --project=mac-webkit --workers=2
