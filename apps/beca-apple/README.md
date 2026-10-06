@@ -1,6 +1,6 @@
 # BECA Apple app — native implementation, awaiting Apple validation
 
-This project adds a direct connection for **iPhone/iPad on iOS/iPadOS 15+** and **Mac on macOS 12+**. It is source code, not a signed downloadable app. Xcode compilation, physical device tests and signing have not been completed on the Windows development machine. Do not advertise this as a released or universally verified Apple app.
+This project adds a direct connection for **iPhone/iPad on iOS/iPadOS 15+** and **Mac on macOS 12+**. It is source code, not a signed downloadable app. Unsigned iPhone/iPad simulator and Apple Silicon/Intel Mac builds, plus the Swift MIDI parser checks, passed on GitHub's Mac runner for commit `da6bbff` on 6 October 2026. Physical Apple device tests and distribution signing remain outstanding. Do not advertise this as a released or universally verified Apple app.
 
 The app bundles the existing BECA Phone Control synth and controls, serves them on a loopback-only localhost endpoint, and adds two native connections:
 
@@ -40,7 +40,7 @@ The shared app now retains both the resolve and reject callbacks for pending rep
 Use the current development branch, not the default branch:
 
 ```sh
-git clone --single-branch --branch codex/final-beca-release https://github.com/fattyrecordingco/BECAfirmware.git
+git clone --depth 1 --single-branch --branch codex/final-beca-release https://github.com/fattyrecordingco/BECAfirmware.git
 cd BECAfirmware
 node apps/beca-apple/prepare.mjs
 open apps/beca-apple/BECAApple.xcodeproj
@@ -49,6 +49,8 @@ open apps/beca-apple/BECAApple.xcodeproj
 This needs a Mac with Xcode 16+ and Node.js 22+. Choose the **BECAApple** scheme. First run on **My Mac**; then select a physically connected iPhone or iPad, set your own development team and unique bundle identifier, and build/run. The project contains no signing credentials. Pair BLE MIDI and set the BECA Wi-Fi address using the instructions below. No computer is needed during normal instrument use after installing the native app.
 
 This handoff is for **Wi-Fi controls + BLE/native MIDI**, not iPad USB serial. A custom CH340 DriverKit extension is not included. The public browser app is a separate build and does not acquire native Apple connections through publication.
+
+Publication status (6 October 2026): this branch is public and the Apple checks passed. The browser workflow also passed **188 checks** with **19 skips**, but GitHub's `github-pages` environment rejected deployment because `codex/final-beca-release` is not an allowed deployment branch. The public website therefore has not received this update. The instructions above build the current app from source and do not depend on that website.
 
 When reporting a test, include the tested commit (`git rev-parse --short HEAD`), device model, OS/Xcode versions, BECA firmware version, connection mode, expected/actual behavior, and any Xcode error. Do not include Wi-Fi passwords or signing secrets. Work through **Required physical validation before release** below; include both first connection and reconnect after screen lock. Report whether the synth's notes stop on disconnect and whether plant readings and settings match the hardware. The [verification record](../../docs/research/apple-compatibility.md) distinguishes completed Windows/browser checks from outstanding Apple checks.
 
@@ -70,7 +72,7 @@ swiftc apps/beca-apple/BECAApple/MIDIStream.swift apps/beca-apple/tests/main.swi
 /tmp/beca-midi-check
 ```
 
-The `Apple app checks` workflow runs these builds and Safari-engine browser tests on a Mac runner. Adding the workflow does not mean it has run or passed. A simulator build does not verify Bluetooth radio behavior.
+The [Apple app checks run](https://github.com/fattyrecordingco/BECAfirmware/actions/runs/37480642124) passed for `da6bbff`: both native builds, MIDI parser checks, and **60 Safari-engine browser tests** with **nine skips** for unsupported offline-navigation checks and transport tests assigned to other profiles. A simulator build does not verify Bluetooth radio behavior, and the unsigned build is not an installable iPad release.
 
 ## Use without a computer
 

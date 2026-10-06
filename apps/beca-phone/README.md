@@ -4,7 +4,7 @@ BECA Phone Control is an installable web instrument and controller for phones, t
 
 ## Direct Apple app transport (1.6)
 
-The [BECA Apple app project](../beca-apple/README.md) bundles this controller and synth and adds native Wi-Fi settings plus CoreMIDI notes, without a computer during use. Listening selects **BLE MIDI** on that transport; browser USB and tablet-link transports retain **Serial MIDI**. This is native app source awaiting Mac/Xcode and physical iPhone/iPad validation, not a released app or a new browser API. The browser also has direct Apple connection instructions for Safari Wi-Fi control and native music apps.
+The [BECA Apple app project](../beca-apple/README.md) bundles this controller and synth and adds native Wi-Fi settings plus CoreMIDI notes, without a computer during use. Listening selects **BLE MIDI** on that transport; browser USB and tablet-link transports retain **Serial MIDI**. Unsigned simulator and Mac builds passed on GitHub's Mac runner; signing and physical iPhone/iPad validation remain outstanding. This is native app source, not a released app or a new browser API. The browser also has direct Apple connection instructions for Safari Wi-Fi control and native music apps.
 
 Audio interruption clears voices and effect tails; hiding/stopping the app while its synth is still loading cannot restart sound later. A processor failure can recreate the AudioWorklet on the next Listen tap. Poll groups skip busy ticks; the command queue has a 128-entry cap. Safari engine tests now include iPhone, iPad and desktop Mac layouts. Native and browser transports share the existing 80 ms control coalescing, parameter differences and bounded graph history. The service worker preserves unrelated caches when updating the BECA app.
 
