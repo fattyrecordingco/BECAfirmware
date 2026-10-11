@@ -1,0 +1,2 @@
+# Bash runs in WSL; Windows checkout must not introduce CRLF.
+xtool-wsl.sh text eol=lf

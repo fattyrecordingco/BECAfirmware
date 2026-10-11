@@ -64,5 +64,11 @@ installers/linux/*
 .piolibdeps/
 apps/beca-apple/BECAApple/Web/
 apps/beca-apple/build/
+apps/beca-apple/.build/
+apps/beca-apple/.swiftpm/
+apps/beca-apple/xtool/
+*.p8
+*.p12
+*.mobileprovision
 **/xcuserdata/
 apps/beca-setup/src-tauri/resources/firmware/

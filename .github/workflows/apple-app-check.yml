@@ -1,4 +1,6 @@
 name: Apple app checks
+permissions:
+  contents: read
 on:
   workflow_dispatch:
   push:
@@ -14,12 +16,28 @@ jobs:
         with:
           node-version: '22'
       - run: node apps/beca-apple/prepare.mjs
+      - name: Validate the shared Swift package manifest
+        run: swift package --package-path apps/beca-apple dump-package > /dev/null
       - name: MIDI stream regression checks
         run: |
           swiftc apps/beca-apple/BECAApple/MIDIStream.swift apps/beca-apple/tests/main.swift -o "$RUNNER_TEMP/beca-midi-check"
           "$RUNNER_TEMP/beca-midi-check"
       - name: Compile iPhone and iPad app
         run: xcodebuild -project apps/beca-apple/BECAApple.xcodeproj -scheme BECAApple -destination 'generic/platform=iOS Simulator' -derivedDataPath build/apple-ios CODE_SIGNING_ALLOWED=NO build
+      - name: Launch the native shell on iPhone and iPad simulators
+        run: python3 apps/beca-apple/simulator-smoke.py build/apple-ios/Build/Products/Debug-iphonesimulator/BECAApple.app build/apple-screenshots
+      - name: Compile iPhone and iPad device release
+        run: xcodebuild -project apps/beca-apple/BECAApple.xcodeproj -scheme BECAApple -configuration Release -destination 'generic/platform=iOS' -derivedDataPath build/apple-device CODE_SIGNING_ALLOWED=NO build
+      - name: Verify device bundle and package unsigned install candidate
+        run: |
+          python3 apps/beca-apple/verify-bundle.py build/apple-device/Build/Products/Release-iphoneos/BECAApple.app
+          mkdir -p build/apple-handoff/Payload
+          ditto build/apple-device/Build/Products/Release-iphoneos/BECAApple.app build/apple-handoff/Payload/BECAApple.app
+          printf '%s\n' "$GITHUB_SHA" > build/apple-handoff/commit.txt
+          cp apps/beca-apple/INSTALL-IPAD.md build/apple-handoff/
+          cd build/apple-handoff
+          zip -qr BECAApple-unsigned.ipa Payload
+          shasum -a 256 BECAApple-unsigned.ipa > SHA256SUMS.txt
       - name: Compile Mac app
         run: xcodebuild -project apps/beca-apple/BECAApple.xcodeproj -scheme BECAApple -destination 'generic/platform=macOS' -derivedDataPath build/apple-mac ARCHS='arm64 x86_64' ONLY_ACTIVE_ARCH=NO CODE_SIGNING_ALLOWED=NO build
       - name: Install browser test dependencies
@@ -30,3 +48,21 @@ jobs:
       - name: Safari engine layout and audio checks
         working-directory: apps/beca-phone
         run: npx playwright test --project=iphone-webkit --project=ipad-webkit --project=mac-webkit --workers=2
+      - name: Upload verified unsigned device candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: BECAApple-device-${{ github.sha }}
+          path: |
+            build/apple-handoff/BECAApple-unsigned.ipa
+            build/apple-handoff/SHA256SUMS.txt
+            build/apple-handoff/commit.txt
+            build/apple-handoff/INSTALL-IPAD.md
+          retention-days: 14
+          if-no-files-found: error
+      - name: Upload native simulator evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: BECAApple-simulator-${{ github.sha }}
+          path: build/apple-screenshots/
+          retention-days: 14

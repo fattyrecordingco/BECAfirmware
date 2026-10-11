@@ -1,0 +1,10 @@
+version: 1
+bundleID: com.fattyrecording.beca.apple
+product: BECAApple
+infoPath: build/xtool-Info.plist
+skipLSP: true
+iconPath: BECAApple/Assets.xcassets/AppIcon.appiconset/icon-1024.png
+# Copy to the application root, as expected by LocalWebServer's Bundle.main lookup.
+resources:
+  - BECAApple/Web
+  - BECAApple/PrivacyInfo.xcprivacy

@@ -35,6 +35,20 @@ The shared app now retains both the resolve and reject callbacks for pending rep
 
 ## Build and install
 
+### Windows development with xtool
+
+An additional Swift package build path now references the same native source files for [xtool-org/xtool](https://github.com/xtool-org/xtool). Follow [Windows setup and installation](WINDOWS.md) for the pinned tools, WSL prerequisites, Apple SDK/authentication and development-device installation commands. The unrelated `x-tools-author/x-tools` debugger cannot build this app.
+
+As of 11 October 2026, xtool 1.21.0 has been downloaded and checksum-verified, and the bundled assets/plist prepared on Windows. WSL 2.7.13.0 and USBIPD 5.3.0 are installed, the laptop has restarted, and Ubuntu 24.04 has been installed. Ubuntu first-run/tool setup and Apple signing remain outstanding at this checkpoint. The new native package has not been signed or installed. This path targets iPhone/iPad development. The Mac build below and App Store/TestFlight release requirements still apply; xtool does not provide Apple's SDK credentials, distribution approval or DriverKit entitlements.
+
+### Device build and test handoff
+
+The Apple checks workflow now builds an unsigned **Release-iphoneos arm64** candidate for both iPhone and iPad, checks its compiled icons, privacy manifest and bundled asset hashes, and packages it as an IPA. The workflow also launches the actual native shell on iPhone/iPad simulators and captures screenshots. A device artifact is uploaded only after the complete job passes. Follow [iPad/iPhone installation and acceptance](INSTALL-IPAD.md); signing is still required before an unsigned artifact can be installed. Cloud compilation does not require a locally extracted Apple SDK; xtool can sign/install that prebuilt artifact on Windows.
+
+The app now includes opaque icons rendered from the existing BECA vector logo and a privacy manifest declaring its use of UserDefaults to save its own BECA address. Run `node apps/beca-apple/make-icons.mjs` after a logo change, with the phone-app development dependencies installed. No new native runtime dependency is added. The [privacy manifest declaration](https://developer.apple.com/documentation/technotes/tn3183-adding-required-reason-api-entries-to-your-privacy-manifest) is packaging metadata; App Store Connect privacy answers and review remain separate.
+
+Current local checks passed: all 29 protocol/audio/adapter unit checks; 36 iPhone/iPad WebKit checks with 10 expected profile/runtime skips; real COM6 protocol checks with 40 bounded plant samples; and two real BLE advertisement/GATT/notification/disconnect/reconnect cycles using bleak 3.0.2. These Windows BLE checks do not certify Apple's CoreMIDI or physical iPad/iPhone audio. The Safari tests on the Mac runner include its Web Audio support. The phone build's transitive development dependency `source-map-js` was patched from 1.2.1 to 1.2.2; npm's audit then reported zero vulnerabilities.
+
 ### Apple tester quick start
 
 Use the current development branch, not the default branch:
