@@ -14,10 +14,19 @@ if [[ "$action" == setup ]]; then
         echo "This installer targets Ubuntu 24.04. See the upstream guide for other distributions." >&2
         exit 1
     fi
-    sudo apt-get update
-    sudo apt-get install -y ca-certificates clang curl git gnupg libcurl4-openssl-dev \
+    packages=(ca-certificates clang curl git gnupg gnupg2 libcurl4-openssl-dev \
         libedit-dev libicu-dev libncurses-dev libsqlite3-dev libssl-dev libxml2-dev \
-        libzstd-dev pkg-config python3 unzip usbmuxd libimobiledevice-utils zlib1g-dev
+        libzstd-dev libpython3-dev pkg-config python3 unzip zip usbmuxd libimobiledevice-utils zlib1g-dev)
+    missing=()
+    for package in "${packages[@]}"; do
+        if [[ "$(dpkg-query -W -f='${Status}' "$package" 2>/dev/null || true)" != 'install ok installed' ]]; then
+            missing+=("$package")
+        fi
+    done
+    if (( ${#missing[@]} )); then
+        sudo apt-get update
+        sudo apt-get install -y "${missing[@]}"
+    fi
     mkdir -p "$tool_dir/downloads" "$tool_dir/bin"
     case "$(uname -m)" in
         x86_64) arch=x86_64; digest=e2277e59bb2fda9b487cbc77ad080ea2b0370bb740ac0f02cc42fa28a272d3a5 ;;
@@ -56,6 +65,10 @@ fi
 
 if [[ -f "$swift_env" ]]; then source "$swift_env"; fi
 export PATH="$tool_dir/bin:$PATH"
+if [[ -f "$tool_dir/use-windows-usbmux" ]]; then
+    windows_host=$(ip -j -4 route show default | python3 -c 'import json,sys; print(json.load(sys.stdin)[0]["gateway"])')
+    export USBMUXD_SOCKET_ADDRESS="$windows_host:27015"
+fi
 case "$action" in
     doctor)
         swift --version

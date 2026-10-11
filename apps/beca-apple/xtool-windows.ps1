@@ -1,4 +1,4 @@
-[CmdletBinding()]
+[CmdletBinding(PositionalBinding = $false)]
 param(
     [ValidateSet('Prerequisites', 'Setup', 'Doctor', 'Build', 'Run', 'Auth', 'SDK', 'Devices', 'Install', 'Launch')]
     [string]$Step = 'Doctor',

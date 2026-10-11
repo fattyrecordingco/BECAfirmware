@@ -8,7 +8,7 @@ The GitHub macOS runner compiles the app with Xcode. On Windows, xtool can sign/
 
 1. Install the Windows/Linux tools in `WINDOWS.md`. Connect the iPad/iPhone with a USB data cable, unlock it, accept the Trust prompt, and enable Developer Mode when requested.
 2. Authenticate with Apple in your own terminal using `xtool-windows.ps1 -Step Auth`. Keep passwords, 2FA codes and API keys out of chat and Git. Free-account development installs expire and require reinstallation; paid membership is required for TestFlight/App Store distribution.
-3. Use `usbipd list` to find the Apple device, then administrator `usbipd bind --busid <actual-id>` and `usbipd attach --wsl --busid <actual-id>`. Do not attach BECA's CH340 bridge to WSL for this step. Verify the Apple device with `xtool-windows.ps1 -Step Devices`.
+3. Use the Windows Apple-device bridge in `WINDOWS.md` if Ubuntu's Apple USB service crashes or installation reports mux errors. Keep the Apple device attached to Windows for that route. Otherwise, use `usbipd list` to find it, then administrator `usbipd bind --busid <actual-id>` and `usbipd attach --wsl --busid <actual-id>`. Do not attach BECA's CH340 bridge to WSL for this step. Verify the Apple device with `xtool-windows.ps1 -Step Devices --usb --no-wait`.
 4. Install the IPA using its real WSL path, for example from the repository root:
 
 ```powershell

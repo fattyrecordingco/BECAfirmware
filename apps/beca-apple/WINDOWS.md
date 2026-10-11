@@ -11,11 +11,26 @@ This development path uses **xtool 1.21.0**, **Swift 6.4.0** and **Ubuntu 24.04 
 - Correct upstream source downloaded to `.beca-cache/apple-tools/xtool`, checked out at release `1.21.0` (`d76498a`).
 - Linux x86-64 release downloaded to `.beca-cache/apple-tools/xtool-x86_64.AppImage` (55,753,208 bytes). SHA-256 matched GitHub's release digest: `e2277e59bb2fda9b487cbc77ad080ea2b0370bb740ac0f02cc42fa28a272d3a5`.
 - Shared phone assets rebuilt, Apple resources prepared and the generated plist checked locally. Shell and PowerShell syntax checks and argument forwarding with paths containing spaces passed. All 29 shared app regression checks and the PWA asset verification passed.
-- The initial non-elevated WSL installation failed with `0x80073d28`. On retry with user-approved Windows elevation, **WSL 2.7.13.0 and USBIPD 5.3.0 installed successfully**. The user restarted the laptop, and **Ubuntu 24.04 installed successfully**. Linux first-run setup, Swift and executable xtool remain unverified at this checkpoint.
+- The initial non-elevated WSL installation failed with `0x80073d28`. On retry with user-approved Windows elevation, **WSL 2.7.13.0 and USBIPD 5.3.0 installed successfully**. After restarting, Ubuntu 24.04 and its first-run user setup completed. **Swift 6.4.0 and xtool 1.21.0 now execute successfully**, and `Doctor` parsed the Swift package manifest.
 - The retry corrected prerequisite probing for Windows PowerShell 5.1 and avoided the missing-WSL launcher, which can wait for keyboard input. Windows PowerShell 5.1 syntax and argument forwarding checks passed.
-- No Apple SDK archive was found in the Windows Downloads folder. No Apple login, native xtool compilation, signing, device installation or publication was performed.
+- The user completed free-account Apple authentication in their own terminal. After USBIPD/Ubuntu's Apple USB service crashed, the Apple Devices **1.1540.24088.0** Windows bridge succeeded. xtool signed, installed and verified BECA **1.6.0** on the connected `iPad15,5`, iPadOS **26.6.1**. Its development profile expires **18 October 2026 at 18:48:07 UTC**. Developer Mode/first launch and instrument acceptance still require the user's iPad interaction. No Apple SDK is installed, so local native compilation remains unavailable; the installed binary came from the successful cloud build. No App Store/TestFlight release was performed.
 
 These are preparation checks. The previous Xcode build results in [README.md](README.md) do not validate this new Swift package path.
+
+### Windows device connection recovery
+
+Ubuntu's `usbmuxd` 1.1.1 crashed repeatedly after detecting the connected iPad. This is separate from app compilation. The upstream [WSL connection issue](https://github.com/xtool-org/xtool/issues/19) describes using Apple's Windows Mobile Device Service instead of direct USBIPD forwarding.
+
+For that connection, install [Apple Devices for Windows](https://support.apple.com/en-gb/guide/devices-windows/mchl5ded2763/1.4/windows/10) from Microsoft Store, detach the Apple device from USBIPD, and run from **Administrator PowerShell**. The current iTunes installer alone did not provide Mobile Device Service on this laptop.
+
+```powershell
+usbipd detach --busid <actual-Apple-busid>
+.\apps\beca-apple\apple-device-bridge.ps1
+```
+
+The helper forwards port 27015 only on the WSL host interface, with the firewall restricted to the current Linux VM address. It records a local Linux preference; `xtool-wsl.sh` then uses `USBMUXD_SOCKET_ADDRESS` for Apple's Windows service. Keep the iPad unlocked and accept its Windows Trust prompt. Verify with `xtool-windows.ps1 -Step Devices --usb --no-wait`. Rerun the helper after a restart if WSL's NAT addresses change. Do not attach the Apple device to USBIPD while using this route. The helper does not change BECA's USB or Bluetooth connection.
+
+The current Apple Devices package uses `AppleMobileDeviceProcess` rather than a Windows service. The helper starts its packaged `AMPDevicesAgent` entry if needed, verifies the loopback listener's owning process, then creates the forwarding rule. Both `ideviceinfo` and xtool device detection passed through this bridge, followed by successful provisioning/signing/install verification. Windows PowerShell 5.1 syntax and argument forwarding checks passed, including unlabelled xtool subcommands after `-Step`.
 
 ## 1. Install Windows prerequisites
 
@@ -41,7 +56,7 @@ From a normal PowerShell in the repository:
 powershell -NoProfile -ExecutionPolicy Bypass -File .\apps\beca-apple\xtool-windows.ps1 -Step Setup
 ```
 
-Enter the Linux password for `sudo` when requested. This installs development utilities, Swift via the official Swiftly installer, and the pinned xtool AppImage. It reuses the verified cached AppImage when available and checks its digest before installing. xtool lives in `~/.local/share/beca-apple/`; the wrapper uses AppImage extraction mode so WSL does not require FUSE. The scripts load Swiftly and xtool paths on each invocation. See [Swift's Linux installation guide](https://www.swift.org/install/linux/) and [xtool's release-specific installation instructions](https://github.com/xtool-org/xtool/blob/1.21.0/Documentation/xtool.docc/Installation-Linux.md).
+Enter the Linux password for `sudo` when requested. This installs development utilities, Swift via the official Swiftly installer, and the pinned xtool AppImage. Already installed Linux packages are reused; administrator access is requested only for missing packages. Swift's prerequisites include `zip`, `gnupg2` and `libpython3-dev`. The installer reuses the verified cached AppImage when available and checks its digest before installing. xtool lives in `~/.local/share/beca-apple/`; the wrapper uses AppImage extraction mode so WSL does not require FUSE. The scripts load Swiftly and xtool paths on each invocation. See [Swift's Linux installation guide](https://www.swift.org/install/linux/) and [xtool's release-specific installation instructions](https://github.com/xtool-org/xtool/blob/1.21.0/Documentation/xtool.docc/Installation-Linux.md).
 
 ## 3. Add Apple's SDK and signing access
 
