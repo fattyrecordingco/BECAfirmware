@@ -4,6 +4,8 @@ This artifact is an **unsigned native device build**, not an App Store or TestFl
 
 The GitHub macOS runner compiles the app with Xcode. On Windows, xtool can sign/install that prebuilt IPA without compiling it locally or extracting an Apple SDK. Local Swift development builds still require the SDK described in [WINDOWS.md](WINDOWS.md).
 
+Status on 11 October 2026: the candidate from commit `3f0a59c` was signed and installed on the user's iPad Air M3, and the user confirmed it opens after completing Developer Mode. This is a Wi-Fi/BLE candidate. The user's required **USB-C serial connection to both iPad and iPhone remains unimplemented and untested**. See [wired serial constraints](README.md#shared-app-experience-and-wired-serial) before treating installation as product acceptance.
+
 ## Install on the connected device
 
 1. Install the Windows/Linux tools in `WINDOWS.md`. Connect the iPad/iPhone with a USB data cable, unlock it, accept the Trust prompt, and enable Developer Mode when requested.
@@ -18,6 +20,8 @@ The GitHub macOS runner compiles the app with Xcode. On Windows, xtool can sign/
 5. Open **BECA** on the device. Keep BECA powered from the laptop, a charger or a power bank; installation USB is separate from the instrument connection.
 
 ## Connect BECA and check the instrument
+
+These checks apply to the existing wireless candidate. They cannot validate the required wired serial product. An M-series iPad CH340 driver needs eligible DriverKit provisioning unavailable to a free Personal Team; that driver route does not cover iPhone. Plugging the current CH340 cable into either device does not add serial support to this app.
 
 Join BECA's setup Wi-Fi or the same router as BECA. On setup Wi-Fi use `192.168.4.1` in **BECA address**. Allow Local Network and Bluetooth access. Tap **Bluetooth MIDI**, connect **BECA BLE-MIDI**, select its source, tap **Connect BECA**, then **Listen on this device**. Close other BLE MIDI central connections, including laptop test tools. Begin with a low audio level.
 
