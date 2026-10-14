@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import axeCore from "axe-core";
 
-async function openPerformance(page, { offline = false, transport = "serial", initialFailures = 0, livePreset = true, detectedPort = "COM_TEST", discoveryDelay = 0, outputModes = ["BLE MIDI", "Serial MIDI", "Aux audio", "Serial MIDI + Aux"] } = {}) {
+async function openPerformance(page, { beforePerformance, offline = false, transport = "serial", initialFailures = 0, livePreset = true, detectedPort = "COM_TEST", discoveryDelay = 0, outputModes = ["BLE MIDI", "Serial MIDI", "Aux audio", "Serial MIDI + Aux"] } = {}) {
   await page.addInitScript(({ offline, transport, initialFailures, livePreset, detectedPort, discoveryDelay, outputModes }) => {
     localStorage.setItem("beca-read-before-first-launch-v1", "1");
     const target = { id: "beca-test", name: "BECA test", control_ready: true, serial_port: "COM_TEST" };
@@ -91,6 +91,7 @@ async function openPerformance(page, { offline = false, transport = "serial", in
   await expect(page.locator("#connect-status")).toContainText(detectedPort ? `USB connected · ${detectedPort}` : "not detected");
   // Wait for discovery to finish before opening live controls.
   await expect(page.locator("#device-select option")).toHaveCount(1);
+  await beforePerformance?.();
   await page.getByRole("navigation", { name: "App views" }).getByRole("button", { name: "Performance" }).click();
   await expect(page.getByRole("heading", { name: "Performance", exact: true })).toBeVisible();
   if (!offline) await expect(page.locator("#performance-bpm")).toBeEnabled();
@@ -604,4 +605,92 @@ test("Appearance remains usable when its browser storage is unavailable", async 
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   await expect(page.locator("#performance-bpm")).toBeEnabled();
   expect(await page.evaluate(() => window.__performanceMock.writes.length)).toBe(0);
+});
+
+
+test("a pending Control mount cannot start a stream behind Performance", async ({ page }) => {
+  let releaseControl;
+  const released = new Promise(resolve => { releaseControl = resolve; });
+  let requested = false;
+  await page.route("**/control.html", async route => {
+    requested = true;
+    await released;
+    await route.continue();
+  });
+  const opened = openPerformance(page);
+  await expect.poll(() => requested).toBe(true);
+  await opened;
+  const response = page.waitForResponse(response => new URL(response.url()).pathname === "/control.html");
+  releaseControl();
+  await (await response).finished();
+  // Let the fetch continuation and frame creation run before checking ownership.
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  await expect(page.locator(".control-surface-frame")).toHaveCount(0);
+  await page.getByRole("navigation", { name: "App views" }).getByRole("button", { name: "Setup", exact: true }).click();
+  await expect(page.locator('[data-screen-view="setup"]')).toHaveCSS("opacity", "1");
+  const snapshots = await page.evaluate(() => window.__performanceMock.snapshots);
+  await page.waitForTimeout(700);
+  expect(await page.evaluate(() => window.__performanceMock.snapshots)).toBe(snapshots);
+});
+
+test("a quick Control roundtrip ignores the earlier pending mount", async ({ page }) => {
+  let stage = 0;
+  let releaseOld;
+  let releaseCurrent;
+  const oldGate = new Promise(resolve => { releaseOld = resolve; });
+  const currentGate = new Promise(resolve => { releaseCurrent = resolve; });
+  const requests = [0, 0];
+  await page.route("**/control.html", async route => {
+    const attempt = stage;
+    requests[attempt]++;
+    await (attempt ? currentGate : oldGate);
+    await route.continue();
+  });
+  const opened = openPerformance(page);
+  await expect.poll(() => requests[0]).toBeGreaterThan(0);
+  await opened;
+  const nav = page.getByRole("navigation", { name: "App views" });
+  stage = 1;
+  await nav.getByRole("button", { name: "Control", exact: true }).click();
+  await expect.poll(() => requests[1]).toBeGreaterThan(0);
+  const oldResponse = page.waitForResponse(response => new URL(response.url()).pathname === "/control.html");
+  releaseOld();
+  await (await oldResponse).finished();
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  await expect(page.locator(".control-surface-frame")).toHaveCount(0);
+  const currentResponse = page.waitForResponse(response => new URL(response.url()).pathname === "/control.html");
+  releaseCurrent();
+  await (await currentResponse).finished();
+  await expect(page.locator(".control-surface-frame")).toHaveCount(1);
+  await expect(page.frameLocator(".control-surface-frame").getByRole("button", { name: "On-screen encoder" })).toBeVisible();
+  const frame = await page.locator(".control-surface-frame").elementHandle();
+  await nav.getByRole("button", { name: "Performance", exact: true }).click();
+  await expect(page.locator("#performance-bpm")).toBeEnabled();
+  expect(await frame.evaluate(node => node.isConnected)).toBe(false);
+  await nav.getByRole("button", { name: "Control", exact: true }).click();
+  await expect(page.locator(".control-surface-frame")).toHaveCount(1);
+  await expect(page.frameLocator(".control-surface-frame").getByRole("button", { name: "On-screen encoder" })).toBeVisible();
+});
+
+test("navigation during Control bootstrap removes the inactive frame", async ({ page }) => {
+  await page.route("**/control.html", async route => {
+    const response = await route.fetch();
+    const html = (await response.text())
+      .replace(/<link\b[^>]*rel=["\']stylesheet["\'][^>]*>/g, "")
+      .replace("</body>", `<script>
+        if (!parent.__controlBootstrapSwitchDone) {
+          parent.__controlBootstrapSwitchDone = true;
+          parent.document.querySelector('.app-view-navigation [data-screen="performance"]').click();
+        }
+      </script></body>`);
+    await route.fulfill({ response, body: html });
+  });
+  await openPerformance(page, {
+    beforePerformance: () => expect.poll(() => page.evaluate(() => window.__controlBootstrapSwitchDone)).toBe(true)
+  });
+  await expect.poll(() => page.evaluate(() => window.__controlBootstrapSwitchDone)).toBe(true);
+  await expect(page.locator(".control-surface-frame")).toHaveCount(0);
+  await page.getByRole("navigation", { name: "App views" }).getByRole("button", { name: "Control", exact: true }).click();
+  await expect(page.locator(".control-surface-frame")).toHaveCount(1);
+  await expect(page.frameLocator(".control-surface-frame").getByRole("button", { name: "On-screen encoder" })).toBeVisible();
 });

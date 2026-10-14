@@ -58,13 +58,19 @@ function writeFrameHtml(frame, html, onOpenSetup) {
   bindSettingsLink(frameWindow, onOpenSetup);
 }
 
-export async function mountControlSurface(host, { onOpenSetup, onStatus } = {}) {
+export async function mountControlSurface(host, { onOpenSetup, onStatus, isCurrent = () => true } = {}) {
   if (!host) return;
 
   const html = await loadControlHtml();
+  if (!isCurrent()) return null;
   const frame = createControlFrame(host);
   writeFrameHtml(frame, html, onOpenSetup);
+  if (!isCurrent()) {
+    frame.remove();
+    return null;
+  }
   frame.focus();
 
-  onStatus?.("BECA unified surface loaded.");
+  onStatus?.("Control ready.");
+  return frame;
 }

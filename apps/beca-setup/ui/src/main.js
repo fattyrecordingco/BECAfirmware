@@ -58,6 +58,7 @@ const state = {
   selectedTargetId: null,
   selectedTargetSerialPort: null,
   controlMounted: false,
+  controlViewGeneration: 0,
   controlReady: false,
   controlIssue: "",
   bridgeConnected: false,
@@ -255,6 +256,7 @@ function renderControlPlaceholder(message) {
 }
 
 function switchScreen(screenName) {
+  if (state.activeScreen !== screenName) state.controlViewGeneration++;
   state.activeScreen = screenName;
   window.localStorage.setItem(VIEW_STORAGE_KEY, screenName);
   syncSetupTopIcons(screenName);
@@ -310,16 +312,24 @@ async function ensureControlSurfaceLoaded() {
     return;
   }
   if (state.controlMounted) return;
-  el.controlStatus.textContent = "Loading the unified BECA live surface inside the desktop app.";
+  el.controlStatus.textContent = "Loading Control…";
+  const generation = state.controlViewGeneration;
+  const isCurrent = () => state.activeScreen === "control" && state.controlViewGeneration === generation;
   try {
-    await mountControlSurface(el.controlHost, {
+    const frame = await mountControlSurface(el.controlHost, {
+      isCurrent,
       onOpenSetup: () => switchScreen("setup"),
       onStatus: (message) => {
         el.controlStatus.textContent = message;
       }
     });
-    state.controlMounted = true;
+    if (!isCurrent()) {
+      frame?.remove();
+      return;
+    }
+    if (frame?.parentNode === el.controlHost) state.controlMounted = true;
   } catch (err) {
+    if (!isCurrent()) return;
     el.controlStatus.textContent = `Control surface failed to load: ${err}`;
     addLog(`Control surface load failed: ${err}`);
   }

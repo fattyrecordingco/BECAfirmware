@@ -113,3 +113,6 @@ The rebuilt development firmware also serves a standalone browser instrument at 
 ## Appearance
 
 Choose **Dark** or **Light** from **Appearance** beside the app’s view buttons. Setup, Performance, MIDI routing and Control share the same monochrome surfaces and green instrument accents as the phone app. The choice is saved on this computer and applies to an already open Control view without resetting its connection or changing device parameters. If browser storage is unavailable, the choice lasts for the current session.
+
+
+Control startup is cancelled if you switch views before it finishes loading. Returning to Control opens the current view normally; an earlier load cannot create a hidden second live stream behind Performance.
