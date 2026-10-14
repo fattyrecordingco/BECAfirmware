@@ -26,11 +26,13 @@ Use [SHA256SUMS](https://github.com/fattyrecordingco/BECAfirmware/releases/downl
 
 ## Verification and limits
 
-Desktop checks passed 76/76, with four final appearance checks. Phone audio/transport checks passed 42/42; all 254 applicable browser checks passed across nine layouts, with 25 capability skips (two browser-startup timeouts passed on retry). Rust checks passed 32/32. The final firmware compiled with core 2.0.14 and passed the connected-device serial check: 13 presets, 40 bounded plant readings, maximum response 14.2 ms, no captured firmware errors.
+Desktop checks passed 76/76, with four final appearance checks. Phone audio/transport checks passed 44/44; all 254 applicable browser checks passed across nine layouts, with 25 capability skips (two browser-startup timeouts passed on retry). Rust checks passed 32/32. The final firmware compiled with core 2.0.14 and passed the connected-device serial check: 13 presets, 40 bounded plant readings, maximum response 13.9 ms, no captured firmware errors.
 
-Completed browser checks cover mode visibility after gestures and device updates, layouts on phone/tablet orientations, accessibility, controls, audio release/panic and reconnect. A genuine insecure HTTP `/play/` test rendered nonzero WASM audio in Chromium, preserved the device's arp pitch, followed live plant updates, released notes and panicked on stream gaps. Desktop interaction and appearance checks passed. These automated checks do not establish physical Safari latency or every device's connectivity.
+Completed browser checks cover mode visibility after gestures and device updates, layouts on phone/tablet orientations, accessibility, controls, audio release/panic and reconnect. An automated insecure HTTP `/play/` test with mocked device responses rendered nonzero WASM audio in Chromium, preserved the device's arp pitch, followed live plant updates, released notes and panicked on stream gaps. Desktop interaction and appearance checks passed. These automated checks do not establish physical Safari latency or every device's connectivity.
 
 The final laptop access-point HTTP runs did not complete: one timed out after checking 17 embedded assets; another stopped when Windows lost its IPv4 address. These runs do not certify sustained physical Wi-Fi playback. Automated browser transport/audio checks and the earlier physical access-point checks remain separate evidence.
+
+The final 1.7.0 native candidate was development-signed and installed successfully on the connected iPad, with its bundled resources verified. User interaction acceptance for that build is recorded separately.
 
 The earlier physical native build 5 on `iPad15,5` has user-confirmed setup-access-point connection, knobs, Light/Dark, Test sound and Panic. That record is separate from the new unsigned release candidate and does not certify all iPhone/iPad models. Direct CH340 USB serial is unavailable in iPhone/iPad browsers and is not implemented in the native Apple app.
 

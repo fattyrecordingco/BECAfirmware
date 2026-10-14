@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## 2026-10-14 — Apps 0.3.0 / phone and Apple 1.7.0 / firmware 1.2.0
+
+- Added the device-hosted `/play/` instrument and original synth/drum engine playback from bounded, timestamped Wi-Fi MIDI.
+- Showed mode-specific musical controls while retaining plant scope and MIDI feedback.
+- Unified monochrome/green Light and Dark themes across desktop, phone and native Apple interfaces.
+- Exposed device Wi-Fi MAC addresses and phone-hotspot setup.
+- Corrected successful Wi-Fi setting replies, coalesced knob/pad writes, and protected local edits from stale snapshots.
+- Added separate platform download packages, installation guides and checksums.
+- Kept ESP32 core 2.0.14 and the existing BLE-MIDI library baseline.
+
 ## 2026-05-01 - Plant Detect Disabled By Default
 
 ### Changed
