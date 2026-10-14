@@ -32,6 +32,55 @@ The live deck retains the 24-second plant trace, bounded signal statistics, 12-l
 
 Writes are coalesced; the expression pad sends at most four paired updates per second plus release. Graph history caps at 60 points over 24 seconds. State/plant/note snapshots run at 2 Hz, synth reconciliation at 0.5 Hz, unchanged state skips rendering, and console history is bounded. Wi-Fi MIDI requests do not overlap and use a bounded timestamp buffer; loss/backgrounding clears held notes. BLE behavior and its library baseline remain unchanged; ESP32 Arduino core stays pinned to **2.0.14**. Full build/transport details are in the [phone app README](apps/beca-phone/README.md).
 
+## Phone AUX controller
+
+The **1.5 web app** adds the original BECA synth on the phone/tablet, all 13 presets, plant graph, MIDI monitor, synth/performance/device settings and portrait/landscape layouts. Android can receive live events over USB. iPad can preview sounds independently or receive live data through a USB-connected Chrome computer using the app's browser-to-browser tablet link. Direct USB/BLE access from iPad browsers is not supported. See [phone/tablet playback and setup](apps/beca-phone/README.md). Rebuild with `npm run build` in `apps/beca-phone`; pushes to `master` publish the verified app through GitHub Pages.
+
+**[Open BECA Phone Control](https://fattyrecordingco.github.io/BECAfirmware/)** on an Android phone in Chrome or Edge, then connect BECA with a USB-C OTG/data cable. The installable web app uses the existing 115200-baud serial protocol to select AUX or Serial + AUX, shape the onboard synth, adjust plant/performance settings, monitor live activity, and send advanced console commands. Its fixed live deck keeps the 24-second plant-signal graph, basic signal statistics, desktop-style 12-leaf MIDI activity/root-note selector, and plant sensitivity visible across every controller mode. Switchable Playground surfaces provide tone/bite, delay/reverb, attack/release and oscillator mix/detune control, alongside touch knobs and instrument buttons. Drums only play in Drum mode. Phone/tablet arpeggiation uses plant-selected chords and signal contour; AUX and external MIDI keep the firmware pattern. The web engine reduces delay quantization and saw/square aliasing without changing ESP32 DSP. After the first load, its application shell is available offline.
+
+Direct browser USB serial is not available on iPhone or iPad. On Android, the app uses WebUSB to communicate with the same CH340/CH341, CP210x, FTDI, and Espressif USB Serial/JTAG adapters recognized by the desktop app; desktop Chromium uses native Web Serial. Android requires a data-capable OTG cable, an explicit device permission, and the HTTPS published app opened directly in Chrome or Edge. The phone extension now shares the desktop app's light BECA design system, wordmark, and flower icon, and displays live browser, HTTPS, permission, and adapter diagnostics. Close USB terminal apps or the desktop BECA app before connecting because only one host can own the adapter. See the [complete phone setup, permission, compatibility, and troubleshooting guide](apps/beca-phone/README.md).
+
+The phone controller is transport-limited and state-diff based: slider writes are coalesced, two-axis pad writes are paired at no more than four updates per second plus release, plant graph samples are deduplicated and capped at 60 points over 24 seconds, state/plant/note snapshots run at 2 Hz, synth reconciliation runs at 0.5 Hz, hidden pages pause polling, and console history is bounded. It introduces no firmware or BLE stack change. The firmware remains pinned to ESP32 Arduino core 2.0.14 and its existing library versions.
+
+## Apple setup: Mac, iPhone and iPad
+
+### MacBook / macOS: loopMIDI alternative
+
+**Use Apple's built-in IAC Driver in Audio MIDI Setup. No download, paid app or Apple Developer membership is required for MIDI routing.** loopMIDI is a Windows virtual MIDI cable; IAC provides the equivalent routing between apps on macOS.
+
+BECA can also create **BECA (virtual MIDI)** on Mac. If that source is available, start the BECA bridge and select it as the input in your DAW. You do not need an IAC bus as well.
+
+To use an IAC bus instead:
+
+1. Open **Applications > Utilities > Audio MIDI Setup**.
+2. Choose **Window > Show MIDI Studio**, then double-click **IAC Driver**.
+3. Enable **Device is online**, add a bus named **BECA**, and click **Apply**.
+4. Connect the hardware with a USB data cable and open the native BECA desktop app. In **Setup > MIDI routing**, refresh outputs, select the IAC BECA bus as the destination, and start the bridge.
+5. In Ableton Live or another DAW, enable that same IAC bus as a MIDI input, select it on an instrument track, and arm/monitor the track. Avoid routing the track's output back into the same bus.
+
+IAC routes MIDI between apps; it does not open BECA's USB serial port or replace the BECA Serial MIDI bridge. The current CH340/CP210x hardware is a USB serial adapter, not a class-compliant USB MIDI device. If the serial port is missing, check the data cable and the appropriate adapter driver; if the bridge connects but the DAW is silent, check the MIDI destination and track monitoring. Only one program should own BECA's serial port.
+
+[Apple's IAC setup instructions](https://support.apple.com/guide/audio-midi-setup/ams1013/mac). Current Mac installers remain unnotarized as described above; MIDI routing does not change installation/signing requirements.
+
+### iPhone / iPad: what subscription is required?
+
+**For the current BECA Phone Control web app, none. No subscription unlocks direct USB serial access.** Its iPhone/iPad browser connection cannot use the board's USB serial bridge, even with a USB-C cable or a Home Screen installation. Apple Developer Program membership does not add WebUSB or Web Serial to that web app. USB-C describes the connector, not the device protocol or the APIs available to an app; older Apple devices may use Lightning.
+
+The current live-data route is **BECA USB > a computer running Chrome/Edge > the phone/tablet's browser-to-browser link**. Open [BECA Phone Control](https://fattyrecordingco.github.io/BECAfirmware/) on both devices on the same local network, connect USB on the computer, and follow [the tablet-link pairing steps](apps/beca-phone/README.md#ipad-and-browser-to-browser-tablet-link). Keep the computer awake and its host page open. Local sound previews also work without hardware. The repo's automated browser-link checks do not establish physical iPhone/iPad compatibility; real-device validation remains outstanding.
+
+For developers planning a separate native Apple app, these are different routes:
+
+| Route | Membership / requirements | What it means for BECA |
+| --- | --- | --- |
+| Distribute a native iOS/iPadOS app through the App Store or TestFlight | **Apple Developer Program**, currently USD 99 per membership year, with regional pricing | Provides app distribution and eligible capabilities; it does **not** by itself grant arbitrary USB serial access. Basic personal-device testing with Xcode can start without paid membership. |
+| Native app communicating with an MFi accessory through External Accessory | App developer uses Apple Developer Program; hardware maker uses the separate **MFi Program** and completes the applicable accessory requirements | Requires a compatible accessory/protocol and native implementation. The existing CH340/CP210x USB adapter does not become an MFi accessory after paying a fee. |
+| Custom USB driver on a supported iPad | DriverKit on **M-series iPads**, with the applicable Apple-approved distribution entitlements and a native driver/app | An iPad-specific engineering route, not an iPhone solution or a browser permission. Confirm framework/device support before choosing it. |
+| Native BLE-MIDI or class-compliant USB MIDI | Native Core MIDI support and compatible, verified hardware/protocol; BLE-only and USB Device Class accessories without MFi technologies do not require MFi | BECA already has a firmware BLE-MIDI mode, but the phone web controller does not implement direct BLE-MIDI access. MIDI note transport alone does not implement the serial settings, telemetry or flashing protocol. Class-compliant USB MIDI would require suitable hardware/firmware rather than the current serial adapter. |
+
+**Do not buy a developer membership solely to make the current iPhone/iPad USB cable connection work.** Direct support requires choosing and implementing a supported native transport (and potentially changing hardware). No paid third-party serial app is currently verified by this repository as a BECA-compatible replacement.
+
+Official references: [Apple Developer enrollment and pricing](https://developer.apple.com/programs/enroll/) · [Free testing versus paid distribution](https://developer.apple.com/help/account/membership/programs-overview) · [External Accessory](https://developer.apple.com/documentation/externalaccessory) · [DriverKit platform support](https://developer.apple.com/documentation/driverkit) · [Creating drivers for iPadOS](https://developer.apple.com/documentation/driverkit/creating-drivers-for-ipados) · [MFi requirements and exclusions](https://mfi.apple.com/en/faqs).
+
 ## Native Ableton instrument
 
 **[Download BECA Instrument 0.1.0 for Ableton Live](https://github.com/fattyrecordingco/BECAfirmware/releases/download/instrument-v0.1.0/BECA-Instrument-0.1.0.zip)** · [Release notes and installation](https://github.com/fattyrecordingco/BECAfirmware/releases/tag/instrument-v0.1.0) · [SHA256 checksum](https://github.com/fattyrecordingco/BECAfirmware/releases/download/instrument-v0.1.0/SHA256SUMS). The ZIP contains the complete device folder; no source build is needed. Requires Max for Live and Max 8.6 or newer. Tested on Windows with Live 12.4.5; macOS and Live 11 runtime checks remain outstanding.
