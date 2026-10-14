@@ -72,7 +72,7 @@ export class BecaConnection extends EventTarget {
       if (this.remote) this.dispatchEvent(new CustomEvent("line", { detail: parseSerialLine(data) }));
       else {
         if (Date.now() - windowStart >= 1000) { requests = 0; windowStart = Date.now(); }
-        if (++requests > 24 || !/^@C (?:PING|PARAMS|STATE|SYNTH|PLANT|NOTES|PINS|TELEMETRY [01]|SET [a-z_]+ [-\w./]+|SYNTH_TEST|RANDOMIZE)$/.test(data)) return;
+        if (++requests > 24 || !/^@C (?:PING|PARAMS|STATE|SYNTH|PLANT|NOTES|PINS|WIFI_INFO|TELEMETRY [01]|SET [a-z_]+ [-\w./]+|SYNTH_TEST|RANDOMIZE)$/.test(data)) return;
         this.usb.send(data).catch((error) => this.dispatchEvent(new CustomEvent("transporterror", { detail: error })));
       }
     };

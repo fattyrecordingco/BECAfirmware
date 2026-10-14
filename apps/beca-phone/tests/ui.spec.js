@@ -11,6 +11,8 @@ export async function installMockSerial(page) {
     const replies = [];
     let wake;
     globalThis.__MOCK_WRITES = [];
+    globalThis.__MOCK_STATE = state;
+    globalThis.__MOCK_SYNTH = synth;
     globalThis.__MOCK_PLANT = {value:0.42,connected:1};
     const push = (line) => {
       replies.push(encoder.encode(`${line}\n`));
@@ -21,6 +23,9 @@ export async function installMockSerial(page) {
       const tag = command.replace(/^@C\s+/, "").split(/\s+/)[0];
       if (tag === "PING") push('@R PING {"ok":1}');
       else if (tag === "PARAMS") push('@R PARAMS {"modes":["Notes","Arpeggiator","Chords","Drum Machine"],"scales":["Major","Minor"],"time_signatures":["4-4"],"note_lengths":["1/8"],"output_modes":["BLE MIDI","Serial MIDI","Aux audio","Serial MIDI + Aux","Wi-Fi MIDI"],"live_preset":true,"synth_presets":["Warm Pad","Soft Keys"],"ranges":{"bpm":[20,240],"swing":[0,60],"sens":[0,0.5],"lo":[1,8],"hi":[1,8],"rest":[0,0.8],"attack":[0,5],"decay":[0,5],"sustain":[0,1],"release":[0.01,10],"cutoff":[20,18000],"resonance":[0.1,10],"delay_ms":[0,800],"delay_feedback":[0,0.95],"delay_mix":[0,1],"drive":[0,1],"detune":[0,8],"gain_trim":[0.45,1]}}');
+      else if (tag === "WIFI_INFO") push('@R WIFI_INFO {"sta_mac":"AA:BB:CC:11:22:33","ap_mac":"AA:BB:CC:11:22:34","ssid":"StudioWiFi","ip":"192.168.1.20","name":"beca-test"}');
+      else if (tag === "WIFI_SAVE") push(`@R WIFI_SAVE ${JSON.stringify(globalThis.__MOCK_WIFI_RESULT || {ok:1})}`);
+      else if (tag === "REBOOT") push('@R REBOOT {"ok":1}');
       else if (tag === "STATE") push(`@R STATE ${JSON.stringify(state)}`);
       else if (tag === "SYNTH") {
         if (globalThis.__MOCK_SYNTH_DELAY) setTimeout(()=>push(`@R SYNTH ${JSON.stringify(synth)}`),globalThis.__MOCK_SYNTH_DELAY);
@@ -29,10 +34,11 @@ export async function installMockSerial(page) {
       else if (tag === "PLANT") push(`@R PLANT ${JSON.stringify(globalThis.__MOCK_PLANT)}`);
       else if (tag === "NOTES") push('@R NOTES {"held":1,"notes":[60],"last":60,"last_vel":88}');
       else if (tag === "SET") {
+        if (globalThis.__MOCK_SET_ERROR) { push('@R SET {"ok":0,"err":"Setting unavailable"}'); return; }
         const [, , key, value] = command.split(/\s+/);
         if (key in state) state[key] = Number.isNaN(Number(value)) ? value : Number(value);
         if (key in synth) synth[key] = Number.isNaN(Number(value)) ? value : Number(value);
-        push('@R SET {"ok":1}');
+        push(globalThis.__MOCK_SET_STATE_REPLY ? `@R SET ${JSON.stringify(state)}` : '@R SET {"ok":1}');
       }
       else if (tag === "TELEMETRY") push('@R TELEMETRY {"ok":1,"enabled":1}');
       else if (tag === "SYNTH_TEST") push('@R SYNTH_TEST {"ok":1}');
@@ -40,7 +46,7 @@ export async function installMockSerial(page) {
     };
     const port = {
       readable: { getReader: () => ({ read: async () => { while (!replies.length) await new Promise((resolve) => { wake = resolve; }); return { value: replies.shift(), done: false }; }, cancel: async () => { if (wake) wake(); }, releaseLock: () => {} }) },
-      writable: { getWriter: () => ({ write: async (bytes) => { const command = decoder.decode(bytes).trim(); globalThis.__MOCK_WRITES.push(command); if (command === globalThis.__MOCK_FAIL_COMMAND) throw new Error("BECA test connection lost"); respond(command); }, close: async () => {}, releaseLock: () => {} }) },
+      writable: { getWriter: () => ({ write: async (bytes) => { const command = decoder.decode(bytes).trim(); globalThis.__MOCK_WRITES.push(command); if (command === globalThis.__MOCK_FAIL_COMMAND) throw new Error("BECA test connection lost"); if (command.startsWith("@C SET ") && globalThis.__MOCK_WRITE_DELAY) await new Promise(resolve => setTimeout(resolve, globalThis.__MOCK_WRITE_DELAY)); respond(command); }, close: async () => {}, releaseLock: () => {} }) },
       open: async () => {}, close: async () => {}
     };
     globalThis.__BECA_SERIAL__ = { requestPort: async () => port };
@@ -63,6 +69,7 @@ test("connects, renders device state, and sends AUX control", async ({ page }) =
   await expect(page.getByText("BECA connected", { exact: true })).toBeVisible();
   await expect(page.locator("#plantValue")).toHaveText("0.42");
   await expect(page.locator("#outputStatus")).toHaveText("SERIAL");
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
   await page.getByRole("radio", { name: /Aux audio/ }).click();
   await expect.poll(() => page.evaluate(() => globalThis.__MOCK_WRITES)).toContain("@C SET outputmode 2");
 });
@@ -152,12 +159,12 @@ test("instrument buttons gate drum controls and expose plant arp settings", asyn
   await page.locator("#control-drumkit").selectOption("2");
   await page.getByRole("button", {name:"Performance",exact:true}).click();
   await expect(page.locator('[data-drum-part="0"]')).toBeEnabled();
-  await page.locator("#control-mode").selectOption("1");
+  await page.locator('[data-play-mode="1"]').click();
   await expect(page.locator('[data-drum-part="0"]')).toBeDisabled();
   await expect(page.locator("#control-arp_pattern")).toBeEnabled();
   await page.locator("#control-arp_pattern").selectOption("2");
   await page.getByRole("button", {name:"Synth",exact:true}).click();
-  await expect(page.locator("#control-drumkit")).toBeDisabled();
+  await expect(page.locator("#control-drumkit")).toBeHidden();
   expect(await page.evaluate(()=>globalThis.__MOCK_WRITES)).toEqual([]);
 });
 
@@ -192,8 +199,9 @@ test("unsupported USB browsers offer direct Apple routes and the browser compute
   });
   await page.reload();
   await expect(page.locator("#connectButton")).toBeDisabled();
-  await expect(page.locator("#connectionMessage")).toContainText("direct Wi-Fi controller");
+  await expect(page.locator("#connectionMessage")).toContainText("direct Wi-Fi instrument");
   await expect(page.locator("#compatibilityNotice")).toContainText("through a computer");
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
   await page.locator("#appleConnectionHelp summary").click();
   await expect(page.locator('#appleConnectionHelp a')).toHaveAttribute("href", "http://192.168.4.1/");
   await expect(page.locator("#appleConnectionHelp")).toContainText("BECA BLE-MIDI");
@@ -255,6 +263,7 @@ test("Apple app transport loads settings directly and selects BLE for local soun
 });
 
 test("connection help separates missing power from browser support", async ({page}, testInfo) => {
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
   await page.locator("#connectionHelp summary").first().click();
   await page.locator("#connectionIssue").selectOption("power");
   await expect(page.locator("#connectionAdvice")).toContainText("OnePlus/OxygenOS");
@@ -262,6 +271,7 @@ test("connection help separates missing power from browser support", async ({pag
   await expect(page.locator("#connectionAdvice")).toContainText("cannot turn USB power on");
   await expect(page.locator("#relayCapability")).toContainText("available");
   expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+  await page.evaluate(() => scrollTo(0, 0));
   await page.screenshot({path:testInfo.outputPath("connection-help.png"),fullPage:true});
 });
 
@@ -307,13 +317,13 @@ test("older browser helpers are optional and unavailable WebRTC has a clear fall
   await expect(page.locator("#plantValue")).toHaveText("0.42");
 });
 
-test("uses the desktop BECA light design and brand assets", async ({ page }) => {
+test("uses the instrument palette and BECA brand assets", async ({ page }) => {
   await expect(page.locator(".brand img")).toHaveAttribute("src", "./icons/wordmark.svg");
   await expect.poll(() => page.evaluate(() => ({
     scheme: getComputedStyle(document.documentElement).colorScheme,
     background: getComputedStyle(document.documentElement).backgroundColor,
     accent: getComputedStyle(document.documentElement).getPropertyValue("--accent").trim()
-  }))).toEqual({ scheme: "light", background: "rgb(246, 244, 239)", accent: "#008351" });
+  }))).toEqual({ scheme: "dark", background: "rgb(16, 23, 25)", accent: "#67e3bc" });
 });
 
 test("has no serious automated accessibility violations", async ({ page }) => {
@@ -381,13 +391,14 @@ test("standalone previews retain all original presets and editable synth setting
   if (await page.evaluate(() => Boolean(window.AudioContext && window.AudioWorkletNode))) {
     await page.getByRole("button", { name: "Test sound", exact: true }).click();
     await expect(page.locator("#listenButton")).toHaveAttribute("aria-pressed", "true");
-  } else await expect(page.locator("#audioStatus")).toContainText("not supported");
+  } else await expect(page.locator("#audioStatus")).toContainText("Audio unavailable");
   await page.getByRole("button", { name: "Synth", exact: true }).click();
   await expect(page.locator("#control-cutoff")).toBeEnabled();
   await expect(page.locator("#control-wave_a option")).toHaveText(["Saw", "Square", "Triangle", "Sine"]);
   await page.locator("#expressionPad").click({ position: { x: 100, y: 80 } });
   expect(await page.evaluate(() => globalThis.__MOCK_WRITES)).toEqual([]);
   expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+  await page.evaluate(() => scrollTo(0, 0));
   await page.screenshot({ path: testInfo.outputPath("synth-layout.png"), fullPage: true });
 });
 
@@ -421,9 +432,11 @@ test("tablet browser link forwards live input and settings without direct USB", 
   await host.goto("/");
   await host.getByRole("button", { name: "Connect USB" }).click();
   await expect(host.locator("#deviceStatus")).toHaveText("BECA connected");
+  await host.getByRole("button", { name: "Settings", exact: true }).click();
   await host.locator(".tablet-link summary").click();
   await host.locator("#linkOffer").click();
   await expect(host.locator("#linkOutput")).not.toHaveValue("");
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
   await page.locator(".tablet-link summary").click();
   await page.locator("#linkInput").fill(await host.locator("#linkOutput").inputValue());
   await page.locator("#linkAnswer").click();
@@ -439,4 +452,228 @@ test("tablet browser link forwards live input and settings without direct USB", 
   await host.locator("#linkClose").click();
   await expect(page.locator("#deviceStatus")).toHaveText("Not connected");
   await host.close();
+});
+
+ test("shows station MAC, limits identity reads, saves hotspot and hides credentials", async ({ page }) => {
+  await page.getByRole("button", { name: "Connect USB" }).click();
+  await expect(page.locator("#deviceStatus")).toHaveText("BECA connected");
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.locator("#networkSettings summary").click();
+  await expect(page.locator("#wifiMac")).toHaveText("AA:BB:CC:11:22:33");
+  await expect(page.locator("#wifiSetupLink")).toHaveAttribute("href", "http://192.168.1.20/setup");
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.locator("#networkSettings summary").click();
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.locator("#networkSettings summary").click();
+  expect(await page.evaluate(() => globalThis.__MOCK_WRITES.filter(x => x === "@C WIFI_INFO").length)).toBe(1);
+  await page.locator("#hotspotSsid").fill("My phone");
+  await page.locator("#hotspotPass").fill("hotspot-secret");
+  await page.locator("#saveHotspot").click();
+  await expect.poll(() => page.evaluate(() => globalThis.__MOCK_WRITES)).toContain("@C WIFI_SAVE beca-test\tMy phone\thotspot-secret");
+  await expect.poll(() => page.evaluate(() => globalThis.__MOCK_WRITES)).toContain("@C REBOOT");
+  await expect(page.locator("#wifiSettingsStatus")).toContainText("Wi-Fi saved");
+  await expect(page.locator("#consoleLog")).not.toContainText("hotspot-secret");
+  await expect(page.locator("#hotspotPass")).toHaveValue("");
+  await expect(page.locator("#wifiMac")).toHaveText("Connect BECA to view");
+});
+
+test("keeps hotspot errors visible and does not reboot on rejection", async ({ page }) => {
+  await page.getByRole("button", { name: "Connect USB" }).click();
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.locator("#networkSettings summary").click();
+  await expect(page.locator("#wifiMac")).toHaveText("AA:BB:CC:11:22:33");
+  await page.evaluate(() => { globalThis.__MOCK_WIFI_RESULT = {ok:0,msg:"Wrong password",hint:"Check hotspot"}; });
+  await page.locator("#hotspotSsid").fill("My phone");
+  await page.locator("#hotspotPass").fill("wrong-password");
+  await page.locator("#saveHotspot").click();
+  await expect(page.locator("#wifiSettingsStatus")).toContainText("Wrong password");
+  expect(await page.evaluate(() => globalThis.__MOCK_WRITES.includes("@C REBOOT"))).toBe(false);
+  await expect(page.locator("#deviceStatus")).toHaveText("BECA connected");
+});
+
+test("mode modules follow gestures and incoming state without losing values", async ({ page }, testInfo) => {
+  await page.getByRole("button", { name: "Connect USB", exact: true }).click();
+  await page.getByRole("button", { name: "Performance", exact: true }).click();
+  for (const mode of [0, 1, 2, 3]) {
+    await page.locator(`[data-play-mode="${mode}"]`).click();
+    await expect.poll(() => page.evaluate(() => globalThis.__MOCK_STATE.mode)).toBe(mode);
+    const pitched = page.locator("#control-scale");
+    const arp = page.locator("#control-arp_pattern");
+    const drums = page.locator('[data-drum-part="0"]');
+    if (mode === 3) { await expect(pitched).toBeHidden(); await expect(drums).toBeVisible(); }
+    else { await expect(pitched).toBeVisible(); await expect(drums).toBeHidden(); }
+    if (mode === 1) await expect(arp).toBeVisible(); else await expect(arp).toBeHidden();
+    await expect(page.locator("#liveDeck")).toBeVisible();
+  }
+  await page.evaluate(() => { Object.assign(globalThis.__MOCK_STATE, { mode: 1, root: 2 }); globalThis.__MOCK_PUSH('@R STATE {"mode":1,"root":2}'); });
+  await expect(page.locator("#control-arp_pattern")).toBeVisible();
+  await expect(page.locator("#control-root")).toHaveValue("2");
+  await expect(page.locator('[data-drum-part="0"]')).toBeHidden();
+  await page.getByRole("button", { name: "Controller", exact: true }).click();
+  await page.evaluate(() => scrollTo(0, 0));
+  await page.screenshot({ path: testInfo.outputPath("instrument-play.png"), fullPage: true });
+});
+
+test("insecure device Wi-Fi player renders exact MIDI with the original engine and panics on gaps", async ({ page }, testInfo) => {
+  const queue = [];
+  let sequence = 0;
+  let lost = false;
+  let plantValue = 0.42;
+  const apiState = { ...mockState, mode: 1 };
+  const errors = [];
+  page.on("pageerror", error => errors.push(error.message));
+  await page.addInitScript(() => {
+    const OriginalContext = window.AudioContext || window.webkitAudioContext;
+    if (!OriginalContext) return;
+    const original = OriginalContext.prototype.createScriptProcessor;
+    OriginalContext.prototype.createScriptProcessor = function (...args) {
+      const processor = original.apply(this, args);
+      const descriptor = Object.getOwnPropertyDescriptor(window.ScriptProcessorNode.prototype, "onaudioprocess");
+      Object.defineProperty(processor, "onaudioprocess", {
+        set(callback) {
+          descriptor.set.call(processor, event => {
+            callback(event);
+            window.__wifiPeak = Math.max(...event.outputBuffer.getChannelData(0).map(Math.abs));
+          });
+        }
+      });
+      window.__wifiFallback = true;
+      return processor;
+    };
+  });
+  await page.route("http://beca-device.test/**", async route => {
+    const url = new URL(route.request().url());
+    if (url.pathname.startsWith("/api/")) {
+      let payload;
+      switch (url.pathname) {
+        case "/api/info": payload = { browser_midi: true, sta_mac: "AA:BB:CC:11:22:33", ip: "beca-device.test" }; break;
+        case "/api/state": payload = apiState; break;
+        case "/api/params": payload = {}; break;
+        case "/api/synth": payload = mockSynth; break;
+        case "/api/plant": payload = { value: plantValue, connected: 1 }; break;
+        case "/api/notes": payload = { notes: [] }; break;
+        case "/api/midi": payload = { boot: 1, now: Date.now() >>> 0, next: sequence, lost, events: queue.splice(0) }; lost = false; break;
+        case "/api/set": payload = { ok: 1 }; break;
+        default: payload = { ok: 1 };
+      }
+      await route.fulfill({ json: payload });
+    } else {
+      const asset = url.pathname.replace(/^\/play\//, "/");
+      const response = await page.request.get(`http://127.0.0.1:4174${asset}`);
+      await route.fulfill({ response });
+    }
+  });
+  await page.goto("http://beca-device.test/play/");
+  expect(await page.evaluate(() => isSecureContext)).toBe(false);
+  await page.getByRole("button", { name: "Connect Wi-Fi", exact: true }).click();
+  await expect(page.locator("#deviceStatus")).toHaveText("BECA connected");
+  await expect(page.locator("#plantValue")).toHaveText("0.42");
+  plantValue = 0.7;
+  await expect(page.locator("#plantValue")).toHaveText("0.70");
+  await expect(page.locator("#plantTrace")).not.toHaveAttribute("d", "");
+  await page.getByRole("button", { name: "Performance", exact: true }).click();
+  await expect(page.locator("#control-arp_pattern")).toBeHidden();
+  if (!await page.evaluate(() => Boolean((window.AudioContext || window.webkitAudioContext)?.prototype?.createScriptProcessor))) {
+    await expect(page.locator("#listenButton")).toBeDisabled();
+    expect(errors).toEqual([]);
+    return;
+  }
+  await page.locator("#listenButton").click();
+  await expect(page.locator("#listenButton")).toHaveAttribute("aria-pressed", "true");
+  expect(await page.evaluate(() => window.__wifiFallback)).toBe(true);
+  queue.push([++sequence, 0x90, 70, 100, Date.now() >>> 0]);
+  await expect(page.locator("#midiReadout")).toHaveText("A♯4");
+  await expect.poll(() => page.evaluate(() => window.__wifiPeak || 0)).toBeGreaterThan(0.005);
+  queue.push([++sequence, 0x80, 70, 0, Date.now() >>> 0]);
+  await expect(page.locator("#midiReadout")).toHaveText("No notes");
+  await expect.poll(() => page.evaluate(() => window.__wifiPeak || 0), { timeout: 10000 }).toBeLessThan(0.001);
+  queue.push([++sequence, 0x90, 70, 100, Date.now() >>> 0]);
+  await expect(page.locator("#midiReadout")).toHaveText("A♯4");
+  lost = true;
+  await expect(page.locator("#midiReadout")).toHaveText("No notes");
+  await expect.poll(() => page.evaluate(() => window.__wifiPeak || 0)).toBe(0);
+  await page.evaluate(() => scrollTo(0, 0));
+  await page.screenshot({ path: testInfo.outputPath("wifi-instrument.png"), fullPage: true });
+  expect(errors).toEqual([]);
+});
+
+test("appearance persists and light controls have readable contrast", async ({ page }, testInfo) => {
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByLabel("Appearance", { exact: true }).selectOption("light");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  expect(await page.evaluate(() => getComputedStyle(document.body).backgroundColor)).toBe("rgb(255, 255, 255)");
+  expect(await page.evaluate(() => globalThis.__MOCK_WRITES)).toEqual([]);
+  await page.reload();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  await page.getByRole("button", { name: "Connect USB", exact: true }).click();
+  await expect(page.locator("#deviceStatus")).toHaveText("BECA connected");
+  await page.addScriptTag({ content: AxeBuilder.source });
+  for (const tab of ["Controller", "Synth", "Performance", "Settings", "Console"]) {
+    await page.getByRole("button", { name: tab, exact: true }).click();
+    const result = await page.evaluate(() => axe.run(document, { runOnly: ["color-contrast"] }));
+    expect(result.violations.map(v => ({ id: v.id, nodes: v.nodes.map(n => ({ target: n.target, summary: n.failureSummary })) }))).toEqual([]);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+    if (tab === "Synth") await page.screenshot({ path: testInfo.outputPath("light-instrument.png"), fullPage: true });
+  }
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByLabel("Appearance", { exact: true }).selectOption("dark");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await page.reload();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+});
+
+test("Wi-Fi state-shaped setting replies succeed and explicit rejections recover", async ({ page }) => {
+  await page.getByRole("button", { name: "Connect USB", exact: true }).click();
+  await expect(page.locator("#deviceStatus")).toHaveText("BECA connected");
+  await page.evaluate(() => { globalThis.__MOCK_SET_STATE_REPLY = true; });
+  await page.locator('[data-play-mode="2"]').click();
+  await expect.poll(() => page.evaluate(() => globalThis.__MOCK_STATE.mode)).toBe(2);
+  await page.waitForTimeout(250);
+  await expect(page.locator("#toast")).not.toContainText("rejected");
+  await page.getByRole("button", { name: "Performance", exact: true }).click();
+  await page.evaluate(() => { globalThis.__MOCK_SET_ERROR = true; });
+  await page.locator('[data-play-mode="1"]').click();
+  await expect(page.locator("#toast")).toContainText("Setting unavailable");
+  await expect(page.locator('[data-play-mode="2"]')).toHaveAttribute("aria-pressed", "true");
+});
+
+test("cancelled touch gestures resume state polling", async ({ page }) => {
+  await page.getByRole("button", { name: "Connect USB", exact: true }).click();
+  await expect(page.locator("#deviceStatus")).toHaveText("BECA connected");
+  const sensitivity = page.locator("#sensitivity");
+  await sensitivity.evaluate(input => input.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, pointerId: 1 })));
+  await page.evaluate(() => { globalThis.__MOCK_STATE.sens = .35; });
+  await page.waitForTimeout(600);
+  await expect(sensitivity).toHaveValue("0.2");
+  await sensitivity.evaluate(input => input.dispatchEvent(new PointerEvent("pointercancel", { bubbles: true, pointerId: 1 })));
+  await expect(sensitivity).toHaveValue("0.35");
+});
+
+test("pad edits reject delayed synth snapshots and retain the latest position", async ({ page }) => {
+  await page.getByRole("button", { name: "Connect USB", exact: true }).click();
+  await expect(page.locator("#deviceStatus")).toHaveText("BECA connected");
+  await page.getByRole("button", { name: "Synth", exact: true }).click();
+  await page.evaluate(() => { globalThis.__MOCK_WRITE_DELAY = 250; });
+  const pad = page.locator("#expressionPad");
+  await pad.scrollIntoViewIfNeeded();
+  const box = await pad.boundingBox();
+  await page.mouse.move(box.x + box.width * .4, box.y + box.height * .4);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width * .7, box.y + box.height * .6, { steps: 12 });
+  const edited = await page.locator("#expressionValues").innerText();
+  const cutoff = await page.locator("#control-cutoff").inputValue();
+  await page.evaluate(synth => globalThis.__MOCK_PUSH(`@R SYNTH ${JSON.stringify(synth)}`), mockSynth);
+  await page.waitForTimeout(150);
+  await expect(page.locator("#expressionValues")).toHaveText(edited);
+  await expect(page.locator("#control-cutoff")).toHaveValue(cutoff);
+  await page.mouse.up();
+  await expect.poll(() => page.evaluate(() => globalThis.__MOCK_SYNTH.cutoff)).toBe(Number(cutoff));
+  await expect.poll(() => page.evaluate(() => globalThis.__MOCK_WRITES.filter(line => /^@C SET (cutoff|resonance) /.test(line)).length)).toBeGreaterThanOrEqual(2);
+  await page.waitForTimeout(700);
+  expect(await page.evaluate(() => globalThis.__MOCK_WRITES.filter(line => /^@C SET (cutoff|resonance) /.test(line)).length)).toBeLessThanOrEqual(4);
+  await page.evaluate(() => {
+    globalThis.__MOCK_SYNTH.cutoff = 9600;
+    globalThis.__MOCK_PUSH(`@R SYNTH ${JSON.stringify(globalThis.__MOCK_SYNTH)}`);
+  });
+  await expect(page.locator("#control-cutoff")).toHaveValue("9600");
 });

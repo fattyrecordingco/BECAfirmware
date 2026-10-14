@@ -69,6 +69,18 @@ jobs:
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "channel=$CHANNEL" >> "$GITHUB_OUTPUT"
 
+      - name: Setup Node for browser assets
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Generate instrument assets
+        run: |
+          node apps/beca-phone/scripts/build.mjs
+          python tools/build_device_player.py
+          python make_index_header.py
+          python tools/check_ui_copy.py
+
       - name: Build firmware
         run: pio run -e esp32dev
 

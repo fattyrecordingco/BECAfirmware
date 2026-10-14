@@ -1,4 +1,6 @@
 import { installControlTransport } from "./control-main.js";
+import appearanceStyles from "./appearance.css?inline";
+import { syncControlAppearance } from "./appearance.js";
 
 let controlHtml = "";
 
@@ -49,6 +51,10 @@ function writeFrameHtml(frame, html, onOpenSetup) {
   frameDocument.open();
   frameDocument.write(html);
   frameDocument.close();
+  const appearance = frameDocument.createElement("style");
+  appearance.textContent = appearanceStyles;
+  frameDocument.head.appendChild(appearance);
+  syncControlAppearance(frame);
   bindSettingsLink(frameWindow, onOpenSetup);
 }
 

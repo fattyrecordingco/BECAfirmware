@@ -40,8 +40,8 @@ def prepare(version, tag, packages):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--version', default='1.1.0')
-    parser.add_argument('--tag', default='setup-v0.2.0')
+    parser.add_argument('--version', default='1.2.0')
+    parser.add_argument('--tag', default='apps-v0.3.0')
     parser.add_argument('--packages', default=os.environ.get('PLATFORMIO_PACKAGES_DIR', str(Path.home() / '.platformio/packages')))
     args = parser.parse_args()
     prepare(args.version, args.tag, args.packages)

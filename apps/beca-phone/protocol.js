@@ -76,12 +76,21 @@ export class WriteQueue {
     this.items = [];
     this.timer = null;
     this.running = false;
+    this.generation = 0;
+    this.activeItem = null;
   }
 
   enqueue(value) {
     return new Promise((resolve, reject) => {
+      const continuous = value.match(/^@C SET (master|cutoff|resonance|attack|decay|sustain|release|osc_mix|reverb|delay_ms|delay_feedback|delay_mix|drive|detune|gain_trim|sens|bpm|swing|rest|bright|vs|vi) [-\d.]+\s*$/)?.[1];
+      const previous = this.items[this.items.length - 1];
+      if (continuous && previous?.continuous === continuous) {
+        previous.resolve(false);
+        this.items[this.items.length - 1] = { value, resolve, reject, continuous };
+        return;
+      }
       if (this.items.length >= 128) { reject(new Error("BECA command queue is full. Wait for the connection to recover.")); return; }
-      this.items.push({ value, resolve, reject });
+      this.items.push({ value, resolve, reject, continuous });
       this.#start();
     });
   }
@@ -89,28 +98,38 @@ export class WriteQueue {
   #start() {
     if (this.running) return;
     this.running = true;
-    this.#drain();
+    this.#drain(this.generation);
   }
 
-  async #drain() {
+  async #drain(generation) {
     const item = this.items.shift();
     if (!item) {
       this.running = false;
       return;
     }
+    this.activeItem = item;
     try {
       await this.write(item.value);
-      item.resolve();
+      item.resolve(true);
     } catch (error) {
       item.reject(error);
     }
-    this.timer = setTimeout(() => this.#drain(), this.intervalMs);
+    this.activeItem = null;
+    if (generation !== this.generation) {
+      this.running = false;
+      if (this.items.length) this.#start();
+      return;
+    }
+    this.timer = setTimeout(() => this.#drain(generation), this.intervalMs);
   }
 
   clear(reason = new Error("Serial connection closed.")) {
     clearTimeout(this.timer);
     this.timer = null;
-    this.running = false;
+    this.generation++;
+    // Let an active write finish before a reused queue starts another write.
+    if (this.activeItem) this.activeItem.reject(reason);
+    else this.running = false;
     for (const item of this.items.splice(0)) item.reject(reason);
   }
 }
@@ -154,7 +173,7 @@ export class BecaSerial extends EventTarget {
   async send(command) {
     if (!this.connected) throw new Error("Connect to BECA first.");
     const line = `${normalizeCommand(command)}\n`;
-    await this.queue.enqueue(line);
+    if (await this.queue.enqueue(line) === false) return;
     this.dispatchEvent(new CustomEvent("sent", { detail: line.trim() }));
   }
 

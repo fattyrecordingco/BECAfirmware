@@ -1,17 +1,34 @@
 # BECA manual & quick start
 
-App 0.2.0 · firmware 1.1.0 · ESP32-PICO-V3 · September 2026
+Desktop 0.3.0 · phone/Apple 1.7.0 · firmware 1.2.0 · ESP32-PICO-V3 · October 2026
 
 BECA turns changes at its plant electrodes into notes, rhythms and synthesized sound. Use it as a MIDI source for your instruments, play its sound engine through Aux, or record both together. Keep the BECA app open when using the USB MIDI bridge.
+
+## Choose your installation
+
+- [Windows installer or complete folder ZIP](../install/WINDOWS.md)
+- [Android Chrome web app and USB/Wi-Fi setup](../install/ANDROID.md)
+- [iPhone/iPad Safari playback or native development installation](../install/APPLE.md)
+
+The phone and desktop interfaces offer Light/Dark appearance with monochrome surfaces and green accents. Mode-specific controls appear only when used; the plant scope and MIDI feedback stay mounted. Use Settings for Wi-Fi MAC, home-network/hotspot setup and diagnostics.
+
+## Browser sound over Wi-Fi
+
+1. Power BECA and join its setup Wi-Fi.
+2. Open `http://192.168.4.1/play/` in Safari or Chrome. On a home network/hotspot, open `http://BECA-IP/play/` using its actual station IP.
+3. Tap **Connect Wi-Fi**, then **Listen on this device**. No Apple Account is needed for Safari playback.
+4. Keep the page visible; reconnect after locking the screen or an interruption. Panic clears held notes.
+
+The device root redirects to `/play/`; `/control` is the legacy controller and `/setup` changes Wi-Fi settings. Use numeric `192.168.4.1` on the setup AP because `.local` resolution is unreliable there. Phone hotspot setup must use a compatible 2.4 GHz network. If the hotspot phone cannot also join BECA for provisioning, use Android USB or a second device.
 
 ## First BECA: installing a unit shipped without code
 
 A blank BECA needs firmware once before it makes music. Its USB serial chip can appear on your computer while the ESP32 is empty. No lights, MIDI, Wi-Fi network or working controls are expected before installation.
 
-1. Download the matching BECA 0.2.0 installer from the [official release](https://github.com/fattyrecordingco/BECAfirmware/releases/tag/setup-v0.2.0). Read its signing status and compare its checksum with SHA256SUMS.
+1. Download the matching BECA 0.3.0 installer from the [official release](https://github.com/fattyrecordingco/BECAfirmware/releases/tag/apps-v0.3.0). Read its signing status and compare its checksum with SHA256SUMS.
 2. Install the app. Connect BECA directly to the computer using a USB-C **data cable**. Avoid unpowered hubs while installing firmware.
 3. Open BECA → **Setup**. USB scans automatically. If several compatible USB devices appear, choose BECA's port. Unplugging and reconnecting BECA identifies which port belongs to it. A CH340/CP210x description identifies a USB bridge; it does not prove BECA firmware is installed.
-4. Under **upload firmware**, choose **Included 1.1.0 · works offline** and press **install firmware**. The installer includes the bootloader, partition table, first-boot data and application. You do not need Arduino IDE, Python, PlatformIO or a GitHub account.
+4. Under **upload firmware**, choose **Included 1.2.0 · works offline** and press **install firmware**. The installer includes the bootloader, partition table, first-boot data and application. You do not need Arduino IDE, Python, PlatformIO or a GitHub account.
 5. Leave USB connected until completion. Allow approximately 15 seconds for reboot and discovery. Transfers may take longer if the app retries at a lower baud rate.
 6. Connect BECA's plant sensor lead. Attach its leaf and soil electrodes according to the supplied sensor hardware; keep exposed contacts separated. Open **Performance** when the device is ready.
 7. Follow the Aux or DAW quick start below. Wi-Fi is optional for both USB workflows.
@@ -22,7 +39,7 @@ The app checks firmware SHA256 before writing and skips the settings partition a
 
 ## Installing the app
 
-**Windows 64-bit:** use `BECA_0.2.0_x64-setup.exe`. The MSI is available for managed installation. WebView2 is required; its included bootstrapper may need internet if WebView2 is absent. The included firmware works offline after app installation.
+**Windows 64-bit:** use `BECA_0.3.0_x64-setup.exe`. The MSI is available for managed installation. WebView2 is required; its included bootstrapper may need internet if WebView2 is absent. The included firmware works offline after app installation.
 
 If no USB port appears, install the matching board driver from [WCH CH340/CH341](https://www.wch-ic.com/downloads/CH341SER_EXE.html) or [Silicon Labs CP210x](https://www.silabs.com/software-and-tools/usb-to-uart-bridge-vcp-drivers). Restart if the driver installer requests it. Driver packages are not redistributed inside BECA. A charge-only cable cannot carry firmware or MIDI.
 
@@ -94,7 +111,7 @@ The LED effect, palette, speed, intensity and brightness controls drive the phys
 
 Wi-Fi is optional for USB MIDI/Aux. Setup supports **2.4 GHz personal networks**. It does not implement WPA2-Enterprise identity/certificates, captive-portal sign-in or 5 GHz-only networks. ASK4 enterprise sign-in is not supported through this form. Do not submit enterprise credentials as a personal-network password.
 
-Stop the bridge before saving/rebooting Wi-Fi settings. Scan networks, choose one, enter credentials and **save & reboot**. Use the displayed `.local` address or IP from the same network for browser control. Client isolation can prevent discovery even when connected. USB remains available. Recovery retries are bounded; it does not repeatedly erase credentials or reboot on authentication failure.
+Stop the bridge before saving/rebooting Wi-Fi settings. Scan networks, choose one, enter credentials and **save & reboot**. On a shared network, use the displayed current IP to open `/play/`. On the setup access point use numeric `192.168.4.1`; `.local` names may not resolve there. Client isolation can prevent discovery even when connected. USB remains available. Recovery retries are bounded; it does not repeatedly erase credentials or reboot on authentication failure.
 
 **BLE MIDI** remains a separate output mode. Use your platform's Bluetooth MIDI workflow; Bluetooth audio pairing is different. Mac provides this in Audio MIDI Setup. Windows DAW support varies and may need a BLE-MIDI utility. USB is the documented first connection. BLE and Serial + Aux are separate choices, not an all-transports mode.
 

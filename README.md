@@ -2,32 +2,35 @@
 
 BECA is a plant-driven music instrument built around an ESP32 device and a desktop control app.
 
-## Download BECA 0.2.0
+## Download BECA 0.3.0
 
-**App 0.2.0 and firmware 1.1.0 are available now** in the [official release](https://github.com/fattyrecordingco/BECAfirmware/releases/tag/setup-v0.2.0). Choose your computer below; these links download the installer directly.
+[Release apps-v0.3.0](https://github.com/fattyrecordingco/BECAfirmware/releases/tag/apps-v0.3.0) contains desktop app **0.3.0**, firmware **1.2.0**, and phone/Apple app **1.7.0**. Choose the package for your device. Windows, Android/web and Apple folders are separate downloads.
 
-| Computer | Download |
-| --- | --- |
-| Windows x64 | [BECA setup EXE](https://github.com/fattyrecordingco/BECAfirmware/releases/download/setup-v0.2.0/BECA_0.2.0_x64-setup.exe) · [MSI for managed installs](https://github.com/fattyrecordingco/BECAfirmware/releases/download/setup-v0.2.0/BECA_0.2.0_x64_en-US.msi) |
-| macOS Apple Silicon (M-series) | [BECA Apple Silicon DMG](https://github.com/fattyrecordingco/BECAfirmware/releases/download/setup-v0.2.0/BECA_0.2.0_aarch64.dmg) |
-| macOS Intel | [BECA Intel DMG](https://github.com/fattyrecordingco/BECAfirmware/releases/download/setup-v0.2.0/BECA_0.2.0_x64.dmg) |
-| Linux x64 | [BECA AppImage](https://github.com/fattyrecordingco/BECAfirmware/releases/download/setup-v0.2.0/BECA_0.2.0_amd64.AppImage) · [Debian/Ubuntu DEB](https://github.com/fattyrecordingco/BECAfirmware/releases/download/setup-v0.2.0/BECA_0.2.0_amd64.deb) |
+| Device | Download | Install steps |
+| --- | --- | --- |
+| Windows x64 | [Complete Windows folder ZIP](https://github.com/fattyrecordingco/BECAfirmware/releases/download/apps-v0.3.0/BECA-Windows-0.3.0.zip) · [EXE installer](https://github.com/fattyrecordingco/BECAfirmware/releases/download/apps-v0.3.0/BECA_0.3.0_x64-setup.exe) · [MSI](https://github.com/fattyrecordingco/BECAfirmware/releases/download/apps-v0.3.0/BECA_0.3.0_x64_en-US.msi) | [Windows](docs/install/WINDOWS.md) |
+| Android / web | [Open the Chrome web app](https://fattyrecordingco.github.io/BECAfirmware/) · [Separate web folder ZIP](https://github.com/fattyrecordingco/BECAfirmware/releases/download/apps-v0.3.0/BECA-Android-Web-1.7.0.zip) | [Android / web](docs/install/ANDROID.md) |
+| iPhone / iPad | [Apple development folder ZIP](https://github.com/fattyrecordingco/BECAfirmware/releases/download/apps-v0.3.0/BECA-Apple-1.7.0.zip) · Safari at `http://192.168.4.1/play/` on BECA's setup Wi-Fi | [Apple](docs/install/APPLE.md) |
+| macOS M-series desktop | [Apple Silicon DMG](https://github.com/fattyrecordingco/BECAfirmware/releases/download/apps-v0.3.0/BECA_0.3.0_aarch64.dmg) | [Mac desktop](docs/install/APPLE.md#macos-desktop) |
+| macOS Intel desktop | [Intel DMG](https://github.com/fattyrecordingco/BECAfirmware/releases/download/apps-v0.3.0/BECA_0.3.0_x64.dmg) | [Mac desktop](docs/install/APPLE.md#macos-desktop) |
 
-Every installer includes firmware 1.1.0. Connect BECA by USB, open **Setup**, select **Included 1.1.0 · works offline**, and press **install firmware**. Start with the [first-launch guide](docs/user/READ_BEFORE_FIRST_LAUNCH.md).
+The Windows/desktop installers include firmware **1.2.0**. Connect BECA by USB, open **Setup**, select **Included 1.2.0 · works offline**, and press **install firmware**. A source checkout and Arduino IDE are unnecessary for this installation. See the [first-launch guide](docs/user/READ_BEFORE_FIRST_LAUNCH.md).
 
-Separate downloads: [firmware 1.1.0 merged image](https://github.com/fattyrecordingco/BECAfirmware/releases/download/setup-v0.2.0/beca-1.1.0-merged.bin) · [firmware manifest](https://github.com/fattyrecordingco/BECAfirmware/releases/download/setup-v0.2.0/firmware-manifest.json) · [SHA256 checksums](https://github.com/fattyrecordingco/BECAfirmware/releases/download/setup-v0.2.0/SHA256SUMS).
+Separate assets: [firmware 1.2.0 merged image](https://github.com/fattyrecordingco/BECAfirmware/releases/download/apps-v0.3.0/beca-1.2.0-merged.bin) · [firmware manifest](https://github.com/fattyrecordingco/BECAfirmware/releases/download/apps-v0.3.0/firmware-manifest.json) · [SHA256 checksums](https://github.com/fattyrecordingco/BECAfirmware/releases/download/apps-v0.3.0/SHA256SUMS) · [release notes](docs/releases/apps-v0.3.0.md).
 
-This is the current public release. The Windows installer is unsigned and the Mac builds are not notarized; see the release notes for platform limitations. The 0.1.7 files under `installers/` are historical, and 0.2.0 downloads are hosted in Releases.
+Android uses a real installable Chrome PWA; no APK is included. The Apple ZIP contains an **unsigned iPhone/iPad development IPA**, which each user must sign and install using their own Apple Account and xtool. Free-account provisioning expires after seven days. Files/Safari cannot install an IPA directly. Safari Wi-Fi playback requires no Apple Account. Windows installers are unsigned and Mac packages are not notarized; publishing a release does not add platform signing trust. Keep OS protections enabled. Historical installer files under `installers/` are not this update.
 
-## Phone AUX controller
+## Phone and tablet instrument
 
-The **1.5 web app** adds the original BECA synth on the phone/tablet, all 13 presets, plant graph, MIDI monitor, synth/performance/device settings and portrait/landscape layouts. Android can receive live events over USB. iPad can preview sounds independently or receive live data through a USB-connected Chrome computer using the app's browser-to-browser tablet link. Direct USB/BLE access from iPad browsers is not supported. See [phone/tablet playback and setup](apps/beca-phone/README.md). Rebuild with `npm run build` in `apps/beca-phone`; pushes to `master` publish the verified app through GitHub Pages.
+The browser runs the original BECA sound engines through WebAssembly, including all 13 presets and eight drum voices. Modes show only their relevant controls; grouped sound sections, the plant scope, MIDI feedback and Light/Dark appearance use monochrome surfaces with green accents. Network/MAC/hotspot setup and diagnostics are in Settings. See the separate [Android](docs/install/ANDROID.md) and [Apple](docs/install/APPLE.md) installation guides.
 
-**[Open BECA Phone Control](https://fattyrecordingco.github.io/BECAfirmware/)** on an Android phone in Chrome or Edge, then connect BECA with a USB-C OTG/data cable. The installable web app uses the existing 115200-baud serial protocol to select AUX or Serial + AUX, shape the onboard synth, adjust plant/performance settings, monitor live activity, and send advanced console commands. Its fixed live deck keeps the 24-second plant-signal graph, basic signal statistics, desktop-style 12-leaf MIDI activity/root-note selector, and plant sensitivity visible across every controller mode. Switchable Playground surfaces provide tone/bite, delay/reverb, attack/release and oscillator mix/detune control, alongside touch knobs and instrument buttons. Drums only play in Drum mode. Phone/tablet arpeggiation uses plant-selected chords and signal contour; AUX and external MIDI keep the firmware pattern. The web engine reduces delay quantization and saw/square aliasing without changing ESP32 DSP. After the first load, its application shell is available offline.
+**Android USB:** [open the published app](https://fattyrecordingco.github.io/BECAfirmware/) directly in Chrome or Edge, then connect BECA with an OTG/data cable and approve the USB permission. The existing 115200-baud serial protocol controls AUX/Serial + AUX, synth parameters, plant/performance settings and the advanced console. WebUSB supports the established CH340/CH341, CP210x, FTDI and Espressif USB Serial/JTAG adapters; desktop Chromium uses native Web Serial. Only one host can own the adapter, so close other USB terminals or the desktop BECA app first. After its first complete online load, the published app's shell is available offline.
 
-Direct browser USB serial is not available on iPhone or iPad. On Android, the app uses WebUSB to communicate with the same CH340/CH341, CP210x, FTDI, and Espressif USB Serial/JTAG adapters recognized by the desktop app; desktop Chromium uses native Web Serial. Android requires a data-capable OTG cable, an explicit device permission, and the HTTPS published app opened directly in Chrome or Edge. The phone extension now shares the desktop app's light BECA design system, wordmark, and flower icon, and displays live browser, HTTPS, permission, and adapter diagnostics. Close USB terminal apps or the desktop BECA app before connecting because only one host can own the adapter. See the [complete phone setup, permission, compatibility, and troubleshooting guide](apps/beca-phone/README.md).
+**iPhone/iPad and Wi-Fi browsers:** power BECA, join its setup Wi-Fi and open `http://192.168.4.1/play/`. On a shared home network/hotspot, use `http://BECA-IP/play/` with its current station address. Tap **Connect Wi-Fi**, then **Listen on this device**. The device's root `/` redirects to this instrument; `/control` retains the legacy controller and `/setup` provisions Wi-Fi. Source MIDI pitches, chord order and note gates are preserved over Wi-Fi. iPhone/iPad browsers cannot access the existing USB serial adapter or BLE MIDI directly. The native Apple app uses Wi-Fi controls plus CoreMIDI/BLE.
 
-The phone controller is transport-limited and state-diff based: slider writes are coalesced, two-axis pad writes are paired at no more than four updates per second plus release, plant graph samples are deduplicated and capped at 60 points over 24 seconds, state/plant/note snapshots run at 2 Hz, synth reconciliation runs at 0.5 Hz, hidden pages pause polling, and console history is bounded. It introduces no firmware or BLE stack change. The firmware remains pinned to ESP32 Arduino core 2.0.14 and its existing library versions.
+The live deck retains the 24-second plant trace, bounded signal statistics, 12-leaf MIDI activity/root-note selector and sensitivity control across modes. The expression pad controls filter, delay/reverb, attack/release and oscillator mix/detune pairs; touch knobs also retain keyboard input. Drums sound only in Drum mode. The local USB/browser arpeggiator uses plant-selected chords and signal contour; direct Wi-Fi playback follows the firmware's actual arp notes. Browser rendering reduces delay quantization and saw/square aliasing without changing ESP32 DSP.
+
+Writes are coalesced; the expression pad sends at most four paired updates per second plus release. Graph history caps at 60 points over 24 seconds. State/plant/note snapshots run at 2 Hz, synth reconciliation at 0.5 Hz, unchanged state skips rendering, and console history is bounded. Wi-Fi MIDI requests do not overlap and use a bounded timestamp buffer; loss/backgrounding clears held notes. BLE behavior and its library baseline remain unchanged; ESP32 Arduino core stays pinned to **2.0.14**. Full build/transport details are in the [phone app README](apps/beca-phone/README.md).
 
 ## Native Ableton instrument
 
@@ -37,7 +40,7 @@ The phone controller is transport-limited and state-diff based: slider writes ar
 
 Build and install the complete device folder with `py -3 ableton/instrument/build_instrument.py --install`. The portable package is generated at `dist/ableton/BECA-Instrument-0.1.0.zip`. Native audio uses BECA's preset data and synthesis equations; hardware DACs and local percussion differ. The existing BECA Control MIDI effect remains available for controlling the unit while playing other instruments. See the instrument README for connection instructions, verification and limits.
 
-## Wi-Fi MIDI preview (local development build)
+## Wi-Fi MIDI (AppleMIDI / RTP-MIDI)
 
 Select **Wi-Fi MIDI** in Performance, Control, or the device's fallback page after saving a **2.4 GHz** personal/open Wi-Fi network in Setup. BECA and the computer must be on a network that allows local clients to communicate. The new output sends the same generated MIDI notes, velocities, channels, percussion and control changes as Serial MIDI using **AppleMIDI / RTP-MIDI** over UDP. It sends MIDI events, not audio or the serial `@M` text framing. BLE, Serial, Aux and Serial + Aux keep their existing numeric IDs (0–3); Wi-Fi MIDI is 4. The USB MIDI bridge is not needed for this output.
 
@@ -47,32 +50,32 @@ Connect the instrument on the computer:
 
 1. **Windows:** install/configure [rtpMIDI](https://www.tobias-erichsen.de/software/rtpmidi/rtpmidi-tutorial.html), create and enable a local session, then connect the advertised BECA in its directory. Name the local session after that instrument so it is easy to select in your DAW. rtpMIDI is a separate installation, not bundled in BECA.
 2. **macOS:** open [Audio MIDI Setup → MIDI Studio → Configure Network Driver](https://support.apple.com/guide/audio-midi-setup/share-midi-information-over-a-network-ams1012/mac), enable a session, select BECA in the directory and connect.
-3. Enable that session's MIDI input in the DAW and route it to an instrument. For several BECAs, connect each to a separate computer session/MIDI port and DAW track to keep their notes separate. Each BECA accepts one peer session in this preview.
+3. Enable that session's MIDI input in the DAW and route it to an instrument. For several BECAs, connect each to a separate computer session/MIDI port and DAW track to keep their notes separate. Each BECA accepts one peer network MIDI session.
 
-Enable **DAW Sync** and send MIDI Clock plus Start/Stop/Continue through the computer's session output to make BECA follow that clock. While Wi-Fi MIDI is selected, BLE clock is ignored to avoid two clock sources. MIDI Thru on the network transport is disabled. All units can follow the same DAW; direct peer discovery/initiator connections, autonomous leader election and clock generation between BECAs are future work. This preview operates on the local network; remote internet routing, encryption and authentication are not implemented. It does not promise sample-accurate synchronisation: Wi-Fi adds jitter, and received clock messages are processed on arrival.
+Enable **DAW Sync** and send MIDI Clock plus Start/Stop/Continue through the computer's session output to make BECA follow that clock. While Wi-Fi MIDI is selected, BLE clock is ignored to avoid two clock sources. MIDI Thru on the network transport is disabled. All units can follow the same DAW; direct peer discovery/initiator connections, autonomous leader election and clock generation between BECAs are future work. This transport operates on the local network; remote internet routing, encryption and authentication are not implemented. It does not promise sample-accurate synchronisation: Wi-Fi adds jitter, and received clock messages are processed on arrival.
 
-**Recovery and troubleshooting:** the session starts only with a station IP and Wi-Fi MIDI selected; the setup access point alone does not start it. Discovery uses `_apple-midi._udp`; if multicast discovery is blocked, add BECA's current IP and control port **5004** manually. UDP **5005** carries MIDI/synchronisation. Guest/managed networks can block client-to-client traffic even after MAC registration. ASK4 802.1x login still needs enterprise identity/certificate support; use the provider's compatible registered-device network or a personal 2.4 GHz network. No enterprise support is added by this preview.
+**Recovery and troubleshooting:** the session starts only with a station IP and Wi-Fi MIDI selected; the setup access point alone does not start it. Discovery uses `_apple-midi._udp`; if multicast discovery is blocked, add BECA's current IP and control port **5004** manually. UDP **5005** carries MIDI/synchronisation. Guest/managed networks can block client-to-client traffic even after MAC registration. ASK4 802.1x login still needs enterprise identity/certificate support; use the provider's compatible registered-device network or a personal 2.4 GHz network. Enterprise authentication is not supported.
 
 On Wi-Fi loss, IP change or leaving Wi-Fi MIDI, BECA closes and resets the session, drops stale buffered notes and clock state, and offers a fresh session once connected. The host may need to reconnect in its network MIDI panel. All Notes Off is sent before orderly shutdown and after a new connection. UDP cannot guarantee delivery of note-offs during loss; use the DAW's panic/All Notes Off if a remote instrument sustains a note. The serial protocol and setup recovery remain available.
 
 **Build and verification:** ESP32 Arduino **2.0.14**, BLE-MIDI **2.2**, MIDI Library **5.0.2**, NimBLE-Arduino **1.4.3**, FastLED **3.10.3**, and the additional pinned [AppleMIDI **3.5.0**](https://github.com/lathoub/Arduino-AppleMIDI-Library/tree/v3.5.0). In Arduino IDE install these versions and open the full sketch; the thin PlatformIO wrappers remain unchanged. `BECA_WIFI_MIDI=0` compiles out the new transport; `BECA_DUAL_OUTPUT=0` also remains supported. No new SSE stream or polling timer is introduced. UI output choices use capability/state differences; existing 85 ms fallback write coalescing, 20 writes/s desktop control limit and existing telemetry throttles remain. Rebuild `index_html.h` with `python3 make_index_header.py` after embedded-page edits.
 
-Use `./tools/build_firmware.ps1 -UploadPort COM4` to build/flash, `python tools/verify_device.py COM4` for existing protocol/plant checks, and `python tools/verify_wifi_midi.py COM4 --host DEVICE_IP` for the network handshake/clock checks. The latter temporarily changes output/clock/mute settings and restores them. It requires a reachable station IP; without `--host`, it checks capabilities/MAC and safe switching only. Actual DAW interoperability, musical latency and multiple physical units require a network and those devices. This development build does not replace the published stable download or bundled firmware 1.1.0.
+Use `./tools/build_firmware.ps1 -UploadPort COM4` to build/flash, `python tools/verify_device.py COM4` for existing protocol/plant checks, and `python tools/verify_wifi_midi.py COM4 --host DEVICE_IP` for the network handshake/clock checks. The latter temporarily changes output/clock/mute settings and restores them. It requires a reachable station IP; without `--host`, it checks capabilities/MAC and safe switching only. Actual DAW interoperability, musical latency and multiple physical units require a network and those devices. This network transport is included in firmware 1.2.0; actual DAW latency and multi-device performance require the intended network and instruments.
 
 ## Overview
 
-The current product workflow is desktop-first:
+Choose the desktop USB workflow or the direct Wi-Fi browser instrument. The desktop app can:
 - use the BECA app to flash firmware
 - save Wi-Fi credentials
 - run the Serial MIDI bridge when needed
 - monitor plant activity and MIDI notes
 - control the device from the live Control view
 
-The old browser page on the device is now a fallback and recovery path, not the primary user interface.
+The device root opens the browser instrument at `/play/`. The legacy controller remains at `/control` and setup/recovery at `/setup`.
 
-## Release 0.2.0 — first installation and music workflow
+## First installation and music workflow
 
-Start with the [full manual and first-unit quick start](docs/user/BECA_MANUAL.md), also bundled inside Setup and available as [standalone HTML](docs/user/BECA_MANUAL.html). A blank unit can be flashed offline using the included firmware 1.1.0. Bootloader, partition table and boot data are included; the app verifies SHA256 and skips the settings partition. WebView2/USB driver installation may still need internet on a new Windows computer.
+Start with the [full manual and first-unit quick start](docs/user/BECA_MANUAL.md), also bundled inside Setup and available as [standalone HTML](docs/user/BECA_MANUAL.html). A blank unit can be flashed offline using the included firmware 1.2.0. Bootloader, partition table and boot data are included; the app verifies SHA256 and skips the settings partition. WebView2/USB driver installation may still need internet on a new Windows computer.
 
 **MIDI routing is in Setup only.** Splits persist and can start automatically on app launch/USB connection. Stop suspends reconnection for the current session; the automatic-connection checkbox persists across launches. Missing destinations are never silently replaced. MIDI status polls every 2 seconds, idle output discovery every 5 seconds and USB enumeration every 3 seconds; requests do not overlap and unchanged state does not rerender the editor. Draft fields remain protected during polling.
 
@@ -118,8 +121,8 @@ Additional regression fixes preserve tempo across swung step pairs, let each emb
 
 ## Published Release Baseline
 
-- app: `setup-v0.2.0`
-- firmware release tag: `setup-v0.2.0 (firmware 1.1.0)`
+- desktop app: `0.3.0` · phone/Apple app: `1.7.0`
+- release tag: `apps-v0.3.0` · firmware: `1.2.0`
 - primary branch for release-ready source: `master`
 - firmware build target: ESP32 Arduino core `2.0.14`
 
@@ -207,11 +210,11 @@ BECA is open source under the [MIT License](./LICENSE). The open-source license 
 Start here:
 
 1. Read the full [BECA First Launch Guide](./docs/user/READ_BEFORE_FIRST_LAUNCH.md).
-2. Choose your computer in [Download BECA 0.2.0](#download-beca-020).
+2. Choose your computer in [Download BECA 0.3.0](#download-beca-030).
 3. Download the installer for your computer.
 4. Install BECA.
 5. Restart if a USB serial driver was installed or updated.
-6. Open BECA, connect the device by USB, then install `Included 1.1.0 · works offline` from Setup.
+6. Open BECA, connect the device by USB, then install `Included 1.2.0 · works offline` from Setup.
 
 Signing status: the current Windows installer is unsigned and Mac builds are not notarized. Publishing a GitHub release does not add platform signing trust. Do not disable OS security protections to run BECA; signing and notarization remain publisher work.
 
@@ -232,7 +235,7 @@ On the `Setup` screen:
 
 ### 2. Flash Firmware
 
-1. select `Included 1.1.0 · works offline` in `upload firmware`
+1. select `Included 1.2.0 · works offline` in `upload firmware`
 2. click `install firmware`
 3. wait for flash completion before doing anything else
 
@@ -610,12 +613,50 @@ Feature flags: `BECA_DUAL_OUTPUT=0` removes combined output; `BECA_IDLE_LIGHT_EF
 Control writes remain coalesced and serialized at at most 20 per second; snapshots run at 2 Hz and synth reconciliation at 0.5 Hz. Bridge status polls at 0.5 Hz while the app is running, so saved routing can connect even while the DAW is foreground; activity events are capped at 2 Hz. The USB worker frames partial reads, keeps MIDI flowing during command replies, bounds queues, cancels disconnected/expired requests, and retries a verified USB handshake. This is soft real-time control, not a sample-accurate DAW automation clock. Details and test evidence: [live routing verification](docs/research/live-routing-verification.md).
 
 
-## Apple compatibility pass (6 October 2026)
+## Apple connections and verification
 
-For direct iPhone/iPad use, power BECA independently and open its Wi-Fi controller in Safari at `http://192.168.4.1` on its setup network, or at its current router IP. This controls settings and onboard AUX directly. For live MIDI in a native music app, select BLE MIDI output and connect **BECA BLE-MIDI** through the app's Bluetooth MIDI panel. On Mac, use Audio MIDI Setup's Bluetooth panel; Apple network MIDI is also available on a shared router. A CH340 USB serial adapter is not a class-compliant USB MIDI interface.
+For direct iPhone/iPad browser sound, power BECA independently and open `http://192.168.4.1/play/` on its setup network, or `/play/` at its current router IP. The legacy settings/AUX controller remains at `/control`. For live MIDI in a native music app, select BLE MIDI output and connect **BECA BLE-MIDI** through the app's Bluetooth MIDI panel. On Mac, use Audio MIDI Setup's Bluetooth panel; Apple network MIDI is also available on a shared router. A CH340 USB serial adapter is not a class-compliant USB MIDI interface.
 
-The new [BECA Apple app project](apps/beca-apple/README.md) combines direct Wi-Fi controls, native CoreMIDI and the existing phone synth without a computer during use. It includes bundled offline assets and an Xcode project for iPhone/iPad (15+) and Mac (12+). Unsigned iPhone/iPad simulator and Apple Silicon/Intel Mac builds passed on GitHub's Mac runner for `da6bbff`; signing and physical Apple validation remain outstanding. It is not part of the published installers or a released iOS app. Older supported Macs retain the existing BECA Setup/Control path. Apple testers should clone `codex/final-beca-release` and follow the project's **Apple tester quick start**.
+The new [BECA Apple app project](apps/beca-apple/README.md) combines direct Wi-Fi controls, native CoreMIDI and the existing phone synth without a computer during use. It includes bundled offline assets and an Xcode project for iPhone/iPad (15+) and Mac (12+). The separate Apple 1.7.0 ZIP contains an unsigned development candidate; install it with your own Apple Account following the [Apple installation steps](docs/install/APPLE.md). It is not an App Store/TestFlight release. An earlier build 5 installed on `iPad15,5` has user-confirmed setup-AP connection, knobs, themes, Test sound and Panic. That evidence does not certify every Apple device or the newly packaged candidate. Mac desktop DMGs remain separate from the iPhone/iPad IPA.
 
 Safari Wi-Fi control now times out stalled reads, detects a silent SSE stream, pauses its stream/polling while hidden and reloads settings on return. Fallback polls do not overlap and run no faster than every 700 ms after the previous read; unchanged state/note/drum snapshots skip rendering. Firmware scope/note/drum streams remain capped at their existing 16 Hz with note/state differences, backpressure and watchdog yields. The phone synth clears interrupted audio and can recreate a failed worklet; commands and native MIDI buffers are bounded. BLE-MIDI 2.2.0, MIDI Library 5.0.2, NimBLE-Arduino 1.4.3 and AppleMIDI 3.5.0 remain pinned with Arduino ESP32 core **2.0.14**. The BLE libraries and MIDI codec are unchanged. Repeated advertising hint setters were removed from the keepalive: on NimBLE 1.4.3 they dirty the payload and can duplicate the service UUID on reconstruction, breaking rediscovery after disconnect.
 
 See the [Apple verification record](docs/research/apple-compatibility.md) for local results and the remaining Apple hardware checks. Local source/build changes do not update GitHub Pages or released DMGs automatically.
+
+## Wi-Fi MAC and phone hotspot settings
+
+The device controller, recovery setup, desktop Setup/Control, and phone/Apple controller display BECA’s **Wi-Fi MAC** (`sta_mac`). Copy this station address when registering BECA manually with a home router or managed network. The setup access point (`ap_mac`) and Bluetooth addresses are different. Firmware that does not report the station MAC displays an unavailable message.
+
+Open **Settings · Wi-Fi & phone hotspot** in the phone controller. On Android, connect BECA by USB, enable a **2.4 GHz** hotspot in the phone’s system settings, enter its exact name and password, then choose **Save Wi-Fi & restart BECA**. The same form accepts home Wi-Fi credentials. BECA tests credentials before saving; allow up to 25 seconds. The protected-network form accepts SSIDs up to 32 UTF-8 bytes and passwords of 8–63 characters, without tabs/newlines or outer spaces. Use the recovery page for open networks. Credentials are not saved in browser storage or shown in the serial console.
+
+On iPhone/iPad, or without Android USB, join BECA’s setup Wi-Fi and open `http://192.168.4.1/setup` (or `/setup` at its current local IP). Configure the hotspot using this page. Enable **Maximise Compatibility** where available on iPhone; Apple documents that this uses 2.4 GHz: https://support.apple.com/en-ca/guide/security/secfd166f620/web . If the same phone cannot host its hotspot while connected to BECA’s setup network, use a second phone/tablet for provisioning while the first hosts the hotspot. The app cannot turn on the system hotspot itself.
+
+After saving, reconnect USB or update the native Apple app’s address using BECA’s new IP from the router/hotspot client list. Keep the hotspot and BECA powered. If Wi-Fi control fails, check the band, password, Local Network permission and hotspot client isolation; Android USB control remains available. Enterprise authentication and captive portals still require a compatible personal network.
+
+Network identity is fetched on connection/settings opening or manual refresh, with a 3-second minimum interval and no continuous network polling. Identity labels only change when their value changes. Provisioning pauses phone live polling and control writes, allows one save at a time, and has a 3-second retry cooldown. Existing SSE rate limits and state-diff updates remain in place.
+
+## Browser instrument over Wi-Fi (local development firmware)
+
+Flash the rebuilt development firmware, power BECA, and open **`http://DEVICE_IP/`** (the main webapp opens the instrument; `/play/` also works) in Safari/Chrome on the same network. On BECA’s setup Wi-Fi use **`http://192.168.4.1/play/`**. Tap **Connect Wi-Fi**, then **Listen on this device**. No computer, USB serial connection or native app is needed for this path. Home Wi-Fi, compatible phone hotspots and BECA’s setup AP can carry the browser stream; the device's separate RTP-MIDI session still requires a station network as before.
+
+The sound is generated locally by the existing C++ synth/drum engines compiled to WebAssembly. The firmware sends ordered source note-on, note-off and control-change events through `/api/midi`, separate from UI snapshots. Browser playback preserves device pitch/channel/velocity and does not arpeggiate the same sequence a second time. An active browser lease permits generated MIDI events without an external BLE/RTP-MIDI peer; the selected hardware output is retained. Aux-only still does not support the firmware's Drum mode: choose a supported MIDI output to use Drums.
+
+The secure HTTPS/localhost app uses AudioWorklet. BECA’s plain HTTP page uses a 1024-frame ScriptProcessor fallback because AudioWorklet requires a secure context. The fallback reuses the same WASM/DSP, but runs audio callbacks on the browser’s main thread and has more latency/jitter. A user tap is required. Keep the page visible; backgrounding, disconnect, interruption, stream overflow or a sequence gap clears voices/effect tails. No sample-accurate or physical iPhone/iPad latency claim is made by the automated checks.
+
+The MIDI ring holds 128 events and returns at most 64 per request. The browser polls at up to 25 Hz, with no overlapping stream requests, preserves source timestamps with a 60 ms bounded jitter buffer, drops stale batches rather than collapsing gates, and the firmware caps stream requests at 40 per second. A 1.5-second lease expires if requests stop. The phone retains its bounded snapshot groups and state-diff rendering; the existing single-client SSE behavior is retained. Treat this as a single active browser playing session per device. Guest networks/hotspots may isolate clients.
+
+Open the device page directly: the published HTTPS app cannot fetch an ESP32's local HTTP API through ordinary mixed-content restrictions. Settings provides an **Open Wi-Fi instrument** link. If a hotspot cannot host clients while its phone remains joined to BECA’s setup Wi-Fi, provision with Android USB or a second device. If sound stops, return to the page and reconnect/listen; use Panic if a separate MIDI instrument holds a note. Devices with older firmware need the rebuilt firmware for `/play/` and `browser_midi` capability. The previous controller remains available at `/control`; setup/recovery remains at `/setup`.
+
+`BECA_BROWSER_PLAYER=1` enables this feature by default; set it to `0` to disable the device player and note stream. BLE-MIDI libraries and advertisement identity are unchanged. Rebuild embedded assets after phone UI edits: `node apps/beca-apple/prepare.mjs`, `python3 tools/build_device_player.py`, `python3 make_index_header.py`, then PlatformIO/Arduino with ESP32 core 2.0.14. `python3 tools/build_device_player.py --check` rejects stale assets.
+
+## Instrument layout and UI rules
+
+Notes, Arp, Chords and Drums show only controls used by the selected mode. Drum controls/pads appear only in Drums, arp controls only in Arp, and note probability/repeat controls only in Notes where firmware uses them. Shared pitch, timing and sound controls stay available in applicable modes; hidden controls retain their values. The mode strip, preset bank, master/play controls, plant scope and MIDI feedback form the playing surface. Settings holds network/MAC/hotspot, help, routing and diagnostics.
+
+The [instrument design rules](docs/design/INSTRUMENT_UI.md), [UI copy rules](docs/design/UI_COPY.md), root `agents.md`, and `apps/AGENTS.md` define the instrument, interaction, audio/transport and copy review roles. Run `python3 tools/check_ui_copy.py` after editing visible copy. The interface uses functional labels instead of dashboard summaries, marketing slogans or assistant narration.
+
+For routers that isolate devices, USB Console command `WIFI_PORTAL` opens BECA’s temporary setup access point without changing saved credentials or sound settings. Join `BECA-` followed by the final four Wi-Fi MAC digits and open `http://192.168.4.1/play/`. Restart BECA to resume its saved home network. This command is included only with `BECA_BROWSER_PLAYER=1`.
+
+Hardware verification: run `python tools/verify_browser_player.py COM5 --host DEVICE_IP`. On a Windows laptop where the router isolates clients, use `--portal --network-profile "YOUR_CURRENT_PROFILE" --browser-node "C:/Program Files/nodejs/node.exe"`; this temporarily joins BECA’s AP, verifies embedded assets/source MIDI/real rendered browser audio/legacy SSE, and restores the device settings and laptop network. Close the desktop app while USB tests run. Arduino core 2.0.14’s single-client server can wait five seconds on empty browser preconnections; browser-player builds close those headerless idle connections after 250 ms so real note/control requests can proceed. `/api/info` reports the `http_idle_closed` diagnostic count. SSE connections and requests that have data are retained.
+
+The shared browser instrument also offers **Settings → Appearance → Light / Dark**. Light uses a white background and contrasting text, knobs, scope/MIDI feedback and active controls. Appearance is local to the viewing device and sends no firmware settings.

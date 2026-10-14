@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>BECA Control</title>
     <style>
+      [hidden] { display: none !important; }
       :root {
         color-scheme: light;
         --bg: #f6f4ef;
@@ -205,7 +206,7 @@
       }
 
       .chart-caption.is-disconnected {
-        color: #b5533f;
+        color: var(--text);
         font-weight: 700;
       }
 
@@ -339,7 +340,7 @@
       .setting-button.is-selected {
         border-color: var(--accent);
         background: var(--accent);
-        color: #ffffff;
+        color: var(--on-accent);
       }
 
       .setting-button.is-selected:hover {
@@ -401,7 +402,7 @@
       .volume-card.is-selected {
         border-color: var(--accent);
         background: var(--accent);
-        color: #ffffff;
+        color: var(--on-accent);
       }
 
       .volume-card.is-selected:hover {
@@ -494,7 +495,7 @@
       .output-option.is-active {
         border-color: var(--accent);
         background: var(--accent);
-        color: #ffffff;
+        color: var(--on-accent);
       }
 
       .output-option.is-active:hover {
@@ -564,7 +565,7 @@
       .sync-card.is-selected {
         border-color: var(--accent);
         background: var(--accent);
-        color: #ffffff;
+        color: var(--on-accent);
       }
 
       .sync-card.is-selected:hover {
@@ -694,7 +695,18 @@
           transition: none !important;
         }
       }
+
+      :root { color-scheme: dark; --bg: #101719; --panel: #182225; --panel-ghost: #223034; --accent: #67e3bc; --border: #45575c; --off: #354348; --off-text: #8fa6ac; --frame-radius: 12px; --card-radius: 5px; }
+      .setting-button.is-selected, .volume-card.is-selected, .output-option.is-active, .sync-card.is-selected { color: var(--on-accent); }
+      .device-identity { position: absolute; top: 22px; left: 130px; width: 230px; margin: 0; color: var(--muted-text); font-size: 10px; line-height: 1.6; overflow-wrap: anywhere; }
+      .device-identity strong { color: var(--text); }
+      .chart-panel { background: var(--bg); }
     </style>
+    <link rel="stylesheet" href="./src/appearance.css" />
+    <script>
+      try { document.documentElement.dataset.theme = localStorage.getItem("beca-appearance") === "light" ? "light" : "dark"; }
+      catch { document.documentElement.dataset.theme = "dark"; }
+    </script>
   </head>
   <body>
     <main class="control-app">
@@ -723,6 +735,7 @@
           <section class="midi-strip" id="midi-strip" aria-label="MIDI monitor"></section>
 
           <section class="settings-grid" id="settings-grid" aria-label="Settings"></section>
+          <p class="device-identity">Wi-Fi MAC<br><strong id="device-wifi-mac">Connect BECA to view</strong></p>
 
           <button class="volume-card" id="volume-card" type="button" aria-label="Volume">
             <span class="volume-label">volume</span>
@@ -775,7 +788,7 @@
         "Thick Mono Bass",
         "Rubber Bass"
       ];
-      const METER_COLORS = ["#00c853", "#00c853", "#7fd900", "#d8df00", "#ffd400", "#ff9f00", "#ff5a00", "#f12129"];
+      const METER_COLORS = Array(8).fill("var(--accent)");
       const SETTING_COLORS = {
         sensitivity: "#00c853",
         preset: "#ffd400",
@@ -818,9 +831,9 @@
         dragStartY: null,
         dragLastY: null,
         dragMoved: false,
-        plantPoints: Array.from({ length: 34 }, () => 0.45),
-        targetPlantValue: 0.45,
-        displayPlantValue: 0.45,
+        plantPoints: Array.from({ length: 34 }, () => 0),
+        targetPlantValue: 0,
+        displayPlantValue: 0,
         plantAnimationFrame: null,
         lastPlantFrameAt: 0,
         params: {
@@ -855,8 +868,8 @@
           led_display_mode: LED_DISPLAY_SETTING,
           encoder_led_count: 4
         },
-        activeNotes: [0, 4, 7],
-        chordName: "cmaj",
+        activeNotes: [],
+        chordName: "--",
         actionQueue: Promise.resolve(),
         pendingAdjustment: 0,
         flushingAdjustments: false,
@@ -1444,7 +1457,19 @@
         renderLiveState();
       }
 
+      let identityLastAt = 0;
+      async function loadIdentity() {
+        if (Date.now() - identityLastAt < 3000) return;
+        identityLastAt = Date.now();
+        const label = document.querySelector("#device-wifi-mac");
+        try {
+          const info = await getJson("/api/info");
+          const mac = info.sta_mac || "Unavailable on this firmware";
+          if (label.textContent !== mac) label.textContent = mac;
+        } catch { label.textContent = "Unavailable — open Setup"; }
+      }
       async function loadInitialState() {
+        loadIdentity();
         try {
           const [baseState, paramsState] = await Promise.all([
             getJson("/api/state"),
@@ -1568,8 +1593,8 @@
           .join(" ");
 
         el.plantChart.innerHTML = `
-          <rect x="0" y="0" width="350" height="162" fill="#ffffff"></rect>
-          <polyline points="${points}" fill="none" stroke="#008351" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></polyline>
+          <rect x="0" y="0" width="350" height="162" fill="var(--bg)"></rect>
+          <polyline points="${points}" fill="none" stroke="var(--accent)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></polyline>
         `;
       }
 
@@ -1629,6 +1654,9 @@
         settingDefinitions.forEach((setting) => {
           const refs = dom.settingButtons.get(setting.id);
           if (!refs) return;
+          const drums = Number(state.live.mode) === 3;
+          refs.button.hidden = drums && ["scale", "root", "lowOctave", "highOctave"].includes(setting.id)
+            || setting.id === "rest" && Number(state.live.mode) !== 0;
           refs.button.classList.toggle("is-selected", state.selectedSettingId === setting.id && !state.volumeModeActive);
           refs.value.textContent = setting.format();
           refs.button.title = `${setting.label}: ${setting.format()}`;
@@ -1800,7 +1828,7 @@
         for (let slot = 0; slot < LED_SLOT_COUNT; slot += 1) {
           const led = dom.ledLeaves[slot];
           if (!led) continue;
-          led.style.color = pattern[slot].on ? pattern[slot].color : LED_OFF_COLOR;
+          led.style.color = pattern[slot].on ? "var(--accent)" : "var(--off)";
           led.classList.toggle("is-on", pattern[slot].on);
         }
       }

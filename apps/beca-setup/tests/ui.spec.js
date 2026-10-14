@@ -168,10 +168,11 @@ test("ui source does not use gradients", async () => {
     resolve(uiRoot, "index.html"),
     resolve(uiRoot, "control.html"),
     resolve(uiRoot, "src", "styles.css"),
+    resolve(uiRoot, "src", "appearance.css"),
     resolve(uiRoot, "src", "performance.css"),
     resolve(uiRoot, "src", "performance-instrument.css"),
     resolve(uiRoot, "src", "midi-routing.css")
   ];
   const source = files.map((file) => readFileSync(file, "utf8")).join("\n");
-  expect(source).not.toMatch(/(?:linear|radial|conic)-gradient|gradient\(/i);
+  expect(source.match(/(?:linear|radial|conic)-gradient|gradient\(/gi) || []).toEqual([]);
 });

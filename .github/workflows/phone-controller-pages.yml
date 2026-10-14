@@ -8,6 +8,9 @@ on:
       - master
     paths:
       - "apps/beca-phone/**"
+      - "docs/design/**"
+      - "apps/AGENTS.md"
+      - "tools/check_ui_copy.py"
       - ".github/workflows/phone-controller-pages.yml"
 
 permissions:
@@ -38,6 +41,8 @@ jobs:
         run: npm ci
       - name: Install browser test runtimes
         run: npx playwright install --with-deps chrome webkit
+      - name: Check UI copy rules
+        run: python3 ../../tools/check_ui_copy.py
       - name: Run protocol and PWA checks
         run: npm test
       - name: Run browser controller checks

@@ -5,8 +5,26 @@ import { BecaConnection } from "./tablet-link.js";
 import { ARP_DEFAULTS } from "./plant-arp.js";
 import { capabilities, connectionHelp } from "./compatibility.js";
 import { appleNativeProvider } from "./apple-native.js";
+import { WifiBecaSerial } from "./wifi-provider.js";
 
-const APP_VERSION = "1.6.0";
+const APP_VERSION = "1.7.0";
+// Appearance stays on this device and never changes the instrument's settings.
+let savedTheme = globalThis.__BECA_NATIVE_THEME__ === "light" ? "light" : "dark";
+try { const stored = localStorage.getItem("beca-appearance"); if (["light", "dark"].includes(stored)) savedTheme = stored; } catch {}
+function applyTheme(theme) {
+  document.documentElement.dataset.theme = theme;
+  if (typeof globalThis.__BECA_NATIVE_THEME__ === "string") {
+    globalThis.webkit?.messageHandlers?.beca?.postMessage({ id: 0, action: "appearance", theme });
+  }
+  document.querySelector('meta[name="theme-color"]').content = theme === "light" ? "#ffffff" : "#101719";
+}
+applyTheme(savedTheme);
+const themeSelect = document.querySelector("#themeSelect");
+themeSelect.value = savedTheme;
+themeSelect.addEventListener("change", () => {
+  applyTheme(themeSelect.value);
+  try { localStorage.setItem("beca-appearance", themeSelect.value); } catch {}
+});
 const phoneAudio = new PhoneAudio();
 const NOTE_NAMES = ["C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B"];
 const LEAF_PATH = "M100 48.864C100 77.106 77.106 100 48.864 100H0V51.136C0 22.894 22.894 0 51.136 0H100v48.864ZM51.136 11.364c-21.965 0-39.772 17.807-39.772 39.772V81.17l42.005-42.005c2.219-2.219 5.817-2.219 8.036 0 2.219 2.219 2.219 5.817 0 8.036L19.967 88.636h28.897c21.965 0 39.772-17.807 39.772-39.772V11.364H51.136Z";
@@ -48,7 +66,6 @@ const SYNTH_CONTROLS = [
 ];
 
 const PERFORMANCE_CONTROLS = [
-  { key: "mode", label: "Play mode", type: "select", optionKey: "modes", source: "state" },
   { key: "scale", label: "Scale", type: "select", optionKey: "scales", source: "state" },
   { key: "root", label: "Root note", type: "select", options: NOTE_NAMES, source: "state" },
   { key: "clock", label: "Plant clock", type: "toggle", source: "state" },
@@ -93,12 +110,21 @@ const isAndroid = shouldUseWebUsb();
 const webUsbProvider = navigator.usb?.requestDevice ? new WebUsbSerialProvider(navigator.usb) : null;
 const nativeProvider = appleNativeProvider();
 const serialProvider = nativeProvider ?? globalThis.__BECA_SERIAL__ ?? (isAndroid ? webUsbProvider ?? navigator.serial : navigator.serial ?? webUsbProvider);
-const transport = new BecaConnection(new BecaSerial(serialProvider));
-const transportName = serialProvider?.transportName ?? (serialProvider === navigator.serial ? "Web Serial" : "Android USB");
+const wifiProvider = !nativeProvider && /^\/play(?:\/|$)/.test(location.pathname) ? new WifiBecaSerial() : null;
+const transport = new BecaConnection(wifiProvider ?? new BecaSerial(serialProvider));
+const transportName = wifiProvider?.transportName ?? serialProvider?.transportName ?? (serialProvider === navigator.serial ? "Web Serial" : "Android USB");
 const model = { params: JSON.parse(JSON.stringify(FALLBACK_PARAMS)), state: {mode:0, scale:0, root:0, lo:2, hi:5, drumsel:255, ...ARP_DEFAULTS}, synth: {}, plant: {}, notes: {} };
 const interaction = new Set();
 const sendTimers = new Map();
 const pendingReplies = new Map();
+const replySignatures = new Map();
+let wifiInfo = {};
+let wifiBusy = false;
+let wifiCooldownUntil = 0;
+let wifiInfoLastAt = 0;
+let wifiInfoBusy = false;
+let wifiFormDirty = false;
+let wifiSavedMessage = "";
 let verified = false;
 let connecting = false;
 let heartbeatTimer = null;
@@ -106,6 +132,12 @@ let statePollTimer = null;
 let synthPollTimer = null;
 let deferredInstall = null;
 let toastTimer = null;
+let settingsBusy = 0;
+let settingsQuietUntil = 0;
+const pendingSettingKeys = new Map();
+const quietSettingKeys = new Map();
+const editingKey = key => (padPointerId !== null && PAD_MODES[padMode].some(axis => axis.key === key)) || pendingPadValues?.[key] !== undefined || interaction.has(key) || sendTimers.has(key) || (pendingSettingKeys.get(key) ?? 0) > 0 || performance.now() < (quietSettingKeys.get(key) ?? 0);
+const editingSettings = () => padPointerId !== null || padSendTimer !== null || padWriteBusy || settingsBusy > 0 || sendTimers.size > 0 || interaction.size > 0 || performance.now() < settingsQuietUntil;
 let consoleLines = 0;
 let plantSamples = [];
 let lastPlantSample = null;
@@ -113,6 +145,8 @@ let plantRenderFrame = null;
 let padPointerId = null;
 let padSendTimer = null;
 let pendingPadValues = null;
+let padWriteBusy = false;
+let padWriteGeneration = 0;
 let wasMuted = false;
 
 function showToast(message, type = "") {
@@ -175,6 +209,7 @@ async function refreshUsbDiagnostics() {
 }
 
 function logLine(message, kind = "in") {
+  if (/^@C WIFI_SAVE(?:\s|$)/.test(String(message))) message = "@C WIFI_SAVE [credentials hidden]";
   const log = $("#consoleLog");
   const line = document.createElement("p");
   line.className = `log-${kind}`;
@@ -192,15 +227,16 @@ function logLine(message, kind = "in") {
 }
 
 function setConnectedUi(connected) {
+  renderWifiSettings();
   $("#listenButton").disabled = connecting || !capabilities().audio;
   $("#connectButton").disabled = connecting || (!connected && !transport.supported);
   $("#connectButton").classList.toggle("connected", connected);
-  $("#connectButton span:last-child").textContent = connected ? "Disconnect" : nativeProvider ? "Connect BECA" : "Connect USB";
+  $("#connectButton span:last-child").textContent = connected ? "Disconnect" : nativeProvider ? "Connect BECA" : wifiProvider ? "Connect Wi-Fi" : "Connect USB";
   $("#deviceStatus").textContent = connected ? (verified ? "BECA connected" : "Checking device…") : "Not connected";
   $("#connectionMessage").textContent = connected
-    ? (verified ? `Direct ${transportName} control is active. Your changes are sent to BECA in real time.` : "Opening the USB link and checking for BECA…")
-    : nativeProvider ? "Enter BECA’s Wi-Fi address above and select its MIDI source. No computer is needed."
-    : !transport.supported ? "Use BECA’s direct Wi-Fi controller for settings and AUX, or native BLE-MIDI in a music app. The computer link supplies live input to this browser synth." : isAndroid
+    ? (verified ? `${transportName} connected` : "Checking BECA…")
+    : wifiProvider ? "Tap Connect Wi-Fi, then Listen." : nativeProvider ? "Enter BECA’s Wi-Fi address and select its MIDI source."
+    : !transport.supported ? "Open BECA’s direct Wi-Fi instrument from Settings, or link through a computer." : isAndroid
       ? "Connect BECA with a USB-C OTG/data cable, then tap Connect USB and approve the device permission."
       : "Connect your device to BECA with a USB data cable.";
   $$('button[data-requires-connection], button[data-command], .preset-button, .midi-leaf, input[data-key], select[data-key], #muteButton, #testButton, #refreshButton, #resetPreset, #randomizeButton, #commandInput, #commandForm button[type="submit"]').forEach((element) => {
@@ -212,7 +248,7 @@ function setConnectedUi(connected) {
 }
 
 function enableLocalControls() {
-  if (connecting || (transport.connected && !verified)) return;
+  if (wifiBusy || connecting || (transport.connected && !verified)) return;
   if (!phoneAudio.presets) return;
   $$('[data-source="synth"], .preset-button, #resetPreset, #testButton').forEach((element) => { element.disabled = false; });
   $$('[data-key]').filter((element) => LOCAL_PERFORMANCE.has(element.dataset.key)).forEach((element) => { element.disabled = false; });
@@ -225,7 +261,7 @@ function enableLocalControls() {
 function updateAudioStatus() {
   if (!capabilities().audio) {
     $("#listenButton").disabled = true;
-    $("#audioStatus").textContent = "Live audio is not supported here. Use a current browser on HTTPS or localhost.";
+    $("#audioStatus").textContent = "Audio unavailable. Open BECA in a current Safari or Chrome browser.";
     return;
   }
   const active = phoneAudio.enabled;
@@ -233,14 +269,14 @@ function updateAudioStatus() {
   $("#listenButton").setAttribute("aria-pressed", String(active));
   $("#audioStatus").textContent = active
     ? phoneAudio.context?.state !== "running" ? "Audio paused by browser — tap Stop, then Listen to resume."
-      : transport.connected ? nativeProvider ? "Live synth · select BECA’s native MIDI source above and BLE MIDI output" : "Live synth · select Serial MIDI or Serial MIDI + Aux for notes" : "Preview ready · connect BECA for live plant input"
+      : transport.connected ? wifiProvider ? "Live synth · Wi-Fi MIDI" : nativeProvider ? "Live synth · select BECA’s native MIDI source above and BLE MIDI output" : "Live synth · select Serial MIDI or Serial MIDI + Aux for notes" : "Preview ready · connect BECA for live plant input"
     : "Sound is off. Tap Listen to enable this device’s audio.";
 }
 
 async function startPhoneAudio() {
   phoneAudio.setPerformance(model.state);
   await phoneAudio.start(model.synth);
-  if (phoneAudio.enabled && transport.connected) scheduleSet("outputmode", serialProvider?.audioOutputMode ?? 1, null, true);
+  if (phoneAudio.enabled && transport.connected && !wifiProvider) scheduleSet("outputmode", serialProvider?.audioOutputMode ?? 1, null, true);
   updateAudioStatus();
 }
 
@@ -280,15 +316,15 @@ function waitForReply(tag, timeoutMs = 3500) {
   });
 }
 
-async function request(tag, awaitReply = false) {
-  const reply = awaitReply ? waitForReply(tag) : null;
+async function request(tag, awaitReply = false, replyTag = tag, timeoutMs = 3500) {
+  const reply = awaitReply ? waitForReply(replyTag, timeoutMs) : null;
   // A failed send must also settle its pending response timeout.
   if (reply) reply.catch(() => {});
   try { await transport.send(tag); }
   catch (error) {
     if (reply) {
-      const waiter = pendingReplies.get(tag);
-      if (waiter) { clearTimeout(waiter.timer); pendingReplies.delete(tag); waiter.reject(error); }
+      const waiter = pendingReplies.get(replyTag);
+      if (waiter) { clearTimeout(waiter.timer); pendingReplies.delete(replyTag); waiter.reject(error); }
     }
     throw error;
   }
@@ -302,12 +338,14 @@ async function verifyDevice() {
   await transport.send("TELEMETRY 1");
   await Promise.all(["PARAMS", "STATE", "SYNTH", "PLANT", "NOTES"].map((tag) => request(tag, true)));
   verified = true;
+  wifiSavedMessage = "";
   connecting = false;
   setConnectedUi(true);
   startPolling();
+  refreshWifiInfo();
   setNotice();
-  showToast(transport.remote ? "BECA linked through computer." : nativeProvider ? "BECA connected directly over Wi-Fi." : "BECA connected over USB-C.");
-  if (phoneAudio.enabled) scheduleSet("outputmode", serialProvider?.audioOutputMode ?? 1, null, true);
+  showToast(transport.remote ? "Computer link connected" : wifiProvider || nativeProvider ? "Wi-Fi connected" : "USB connected");
+  if (phoneAudio.enabled && !wifiProvider) scheduleSet("outputmode", serialProvider?.audioOutputMode ?? 1, null, true);
   updateAudioStatus();
 }
 
@@ -315,9 +353,9 @@ function startPolling() {
   stopPolling();
   const busy = new Set();
   const poll = async (name, tags) => {
-    if (document.hidden || !transport.connected || busy.has(name)) return;
+    if (document.hidden || wifiBusy || !transport.connected || busy.has(name)) return;
     busy.add(name);
-    try { for (const tag of tags) await transport.send(tag); }
+    try { for (const tag of tags) { if (["STATE", "SYNTH"].includes(tag) && editingSettings()) continue; await transport.send(tag); } }
     catch (error) { handleError(error); }
     finally { busy.delete(name); }
   };
@@ -348,7 +386,7 @@ function handleError(error) {
 }
 
 async function toggleConnection() {
-  if (connecting) return;
+  if (connecting || wifiBusy) return;
   if (transport.connected) {
     await transport.disconnect();
     return;
@@ -403,11 +441,30 @@ function receive(parsed) {
       pendingReplies.delete(parsed.tag);
       waiter.resolve(parsed.payload);
     }
+    if (parsed.tag === "SYNTH" && editingSettings()) return;
+    if (["PARAMS", "STATE", "SYNTH", "PLANT", "NOTES", "WIFI_INFO"].includes(parsed.tag)) {
+      const signature = JSON.stringify(parsed.payload);
+      const current = { PARAMS: model.params, STATE: model.state, SYNTH: model.synth, PLANT: model.plant, NOTES: model.notes, WIFI_INFO: wifiInfo }[parsed.tag];
+      const unchanged = parsed.payload && Object.entries(parsed.payload).every(([key, value]) => JSON.stringify(current[key]) === JSON.stringify(value));
+      if (replySignatures.get(parsed.tag) === signature && unchanged) return;
+      replySignatures.set(parsed.tag, signature);
+    }
+    if (parsed.tag === "WIFI_STREAM_RESET") { phoneAudio.panic(); return; }
     if (parsed.tag === "PARAMS" && parsed.payload) {
       model.params = { ...model.params, ...parsed.payload, ranges: { ...model.params.ranges, ...parsed.payload.ranges } };
       renderAllControls();
+    } else if (parsed.tag === "WIFI_INFO" && parsed.payload) {
+      wifiInfo = parsed.payload;
+      renderWifiSettings();
     } else if (parsed.tag === "STATE" && parsed.payload) {
-      model.state = { ...model.state, ...parsed.payload };
+      const next = { ...model.state, ...parsed.payload };
+      const stateControls = [...PERFORMANCE_CONTROLS, ...DEVICE_CONTROLS, SENSITIVITY_CONTROL,
+        ...["mode", "drumsel", "master", "cutoff", "resonance"].map(key => ({ key }))];
+      for (const def of stateControls) {
+        const field = def.valueKey ?? def.key;
+        if (editingKey(def.key) && model.state[field] !== undefined) next[field] = model.state[field];
+      }
+      model.state = next;
       renderState();
     } else if (parsed.tag === "SYNTH" && parsed.payload) {
       model.synth = parsed.payload;
@@ -419,7 +476,7 @@ function receive(parsed) {
     } else if (parsed.tag === "NOTES" && parsed.payload) {
       model.notes = parsed.payload;
       renderNotes();
-    } else if (parsed.tag === "SET" && parsed.payload && !parsed.payload.ok) {
+    } else if (parsed.tag === "SET" && parsed.payload && parsed.payload.ok === 0) {
       const message = parsed.payload.err || "BECA rejected the setting.";
       showToast(message, "error");
       request("STATE").then(() => request("SYNTH")).catch(handleError);
@@ -437,7 +494,11 @@ function receive(parsed) {
       renderNotes();
     }
   } else if (parsed.type === "midi") {
-    if (!model.state.io_muted) phoneAudio.midi([parsed.status, parsed.data1, parsed.data2]);
+    if (!model.state.io_muted) {
+      const bytes = [parsed.status, parsed.data1, parsed.data2];
+      if (wifiProvider && !transport.remote) phoneAudio.midiExact(bytes);
+      else phoneAudio.midi(bytes);
+    }
     if (!phoneAudio.enabled && (parsed.status & 0xf0) === 0x90 && parsed.data2 > 0) updateLastNote(parsed.data1, parsed.data2);
   }
 }
@@ -490,7 +551,7 @@ function renderState() {
   renderOutputModes();
   renderPresetSelection();
   applyModelToControls("state", state);
-  if (!interaction.has("sens") && Number.isFinite(Number(state.sens))) {
+  if (!editingKey("sens") && Number.isFinite(Number(state.sens))) {
     $("#sensitivity").value = String(state.sens);
     $("#sensitivityOutput").textContent = Number(state.sens).toFixed(2);
   }
@@ -506,7 +567,7 @@ function renderState() {
 function renderSynth() {
   $("#presetName").textContent = model.synth.preset_name ?? model.state.preset_name ?? "—";
   const master = Number(model.synth.master ?? model.state.master);
-  if (!interaction.has("master") && Number.isFinite(master)) {
+  if (!editingKey("master") && Number.isFinite(master)) {
     $("#master").value = String(master);
     $("#masterOutput").textContent = `${Math.round(master * 100)}%`;
   }
@@ -570,6 +631,9 @@ function buildControl(def, source) {
   const card = document.createElement("article");
   card.className = "panel control-card";
   const valueKey = def.valueKey ?? def.key;
+  const pitched = ["scale", "root", "lo", "hi", "rest", "nr", "note_length"];
+  if (pitched.includes(def.key)) card.dataset.modes = "0 1 2";
+  if (def.key === "drumkit") card.dataset.modes = "3";
   if (def.type === "toggle") {
     card.innerHTML = `<div class="toggle-row"><label for="control-${def.key}">${def.label}</label><label class="switch"><input id="control-${def.key}" type="checkbox" data-key="${def.key}" data-value-key="${valueKey}" data-source="${source}"><span aria-hidden="true"></span></label></div>`;
   } else if (def.type === "select") {
@@ -583,6 +647,7 @@ function buildControl(def, source) {
   input.disabled = !transport.connected || !verified;
   input.addEventListener("pointerdown", () => interaction.add(def.key));
   input.addEventListener("pointerup", () => interaction.delete(def.key));
+  input.addEventListener("pointercancel", () => interaction.delete(def.key));
   input.addEventListener("blur", () => interaction.delete(def.key));
   input.addEventListener("input", () => {
     if (def.type !== "select" && def.type !== "toggle") {
@@ -600,7 +665,29 @@ function buildControl(def, source) {
 
 function renderControlGroup(containerId, definitions, source) {
   const container = $(containerId);
-  container.replaceChildren(...definitions.map((def) => buildControl(def, def.source ?? source)));
+  if (containerId === "#synthControls") {
+    const groups = [
+      ["Oscillators", ["wave_a", "wave_b", "osc_mix", "detune", "mono", "voices"]],
+      ["Filter", ["filter", "cutoff", "resonance", "drive"]],
+      ["Envelope", ["attack", "decay", "sustain", "release"]],
+      ["Effects", ["reverb", "delay_ms", "delay_feedback", "delay_mix", "gain_trim"]],
+      ["Drums", ["drumkit"]]
+    ];
+    container.replaceChildren(...groups.map(([title, keys]) => {
+      const section = document.createElement("section");
+      section.className = "engine-section";
+      if (title === "Drums") section.dataset.modes = "3";
+      else if (["Oscillators", "Filter", "Envelope"].includes(title)) section.dataset.modes = "0 1 2";
+      const heading = document.createElement("h3");
+      heading.textContent = title;
+      section.append(heading);
+      const grid = document.createElement("div");
+      grid.className = "engine-grid";
+      grid.append(...keys.map(key => buildControl(definitions.find(def => def.key === key), source)));
+      section.append(grid);
+      return section;
+    }));
+  } else container.replaceChildren(...definitions.map((def) => buildControl(def, def.source ?? source)));
 }
 
 function renderAllControls() {
@@ -615,10 +702,10 @@ function renderAllControls() {
   enableLocalControls();
 }
 
-function applyModelToControls(source, values) {
+function applyModelToControls(source, values, localUpdate = false) {
   $$(`[data-source="${source}"][data-key]`).forEach((input) => {
     const key = input.dataset.key;
-    if (interaction.has(key)) return;
+    if (!localUpdate && editingKey(key)) return;
     const value = values[input.dataset.valueKey || key];
     if (value === undefined || value === null) return;
     if (input.type === "checkbox") input.checked = Boolean(Number(value));
@@ -671,6 +758,15 @@ function renderPresetSelection() {
 }
 
 function renderModeRestrictions() {
+  const mode = String(Number(model.state.mode));
+  $("#arpControls").closest(".arp-panel").hidden = mode !== "1" || Boolean(wifiProvider);
+  $$('[data-modes]').forEach(element => {
+    const hidden = !element.dataset.modes.split(" ").includes(mode);
+    if (element.hidden !== hidden) element.hidden = hidden;
+  });
+  $("#arpControls").closest(".arp-panel").hidden = mode !== "1" || Boolean(wifiProvider);
+  $("#expressionPad").closest(".expression-card").hidden = mode === "3";
+  $$(".midi-leaf").forEach(button => { button.disabled = mode === "3" || (connecting || (transport.connected && !verified)); });
   if (connecting || (transport.connected && !verified)) {
     $$('[data-key], [data-play-mode], [data-drum-part], .midi-leaf').forEach((input) => { input.disabled = true; });
     return;
@@ -689,8 +785,20 @@ function renderModeRestrictions() {
   $("#arpControls").querySelectorAll("input, select").forEach((input) => { input.disabled = Number(model.state.mode) !== 1; });
 }
 
+function sendTrackedSetting(key, value) {
+  settingsBusy++;
+  pendingSettingKeys.set(key, (pendingSettingKeys.get(key) ?? 0) + 1);
+  return transport.send(`SET ${key} ${value}`).finally(() => {
+    settingsBusy--;
+    const remaining = (pendingSettingKeys.get(key) ?? 1) - 1;
+    if (remaining) pendingSettingKeys.set(key, remaining); else pendingSettingKeys.delete(key);
+    quietSettingKeys.set(key, performance.now() + 150);
+    settingsQuietUntil = performance.now() + 150;
+  });
+}
+
 function scheduleSet(key, rawValue, transform, immediate = false) {
-  if (connecting || (transport.connected && !verified)) return;
+  if (wifiBusy || connecting || (transport.connected && !verified)) return;
   const value = transform ? transform(String(rawValue)) : rawValue;
   applyLocalSetting(key, value);
   if (key.startsWith("arp_")) return;
@@ -698,7 +806,7 @@ function scheduleSet(key, rawValue, transform, immediate = false) {
   if (!transport.connected) return;
   const send = () => {
     sendTimers.delete(key);
-    transport.send(`SET ${key} ${value}`).catch(handleError);
+    sendTrackedSetting(key, value).catch(handleError);
   };
   if (immediate) send();
   else sendTimers.set(key, setTimeout(send, 80));
@@ -769,21 +877,34 @@ function paintExpressionPad() {
   $(".pad-y-label").textContent = PAD_MODES[padMode][1].label;
 }
 
+async function drainPadValues() {
+  if (padWriteBusy) return;
+  padWriteBusy = true;
+  const generation = padWriteGeneration;
+  try {
+    while (pendingPadValues && generation === padWriteGeneration) {
+      const next = pendingPadValues;
+      pendingPadValues = null;
+      phoneAudio.setParams(model.synth);
+      if (!transport.connected) return;
+      // One pair in flight, with only the latest unsent pad position retained.
+      await Promise.all(Object.entries(next).map(([key, value]) => sendTrackedSetting(key, value)));
+    }
+  } catch (error) { handleError(error); }
+  finally {
+    padWriteBusy = false;
+    if (pendingPadValues && padSendTimer === null) drainPadValues();
+  }
+}
+
 function sendPadValues(values, immediate = false) {
-  if (connecting || (transport.connected && !verified)) return;
+  if (wifiBusy || connecting || (transport.connected && !verified)) return;
   pendingPadValues = values;
   Object.assign(model.synth, values);
-  applyModelToControls("synth", model.synth);
+  phoneAudio.setParams(model.synth);
+  applyModelToControls("synth", values, true);
   paintExpressionPad();
-  const send = () => {
-    const next = pendingPadValues;
-    pendingPadValues = null;
-    padSendTimer = null;
-    if (!next) return;
-    phoneAudio.setParams(model.synth);
-    if (!transport.connected) return;
-    (async () => { for (const [key, value] of Object.entries(next)) await transport.send(`SET ${key} ${value}`); })().catch(handleError);
-  };
+  const send = () => { padSendTimer = null; drainPadValues(); };
   if (immediate) { clearTimeout(padSendTimer); send(); }
   else if (padSendTimer == null) padSendTimer = setTimeout(send, 250);
 }
@@ -837,8 +958,13 @@ function initVisualControls() {
     padPointerId = null;
   };
   pad.addEventListener("pointerup", stop);
-  pad.addEventListener("pointercancel", () => { padPointerId = null; });
-  pad.addEventListener("lostpointercapture", () => { padPointerId = null; });
+  const cancel = () => {
+    if (padPointerId === null) return;
+    padPointerId = null;
+    if (pendingPadValues) sendPadValues(pendingPadValues, true);
+  };
+  pad.addEventListener("pointercancel", cancel);
+  pad.addEventListener("lostpointercapture", cancel);
   pad.addEventListener("keydown", (event) => {
     if ((!transport.connected && !phoneAudio.presets) || !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return;
     event.preventDefault();
@@ -848,9 +974,91 @@ function initVisualControls() {
   });
 }
 
+function renderWifiSettings() {
+  const mac = wifiInfo.sta_mac || (verified ? "Unavailable on this firmware" : "Connect BECA to view");
+  if ($("#wifiMac").textContent !== mac) $("#wifiMac").textContent = mac;
+  $("#copyWifiMac").disabled = !wifiInfo.sta_mac;
+  const network = wifiInfo.ssid ? `Saved network: ${wifiInfo.ssid} · IP: ${wifiInfo.ip || "unavailable"}` : "No saved network reported.";
+  if ($("#wifiNetwork").textContent !== network) $("#wifiNetwork").textContent = network;
+  const canSave = transport.connected && verified && !nativeProvider && !wifiProvider && !transport.remote && !wifiBusy;
+  $("#saveHotspot").disabled = !canSave;
+  $("#hotspotSsid").disabled = wifiBusy;
+  $("#hotspotPass").disabled = wifiBusy;
+  $("#wifiForm").hidden = Boolean(nativeProvider || wifiProvider);
+  if (!wifiFormDirty) $("#hotspotSsid").value = wifiInfo.ssid || "";
+  if (!wifiBusy) $("#wifiSettingsStatus").textContent = wifiSavedMessage || (wifiProvider ? "Use BECA’s Wi-Fi setup page to change networks." : canSave ? "Save a 2.4 GHz Wi-Fi network or hotspot over USB." : "Connect Android USB to save here, or use BECA’s Wi-Fi setup page.");
+  const ip = wifiInfo.ip;
+  if (ip && !$("#wifiHost").matches(":focus")) $("#wifiHost").value = ip;
+  $("#wifiSetupLink").href = typeof ip === "string" && /^(?:\d{1,3}\.){3}\d{1,3}$/.test(ip) ? `http://${ip}/setup` : "http://192.168.4.1/setup";
+}
+
+async function refreshWifiInfo() {
+  if (!verified || !transport.connected || wifiBusy || wifiInfoBusy || Date.now() - wifiInfoLastAt < 3000) return;
+  wifiInfoLastAt = Date.now();
+  wifiInfoBusy = true;
+  try { await request("WIFI_INFO", true); }
+  catch { if (verified) $("#wifiSettingsStatus").textContent = "Network information unavailable. Use BECA’s Wi-Fi setup page or update firmware."; }
+  finally { wifiInfoBusy = false; }
+}
+
+function initWifiSettings() {
+  $("#wifiOpenForm").addEventListener("submit", event => {
+    event.preventDefault();
+    try {
+      const raw = $("#wifiHost").value.trim();
+      const url = new URL(raw.includes("://") ? raw : `http://${raw}`);
+      if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || !url.hostname) throw new Error("Enter BECA’s IP address or local hostname.");
+      url.pathname = "/play/"; url.search = ""; url.hash = "";
+      location.assign(url.href);
+    } catch { showToast("Enter BECA’s IP address or local hostname.", "error"); }
+  });
+  $("#networkSettings").addEventListener("toggle", () => { if ($("#networkSettings").open) refreshWifiInfo(); });
+  $("#hotspotSsid").addEventListener("input", () => { wifiFormDirty = true; });
+  $("#copyWifiMac").addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText(wifiInfo.sta_mac); showToast("Wi-Fi MAC copied."); }
+    catch { showToast("Select and copy the Wi-Fi MAC shown above."); }
+  });
+  $("#wifiForm").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!transport.connected || !verified || nativeProvider || transport.remote || wifiBusy || Date.now() < wifiCooldownUntil) return;
+    const ssid = $("#hotspotSsid").value.trim();
+    const pass = $("#hotspotPass").value;
+    const name = wifiInfo.name || "beca";
+    if (!ssid || new TextEncoder().encode(ssid).length > 32 || /[\t\r\n]/.test(ssid + pass + name) || pass.length < 8 || pass.length > 63 || pass !== pass.trim()) {
+      $("#wifiSettingsStatus").textContent = "Use a name up to 32 bytes and an 8–63 character password without tabs, newlines or leading/trailing spaces.";
+      return;
+    }
+    wifiBusy = true;
+    wifiSavedMessage = "";
+    stopPolling();
+    sendTimers.forEach(clearTimeout); sendTimers.clear();
+    phoneAudio.stop();
+    setConnectedUi(false);
+    $("#connectButton").disabled = true;
+    $("#wifiSettingsStatus").textContent = "Testing Wi-Fi… keep BECA powered and the hotspot enabled (up to 25 seconds).";
+    try {
+      const result = await request(`WIFI_SAVE ${name}\t${ssid}\t${pass}`, true, "WIFI_SAVE", 25000);
+      if (!result?.ok) throw new Error([result?.msg || "Wi-Fi setup failed.", result?.hint].filter(Boolean).join(" "));
+      $("#hotspotPass").value = "";
+      wifiSavedMessage = "Wi-Fi saved. BECA is restarting; reconnect the app. For Wi-Fi control, use its new IP from the router/hotspot client list.";
+      await transport.send("REBOOT");
+      await transport.disconnect(false);
+    } catch (error) {
+      wifiSavedMessage = `${error.message} Check the 2.4 GHz network/hotspot and try again.`;
+    } finally {
+      wifiBusy = false;
+      wifiCooldownUntil = Date.now() + 3000;
+      setConnectedUi(transport.connected);
+      if (transport.connected && verified) startPolling();
+      renderWifiSettings();
+    }
+  });
+  renderWifiSettings();
+}
+
 function initTabs() {
   $$(".tab").forEach((button) => button.addEventListener("click", () => {
-    $$(".tab").forEach((tab) => tab.classList.toggle("active", tab === button));
+    $$(".tab").forEach((tab) => { tab.classList.toggle("active", tab === button); tab.setAttribute("aria-pressed", String(tab === button)); });
     $$(".tab-page").forEach((page) => page.classList.toggle("active", page.id === button.dataset.tab));
     history.replaceState(null, "", `#${button.dataset.tab}`);
   }));
@@ -860,6 +1068,7 @@ function initTabs() {
 }
 
 function initActions() {
+  initWifiSettings();
   $("#drumParts").replaceChildren(...["Kick", "Snare", "Closed hat", "Open hat", "Low tom", "High tom", "Ride", "Crash"].map((name, part) => {
     const label = document.createElement("label");
     label.innerHTML = `<input type="checkbox" data-drum-part="${part}" disabled> ${name}`;
@@ -894,14 +1103,14 @@ function initActions() {
   $("#resetPreset").addEventListener("click", () => scheduleSet("preset_reset", 1, null, true));
   $("#randomizeButton").addEventListener("click", () => transport.send("RANDOMIZE").catch(handleError));
   $("#master").addEventListener("pointerdown", () => interaction.add("master"));
-  $("#master").addEventListener("pointerup", () => interaction.delete("master"));
+  ["pointerup", "pointercancel", "blur"].forEach(event => $("#master").addEventListener(event, () => interaction.delete("master")));
   $("#master").addEventListener("input", (event) => {
     $("#masterOutput").textContent = `${Math.round(Number(event.target.value) * 100)}%`;
     scheduleSet("master", event.target.value);
   });
   $("#master").addEventListener("change", (event) => scheduleSet("master", event.target.value, null, true));
   $("#sensitivity").addEventListener("pointerdown", () => interaction.add("sens"));
-  $("#sensitivity").addEventListener("pointerup", () => interaction.delete("sens"));
+  ["pointerup", "pointercancel"].forEach(event => $("#sensitivity").addEventListener(event, () => interaction.delete("sens")));
   $("#sensitivity").addEventListener("blur", () => interaction.delete("sens"));
   $("#sensitivity").addEventListener("input", (event) => {
     $("#sensitivityOutput").textContent = Number(event.target.value).toFixed(2);
@@ -938,7 +1147,7 @@ function initInstall() {
 
 function initCompatibility() {
   const caps = capabilities();
-  if (nativeProvider) {
+  if (nativeProvider || wifiProvider) {
     $("#appleConnectionHelp").hidden = true;
     $("#connectionHelp").hidden = true;
     $(".tablet-link").hidden = true;
@@ -950,7 +1159,7 @@ function initCompatibility() {
     $("#linkStatus").textContent = "The computer link needs WebRTC on HTTPS. Update your browser or open this app in another supported browser.";
   }
   if (!transport.supported) {
-    setNotice(`${caps.audio ? "Sound previews are available." : "Update your browser for sound previews."} For live BECA input, open ‘Link an iPad or tablet through a computer’ below${caps.relay ? "." : " in a browser with WebRTC support."} Direct USB requires a browser with WebUSB or Web Serial access; iPad/iPhone browsers cannot use this board’s USB serial adapter.`);
+    setNotice(`${caps.audio ? "Sound previews are available." : "Update your browser for sound previews."} For live BECA input, open its Wi-Fi instrument from Settings or link through a computer${caps.relay ? "." : " in a browser with WebRTC support."} Direct USB requires a browser with WebUSB or Web Serial access; iPad/iPhone browsers cannot use this board’s USB serial adapter.`);
     $("#connectButton").disabled = true;
   } else if (!window.isSecureContext) {
     setNotice("USB access requires HTTPS. Open the published GitHub Pages app, or use localhost for development.", "error");
@@ -964,7 +1173,8 @@ function initCompatibility() {
 }
 
 transport.addEventListener("connect", () => {
-  logLine(nativeProvider ? "Opened direct Apple Wi-Fi control and native MIDI." : "Serial port opened at 115200 baud.", "system");
+  replySignatures.clear();
+  logLine(wifiProvider ? "Wi-Fi connected" : nativeProvider ? "Opened direct Apple Wi-Fi control and native MIDI." : "Serial port opened at 115200 baud.", "system");
   setUsbCheck("#permissionStatus", "Permission granted", "ok");
   setUsbCheck("#adapterStatus", selectedAdapterLabel(), "ok");
 });
@@ -1018,6 +1228,9 @@ transport.addEventListener("disconnect", () => {
   clearTimeout(padSendTimer);
   padSendTimer = null;
   pendingPadValues = null;
+  padPointerId = null;
+  padWriteGeneration++;
+  interaction.clear();
   model.notes = {};
   model.plant = {};
   plantSamples = [];
@@ -1026,6 +1239,10 @@ transport.addEventListener("disconnect", () => {
   for (const id of ["signalNow", "signalAverage", "signalLow", "signalHigh"]) $(`#${id}`).textContent = "—";
   $("#signalTrend").textContent = "Waiting";
   verified = false;
+  wifiInfo = {};
+  wifiFormDirty = false;
+  $("#hotspotPass").value = "";
+  renderWifiSettings();
   stopPolling();
   setConnectedUi(false);
   logLine("BECA connection closed.", "system");
@@ -1039,7 +1256,7 @@ navigator.usb?.addEventListener?.("disconnect", () => refreshUsbDiagnostics());
 
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) phoneAudio.stop();
-  if (!document.hidden && transport.connected) {
+  if (!document.hidden && !wifiBusy && transport.connected) {
     transport.send("PING").then(() => transport.send("STATE")).catch(handleError);
   }
 });

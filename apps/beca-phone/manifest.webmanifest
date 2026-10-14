@@ -1,15 +1,18 @@
 {
   "name": "BECA Plant Instrument",
   "short_name": "BECA",
-  "description": "Play BECA’s original synth on your phone or tablet, with live plant and MIDI monitors.",
+  "description": "Play BECA\u2019s original synth on your phone or tablet, with live plant and MIDI monitors.",
   "id": "./",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "any",
-  "background_color": "#f6f4ef",
-  "theme_color": "#f6f4ef",
-  "categories": ["music", "utilities"],
+  "background_color": "#101719",
+  "theme_color": "#101719",
+  "categories": [
+    "music",
+    "utilities"
+  ],
   "icons": [
     {
       "src": "./icons/icon-192.png",

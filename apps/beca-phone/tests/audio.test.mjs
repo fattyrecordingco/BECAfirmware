@@ -131,3 +131,28 @@ test("raw sensor mode ignores notes and stops when the plant is disconnected", (
   render(engine, 10);
   assert.ok(render(engine).every((sample) => sample === 0));
 });
+
+test("local HTTP fallback renders the shared WASM engine and clears notes on panic", () => {
+  const audio = new PhoneAudio();
+  audio.module = module;
+  let processor;
+  audio.context = {
+    sampleRate: 48000,
+    createScriptProcessor(size, inputs, outputs) {
+      assert.equal(size, 1024); assert.equal(inputs, 0); assert.equal(outputs, 2);
+      processor = { connect() {}, disconnect() {} };
+      return processor;
+    }
+  };
+  const node = audio.createFallback();
+  const channels = [new Float32Array(1024), new Float32Array(1024)];
+  const outputBuffer = { length: 1024, numberOfChannels: 2, getChannelData: (channel) => channels[channel] };
+  node.port.postMessage({ type: "mode", mode: 0 });
+  node.port.postMessage({ type: "midi", bytes: [0x90, 60, 100] });
+  processor.onaudioprocess({ outputBuffer });
+  assert.ok(channels[0].some((sample) => Math.abs(sample) > 0));
+  assert.ok(channels.every((channel) => channel.every((sample) => Number.isFinite(sample) && Math.abs(sample) <= 1)));
+  node.port.postMessage({ type: "panic" });
+  processor.onaudioprocess({ outputBuffer });
+  assert.ok(channels.every((channel) => channel.every((sample) => sample === 0)));
+});

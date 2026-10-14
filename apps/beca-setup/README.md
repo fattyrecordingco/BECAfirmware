@@ -90,3 +90,26 @@ That script:
 Setup contains the only **MIDI routing** editor: up to eight saved splits, Apply, Start/Stop, Release MIDI notes and automatic reconnection. The native `BridgeSession` owns USB and serves MIDI and control requests together. Select **Serial MIDI + Aux** for both outputs. Drum controls are separate and labelled MIDI channel 10; Aux's inactive drum-kit selector is removed. Performance stays dedicated to playing.
 
 Troubleshooting: close separate serial monitors/CLI bridges before opening the app bridge. Wi-Fi provisioning, reboot and flashing still require stopping it. A missing MIDI destination preserves existing routes during Apply; an active send failure stops the bridge with an error. See the root README and `docs/research/live-routing-verification.md` for verification and latency limits.
+
+## Wi-Fi MAC and phone hotspot settings
+
+The device controller, recovery setup, desktop Setup/Control, and phone/Apple controller display BECA’s **Wi-Fi MAC** (`sta_mac`). Copy this station address when registering BECA manually with a home router or managed network. The setup access point (`ap_mac`) and Bluetooth addresses are different. Firmware that does not report the station MAC displays an unavailable message.
+
+Open **Settings · Wi-Fi & phone hotspot** in the phone controller. On Android, connect BECA by USB, enable a **2.4 GHz** hotspot in the phone’s system settings, enter its exact name and password, then choose **Save Wi-Fi & restart BECA**. The same form accepts home Wi-Fi credentials. BECA tests credentials before saving; allow up to 25 seconds. The protected-network form accepts SSIDs up to 32 UTF-8 bytes and passwords of 8–63 characters, without tabs/newlines or outer spaces. Use the recovery page for open networks. Credentials are not saved in browser storage or shown in the serial console.
+
+On iPhone/iPad, or without Android USB, join BECA’s setup Wi-Fi and open `http://192.168.4.1/setup` (or `/setup` at its current local IP). Configure the hotspot using this page. Enable **Maximise Compatibility** where available on iPhone; Apple documents that this uses 2.4 GHz: https://support.apple.com/en-ca/guide/security/secfd166f620/web . If the same phone cannot host its hotspot while connected to BECA’s setup network, use a second phone/tablet for provisioning while the first hosts the hotspot. The app cannot turn on the system hotspot itself.
+
+After saving, reconnect USB or update the native Apple app’s address using BECA’s new IP from the router/hotspot client list. Keep the hotspot and BECA powered. If Wi-Fi control fails, check the band, password, Local Network permission and hotspot client isolation; Android USB control remains available. Enterprise authentication and captive portals still require a compatible personal network.
+
+Network identity is fetched on connection/settings opening or manual refresh, with a 3-second minimum interval and no continuous network polling. Identity labels only change when their value changes. Provisioning pauses phone live polling and control writes, allows one save at a time, and has a 3-second retry cooldown. Existing SSE rate limits and state-diff updates remain in place.
+
+## Instrument controls and browser Wi-Fi playback
+
+The shared playing surfaces now group mode/preset/master/play, sound controls and plant/MIDI feedback. Mode-specific modules appear only when used; hidden controls retain values. Connection/setup and diagnostics remain secondary. See [design rules](../../docs/design/INSTRUMENT_UI.md) and [copy rules](../../docs/design/UI_COPY.md).
+
+The rebuilt development firmware also serves a standalone browser instrument at `http://DEVICE_IP/play/`. This path generates sound locally from the shared WebAssembly synth and consumes ordered Wi-Fi MIDI events without a native app or computer; the native Apple app keeps its existing CoreMIDI path. See [browser playback and recovery](../../README.md#browser-instrument-over-wi-fi-local-development-firmware) for setup, HTTP audio fallback, and physical validation limits.
+
+
+## Appearance
+
+Choose **Dark** or **Light** from **Appearance** beside the app’s view buttons. Setup, Performance, MIDI routing and Control share the same monochrome surfaces and green instrument accents as the phone app. The choice is saved on this computer and applies to an already open Control view without resetting its connection or changing device parameters. If browser storage is unavailable, the choice lasts for the current session.

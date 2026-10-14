@@ -10,11 +10,11 @@ const setAttribute = (node, name, value) => { if (node.getAttribute(name) !== va
 
 export function createInstrumentDeck({ host, getValues, change }) {
   host.innerHTML = `
-    <div class="instrument-topline"><span class="instrument-eyebrow">Plant signal / sound / play</span>
+    <div class="instrument-topline"><span class="instrument-eyebrow">Signal / expression / variations</span>
       <button class="performance-button instrument-mute" data-silence aria-pressed="false" disabled>Silence outputs <kbd>M</kbd></button></div>
     <div class="instrument-deck">
       <section class="instrument-signal" aria-label="Plant activity monitor">
-        <div class="instrument-section-heading"><span>01 / living signal</span><span class="instrument-connection" data-signal-state>Waiting</span></div>
+        <div class="instrument-section-heading"><span>Plant signal</span><span class="instrument-connection" data-signal-state>Waiting</span></div>
         <div class="instrument-orbit"><svg viewBox="0 0 240 240" aria-hidden="true">
           <circle cx="120" cy="120" r="94" fill="none" stroke="currentColor" stroke-dasharray="1 7"/>
           ${Array.from({ length: 8 }, (_, i) => {
@@ -23,12 +23,12 @@ export function createInstrumentDeck({ host, getValues, change }) {
           }).join("")}</svg>
           <div class="instrument-energy"><strong data-energy>—</strong><span>plant energy</span></div>
         </div>
-        <div class="instrument-notes" data-note-chips aria-label="Observed MIDI notes"><span>Waiting for notes</span></div>
+        <div class="instrument-notes" data-note-chips aria-label="Observed MIDI notes"><span>No notes</span></div>
         <svg class="instrument-scope" viewBox="0 0 320 52" preserveAspectRatio="none" role="img" aria-label="Recent measured plant energy"><path d="M0 13H320 M0 26H320 M0 39H320" class="scope-grid"/><path data-scope class="scope-trace" d=""/></svg>
         <p class="instrument-caption">Measured input · recent 24 seconds</p>
       </section>
       <section class="instrument-expression" aria-label="Sound expression">
-        <div class="instrument-section-heading"><label for="expression-mode">02 / touch the sound</label>
+        <div class="instrument-section-heading"><label for="expression-mode">Expression</label>
           <select id="expression-mode" aria-label="XY mapping">${Object.entries(PAD_MODES).map(([key, mode]) => `<option value="${key}">${mode.label}</option>`).join("")}</select></div>
         <div class="expression-pad" tabindex="0" role="group" aria-label="XY expression pad" aria-describedby="expression-help" aria-disabled="true">
           <svg viewBox="0 0 400 220" preserveAspectRatio="none" aria-hidden="true"><path d="M100 0V220 M200 0V220 M300 0V220 M0 55H400 M0 110H400 M0 165H400"/></svg>
@@ -41,25 +41,25 @@ export function createInstrumentDeck({ host, getValues, change }) {
         <p class="instrument-caption" id="expression-help">Drag to shape two controls. Arrow keys move; Shift moves finely.</p>
       </section>
       <section class="instrument-explore" aria-label="Sound exploration">
-        <div class="instrument-section-heading"><span>03 / happy accidents</span><span class="instrument-mark" aria-hidden="true">✳</span></div>
-        <h2>Go a little<br>further.</h2><p>Explore a new texture.</p>
+        <div class="instrument-section-heading"><span>Variation</span><span class="instrument-mark" aria-hidden="true">✳</span></div>
+        <h2>Mutate</h2><p>Randomize timbre controls.</p>
         <label class="mutation-amount" for="mutation-amount"><span>Mutation depth</span><output data-depth>45%</output></label>
         <input id="mutation-amount" type="range" min="0.1" max="1" step="0.05" value="0.45">
-        <div class="mutation-endpoints"><span>little nudge</span><span>far out</span></div>
+        <div class="mutation-endpoints"><span>Subtle</span><span>Full</span></div>
         <button class="performance-button instrument-mutate" data-mutate disabled>✳ Mutate sound</button>
-        <p class="instrument-caption" data-explore-hint>Timbre changes. Tempo, key and volume stay yours.</p>
+        <p class="instrument-caption" data-explore-hint>Tempo, key and master unchanged.</p>
       </section>
     </div>
     <section class="instrument-library" aria-label="Soundscape browser">
-      <div class="instrument-library-title"><span class="instrument-eyebrow">Soundscapes</span><strong data-preset-name>Connect your BECA</strong><span data-route-hint>Sounds play on BECA’s Aux output.</span></div>
+      <div class="instrument-library-title"><span class="instrument-eyebrow">Soundscapes</span><strong data-preset-name>No preset</strong><span data-route-hint>BECA Aux output</span></div>
       <div class="instrument-preset-actions"><button class="performance-button" data-preset-prev aria-label="Previous soundscape" disabled>←</button><button class="performance-button" data-preset-next aria-label="Next soundscape" disabled>→</button></div>
       <div class="instrument-preset-bank" role="group" aria-label="Choose a soundscape"></div>
     </section>
     <section class="instrument-variations" aria-label="Sound variations">
-      <div><span class="instrument-eyebrow">Pocket variations</span><p>Save a texture. Bring it back.</p></div>
+      <div><span class="instrument-eyebrow">Variations</span><p>Store / recall</p></div>
       ${["A", "B", "C", "D"].map((letter, index) => `<div class="instrument-slot"><button class="variation-recall" data-recall="${index}" disabled aria-label="Recall variation ${letter}"><b>${letter}</b><span>Empty</span><kbd>${index + 1}</kbd></button><button class="variation-save" data-save="${index}" disabled aria-label="Save variation ${letter}">Save ${letter}</button></div>`).join("")}
     </section>
-    <div class="instrument-feedback" role="status" data-instrument-feedback>Explore a soundscape, shape it on the pad, then save a variation.</div>`;
+    <div class="instrument-feedback" role="status" data-instrument-feedback></div>`;
 
   const $ = (selector) => host.querySelector(selector);
   const pad = $(".expression-pad");
@@ -134,10 +134,10 @@ export function createInstrumentDeck({ host, getValues, change }) {
     const previous = beforeGesture;
     beforeGesture = null;
     change(previous);
-    message("Restoring the sound from before your last gesture.");
+    message("Previous settings restored.");
     refreshEnabled();
   });
-  mutation.addEventListener("click", () => perform(mutateSound(getValues(), Number($("#mutation-amount").value)), "New texture queued. Undo gesture brings the previous sound back."));
+  mutation.addEventListener("click", () => perform(mutateSound(getValues(), Number($("#mutation-amount").value)), "Variation applied. Undo restores the previous settings."));
   $("#mutation-amount").addEventListener("input", (event) => setText($("[data-depth]"), `${Math.round(Number(event.target.value) * 100)}%`));
   mute.addEventListener("click", () => { if (enabled) change({ mute: Number(getValues().mute) ? 0 : 1 }); });
 
@@ -226,7 +226,7 @@ export function createInstrumentDeck({ host, getValues, change }) {
   });
   function update() {
     const values = getValues();
-    const name = presets[Number(values.preset)] || "Connect your BECA";
+    const name = presets[Number(values.preset)] || "No preset";
     if (lastPreset !== name) { beforeGesture = null; lastPreset = name; }
     rawSine = /raw sensor sine/i.test(name);
     setText($("[data-preset-name]"), name);
@@ -234,8 +234,8 @@ export function createInstrumentDeck({ host, getValues, change }) {
     setAttribute(mute, "aria-pressed", String(muted));
     // Keep the keyboard hint separate from the accessible action name.
     setText(mute.firstChild, muted ? "Resume outputs " : "Silence outputs ");
-    setText($("[data-route-hint]"), [2, 3].includes(Number(values.outputmode)) ? "Aux audio · shaping BECA’s sound engine" : "MIDI output · select Aux audio to hear these soundscapes");
-    setText($("[data-explore-hint]"), rawSine ? "Pure sine bypasses timbre controls. Choose another soundscape to explore." : "Timbre changes. Tempo, key and volume stay yours.");
+    setText($("[data-route-hint]"), [2, 3].includes(Number(values.outputmode)) ? "Aux audio · BECA synth" : "MIDI output · select Aux audio to hear these soundscapes");
+    setText($("[data-explore-hint]"), rawSine ? "Raw sine bypasses timbre controls." : "Tempo, key and master unchanged.");
     host.querySelectorAll("[data-preset]").forEach((button) => setAttribute(button, "aria-pressed", String(Number(button.dataset.preset) === Number(values.preset))));
     refreshEnabled();
     paintPad();
@@ -255,7 +255,7 @@ export function createInstrumentDeck({ host, getValues, change }) {
       $("[data-note-chips]").dataset.notes = signature;
       $("[data-note-chips]").replaceChildren(...(notes.length ? notes : [null]).map((n) => {
         const chip = document.createElement("span");
-        chip.textContent = n == null ? "Waiting for notes" : `${noteNames[n % 12]}${Math.floor(n / 12) - 1}`;
+        chip.textContent = n == null ? "No notes" : `${noteNames[n % 12]}${Math.floor(n / 12) - 1}`;
         chip.className = n == null ? "" : "note-chip";
         return chip;
       }));

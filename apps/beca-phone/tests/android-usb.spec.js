@@ -73,12 +73,14 @@ test("Android requests WebUSB permission and connects to BECA", async ({ page },
   });
 
   await page.goto("/");
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
   await expect(page.getByText(/USB is available/)).toBeVisible();
   await expect.poll(() => page.evaluate(() => globalThis.__USB_PERMISSION_REQUESTS.length)).toBe(0);
 
   await page.getByRole("button", { name: "Connect USB" }).click();
 
   await expect(page.getByText("BECA connected", { exact: true })).toBeVisible();
+  await page.locator("#connectionHelp > summary").click();
   await expect(page.locator("#permissionStatus")).toHaveText("Permission granted");
   await expect(page.locator("#adapterStatus")).toContainText("1A86:7523");
   const filters = await page.evaluate(() => globalThis.__USB_PERMISSION_REQUESTS[0].filters);

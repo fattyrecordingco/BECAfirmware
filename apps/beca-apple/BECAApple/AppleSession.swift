@@ -12,6 +12,7 @@ struct MIDISource: Identifiable {
 @MainActor
 final class AppleSession: NSObject, ObservableObject, WKScriptMessageHandler, WKNavigationDelegate {
     @Published var address = UserDefaults.standard.string(forKey: "BECA.address") ?? "192.168.4.1"
+    @Published var appearance = UserDefaults.standard.string(forKey: "BECA.appearance") == "light" ? "light" : "dark"
     @Published var sources = [MIDISource]()
     @Published var selectedSource: MIDIUniqueID = 0
     @Published var status = "Power BECA, join its Wi-Fi, then connect its Bluetooth MIDI source."
@@ -132,8 +133,8 @@ final class AppleSession: NSObject, ObservableObject, WKScriptMessageHandler, WK
         let componentsOfHost = host.split(separator: ".", omittingEmptySubsequences: false)
         let octets = componentsOfHost.compactMap { Int($0) }
         let privateIP = componentsOfHost.count == 4 && octets.count == 4 && octets.allSatisfy { (0...255).contains($0) } &&
-            (octets[0] == 10 || (octets[0] == 192 && octets[1] == 168) || (octets[0] == 172 && (16...31).contains(octets[1])))
-        guard privateIP || host.hasSuffix(".local") else { throw failure("Use BECA’s private Wi-Fi IP address or .local name.") }
+            (octets[0] == 10 || (octets[0] == 100 && (64...127).contains(octets[1])) || (octets[0] == 192 && octets[1] == 168) || (octets[0] == 172 && (16...31).contains(octets[1])))
+        guard privateIP || host.hasSuffix(".local") else { throw failure("Use BECA’s local Wi-Fi IP address or .local name.") }
         guard let url = URL(string: "http://\(host)/") else { throw failure("Invalid device address.") }
         return url
     }
@@ -185,6 +186,12 @@ final class AppleSession: NSObject, ObservableObject, WKScriptMessageHandler, WK
               url.host == "127.0.0.1", url.port == webURL?.port,
               let body = message.body as? [String: Any], let id = body["id"] as? Int,
               let action = body["action"] as? String else { return }
+        if action == "appearance", let theme = body["theme"] as? String, ["light", "dark"].contains(theme) {
+            appearance = theme
+            UserDefaults.standard.set(theme, forKey: "BECA.appearance")
+            call("__BECA_NATIVE_REPLY__", value: ["id": id, "result": NSNull()])
+            return
+        }
         if action == "close" {
             close()
             call("__BECA_NATIVE_REPLY__", value: ["id": id, "result": NSNull()])

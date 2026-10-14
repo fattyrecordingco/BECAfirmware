@@ -5,11 +5,11 @@
 ## End-user manual
 
 For complete user instructions (Windows/macOS/Linux install, DAW setup, and BECA control page usage), use:
-- [Current downloads](../README.md#download-beca-020)
+- [Current downloads](../README.md#download-beca-030)
 - [First-launch guide](user/READ_BEFORE_FIRST_LAUNCH.md)
 
 Current setup app version baseline in this branch:
-- `0.2.0`, including firmware `1.1.0`
+- `0.3.0`, including firmware `1.2.0`
 
 ## Final architecture choice
 
@@ -47,7 +47,7 @@ The setup app only flashes release artifacts built for that baseline.
 ## Branch layout
 
 - `master`: current release source
-- `setup-v0.2.0`: combined app 0.2.0 and firmware 1.1.0 release
+- `apps-v0.3.0`: combined app 0.3.0 and firmware 1.2.0 release
 
 ## User flow
 
@@ -56,7 +56,7 @@ The setup app only flashes release artifacts built for that baseline.
 - If no device is found, app shows guided fixes (cable/driver/permissions).
 
 2. **Update Firmware**
-- For first installation select `Included 1.1.0 · works offline`, bundled with the app.
+- For first installation select `Included 1.2.0 · works offline`, bundled with the app.
 - Online firmware choices use `firmware-manifest.json` attached to a published GitHub Release.
 - Both bundled and downloaded firmware are SHA256 verified before flash.
 - Flash uses bundled `espflash` (or `esptool` if provided).

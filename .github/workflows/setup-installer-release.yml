@@ -5,6 +5,7 @@ on:
   push:
     tags:
       - "setup-v*"
+      - "apps-v*"
 
 permissions:
   contents: write
@@ -19,8 +20,14 @@ jobs:
           python-version: '3.11'
       - name: Prepare pinned firmware tools
         run: python -m pip install platformio==6.2.0 esptool==5.2.0 Markdown==3.8.2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
       - name: Verify generated UI and manual
         run: |
+          node apps/beca-phone/scripts/build.mjs
+          python tools/build_device_player.py
+          python tools/check_ui_copy.py
           python make_index_header.py
           python tools/release/render_manual.py
           git diff --exit-code -- index_html.h docs/user/BECA_MANUAL.html apps/beca-setup/ui/public/manual.html
@@ -29,7 +36,7 @@ jobs:
           g++ -std=c++17 -Itests/audio/stubs -I. tests/audio/audio_test.cpp drum_engine.cpp dsp_blocks.cpp -o /tmp/beca-audio-test
           /tmp/beca-audio-test
           python -m platformio run -e esp32dev
-          python tools/release/prepare_release.py --version 1.1.0 --tag setup-v0.2.0
+          python tools/release/prepare_release.py --version 1.2.0 --tag apps-v0.3.0
       - uses: actions/upload-artifact@v4
         with:
           name: beca-firmware
@@ -40,7 +47,7 @@ jobs:
     needs: firmware
     if: |
       github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'push' && startsWith(github.ref_name, 'setup-v'))
+      (github.event_name == 'push' && (startsWith(github.ref_name, 'setup-v') || startsWith(github.ref_name, 'apps-v')))
     strategy:
       fail-fast: false
       matrix:
@@ -75,7 +82,7 @@ jobs:
           path: apps/beca-setup/src-tauri/resources/firmware
       - name: Stage included firmware
         shell: bash
-        run: mv apps/beca-setup/src-tauri/resources/firmware/beca-1.1.0-merged.bin apps/beca-setup/src-tauri/resources/firmware/beca-merged.bin
+        run: mv apps/beca-setup/src-tauri/resources/firmware/beca-1.2.0-merged.bin apps/beca-setup/src-tauri/resources/firmware/beca-merged.bin
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -332,30 +339,4 @@ jobs:
           if-no-files-found: error
 
 
-  publish:
-    needs: [firmware, build-installers]
-    if: startsWith(github.ref, 'refs/tags/setup-v')
-    runs-on: ubuntu-22.04
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: beca-setup-*
-          path: dist/installers
-      - uses: actions/download-artifact@v4
-        with:
-          name: beca-firmware
-          path: dist/firmware-release
-      - name: Assemble release and checksums
-        run: python tools/release/stage_assets.py
-      - name: Publish verified update
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.ref_name }}
-          target_commitish: ${{ github.sha }}
-          name: BECA 0.2.0 — Performance & first-unit setup
-          body_path: docs/releases/setup-v0.2.0.md
-          prerelease: false
-          make_latest: true
-          fail_on_unmatched_files: true
-          files: dist/publish/*
+  # Publishing is performed only after the separate Apple and phone checks pass.

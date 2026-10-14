@@ -41,3 +41,27 @@ Keep BECA stable, universally user-friendly, and easy to compile and flash in Ar
 - Prefer explicit state machines for mode handling.
 - Maintain consistent naming for sensor to energy to event flow.
 - Every new feature must add a README section or update an existing one.
+
+## Instrument UI and copy rules
+
+Every user-facing app change must follow [Instrument UI](docs/design/INSTRUMENT_UI.md) and [UI Copy](docs/design/UI_COPY.md). These apply to the device pages, phone/Apple interface, desktop Control/Performance, and setup/help surfaces.
+
+- The product is a musical instrument. Put mode, sound, play, master and panic within reach; setup and diagnostics belong in secondary views.
+- Show mode-specific controls only in the mode that uses them. Shared controls remain shared. Never change a saved value merely because its control is hidden.
+- Preserve the plant scope and MIDI feedback as performance feedback, with bounded updates and no geometry changes on incoming data.
+- Run `python3 tools/check_ui_copy.py` after visible UI copy changes, and review context against the copy rules.
+- Use actual instrument labels and short actionable connection states. Do not add slogans, assistant narration, invented terminology, repeated captions, or decorative status cards.
+- Keep touch targets, visible focus, keyboard control, contrast, and small-screen layout usable. Verify phone/tablet portrait and landscape and desktop.
+- Preserve exact source note-on/off/channel events for external MIDI playback. A scope snapshot is not a note stream.
+- Rebuild generated firmware pages and embedded browser assets when their source changes.
+
+### Review roles
+
+Use these roles as review checklists. Delegate separate implementation areas when the user asks for parallel agents; otherwise perform the reviews within the active task.
+
+1. **Instrument designer:** map the signal and sound workflow; group controls by synthesis stage; decide which controls belong in each mode; preserve every supported feature.
+2. **Interaction reviewer:** verify playing with one hand, touch/keyboard precision, immediate mode changes, stable layout, and clear recovery after disconnect or interruption.
+3. **Audio/transport reviewer:** check note-off delivery, panic, queue overflow, reconnect, muted outputs, real-time budgets, and unchanged BLE behavior.
+4. **Copy editor:** remove text that does not name a control, describe its current state, or help the user take a necessary action. Keep long guidance in help/documentation.
+
+These reviews must produce concrete edits and test evidence, not design pitches or UI prose about the review process.

@@ -147,3 +147,49 @@ The native bridge accepts messages only from the app's main loopback frame, and 
 - Repeat native HTTP/serial setting comparisons on real hardware. Verify restoring BLE output after an AUX-only session and choosing the correct source when several BECAs are present.
 
 Apple documents the native connection path in [Adding Bluetooth LE MIDI Support](https://developer.apple.com/library/archive/qa/qa1831/_index.html) and [Bluetooth MIDI setup on Mac](https://support.apple.com/guide/audio-midi-setup/set-up-bluetooth-midi-devices-ams33f013765/mac). These sources establish the platform APIs, not successful tests of this implementation.
+
+## Wi-Fi MAC and phone hotspot settings
+
+The device controller, recovery setup, desktop Setup/Control, and phone/Apple controller display BECA’s **Wi-Fi MAC** (`sta_mac`). Copy this station address when registering BECA manually with a home router or managed network. The setup access point (`ap_mac`) and Bluetooth addresses are different. Firmware that does not report the station MAC displays an unavailable message.
+
+Open **Settings · Wi-Fi & phone hotspot** in the phone controller. On Android, connect BECA by USB, enable a **2.4 GHz** hotspot in the phone’s system settings, enter its exact name and password, then choose **Save Wi-Fi & restart BECA**. The same form accepts home Wi-Fi credentials. BECA tests credentials before saving; allow up to 25 seconds. The protected-network form accepts SSIDs up to 32 UTF-8 bytes and passwords of 8–63 characters, without tabs/newlines or outer spaces. Use the recovery page for open networks. Credentials are not saved in browser storage or shown in the serial console.
+
+On iPhone/iPad, or without Android USB, join BECA’s setup Wi-Fi and open `http://192.168.4.1/setup` (or `/setup` at its current local IP). Configure the hotspot using this page. Enable **Maximise Compatibility** where available on iPhone; Apple documents that this uses 2.4 GHz: https://support.apple.com/en-ca/guide/security/secfd166f620/web . If the same phone cannot host its hotspot while connected to BECA’s setup network, use a second phone/tablet for provisioning while the first hosts the hotspot. The app cannot turn on the system hotspot itself.
+
+After saving, reconnect USB or update the native Apple app’s address using BECA’s new IP from the router/hotspot client list. Keep the hotspot and BECA powered. If Wi-Fi control fails, check the band, password, Local Network permission and hotspot client isolation; Android USB control remains available. Enterprise authentication and captive portals still require a compatible personal network.
+
+Network identity is fetched on connection/settings opening or manual refresh, with a 3-second minimum interval and no continuous network polling. Identity labels only change when their value changes. Provisioning pauses phone live polling and control writes, allows one save at a time, and has a 3-second retry cooldown. Existing SSE rate limits and state-diff updates remain in place.
+
+## Instrument controls and browser Wi-Fi playback
+
+The shared playing surfaces now group mode/preset/master/play, sound controls and plant/MIDI feedback. Mode-specific modules appear only when used; hidden controls retain values. Connection/setup and diagnostics remain secondary. See [design rules](../../docs/design/INSTRUMENT_UI.md) and [copy rules](../../docs/design/UI_COPY.md).
+
+The rebuilt development firmware also serves a standalone browser instrument at `http://DEVICE_IP/play/`. This path generates sound locally from the shared WebAssembly synth and consumes ordered Wi-Fi MIDI events without a native app or computer; the native Apple app keeps its existing CoreMIDI path. See [browser playback and recovery](../../README.md#browser-instrument-over-wi-fi-local-development-firmware) for setup, HTTP audio fallback, and physical validation limits.
+
+## Appearance
+
+Open **Settings → Appearance** and choose **Light** or **Dark**. Light uses a white background with dark text, green active controls and green sound controls. Knobs, graphs, menus, warnings and the logo use the same palette. The browser remembers the choice on this device when local storage is available; the native Apple shell keeps it within its current web session. Appearance does not send commands to BECA or change audio settings.
+
+### Connected iPad update — 14 October 2026
+
+The first instrument update reused the verified arm64 native shell from `3f0a59c`. The final build below replaces that executable with the managed-network address fix. Bundle verification passed for asset hashes, icons, privacy metadata and iPhone/iPad support. xtool 1.21.0 signed, installed and verified the updated app on the connected `iPad15,5` running iPadOS 26.6.1; the user confirmed that the new interface appears. This is a development installation, not distribution signing.
+
+Automated launch/debug and screenshots are currently unavailable because the laptop has no mounted compatible Developer Disk Image. Physical synth audio, note-offs, permissions, interruptions and all modes are still acceptance checks; installation and the user's interface confirmation do not establish those results. Light-theme contrast, persistence and layout passed on nine browser configurations, including iPhone/iPad WebKit emulation.
+
+### Managed-network addresses and discovery
+
+The previous native shell rejected shared-address-space IPs (`100.64.0.0/10`), including this BECA's ASK4 address `100.65.132.146`. The native validator now accepts that local managed-network range while retaining the HTTP port-80, URL-path and credential restrictions. `tools/verify_apple_address.py` exercises the actual validator against supported ranges and invalid URL forms. A new native executable must be compiled and installed for this change; replacing web resources alone cannot update native validation.
+
+Address acceptance does not establish network reachability. ASK4 device-to-device HTTP was unreachable from this laptop before the firmware update. If an IP fails in Safari too, use a personal router/hotspot without client isolation, or join BECA's direct setup network and use `192.168.4.1`. `.local` names require multicast discovery, which managed networks may block. Allow the BECA app's Local Network permission in iPad settings. Bluetooth MIDI carries notes; the native control connection still requires Wi-Fi.
+
+Setting acknowledgements accept the Wi-Fi API's successful state response as well as serial `ok:1`; only explicit `ok:0` is a rejection. Consecutive queued changes to the same continuous control keep the latest value, while preset/actions remain ordered. State/synth polling waits during edits and briefly after writes so old snapshots cannot pull a knob back. Plant and note feedback continue at the existing bounded rates. BECA interface colours are monochrome and green only.
+
+### Final installed candidate — build 5
+
+The [Apple device candidate build](https://github.com/fattyrecordingco/BECAfirmware/actions/runs/38571883399) succeeded for `a65b061`, including physical iPhone/iPad arm64 compilation, MIDI parser checks and bundle validation. The separate [full Apple checks](https://github.com/fattyrecordingco/BECAfirmware/actions/runs/38570440724) also completed successfully, including native simulator launches, Mac compilation and Safari checks. The native address validator passed its local Foundation tests. Current web resources were bundled and hash-checked after these builds.
+
+BECA 1.6.0 **build 5** was development-signed and successfully installed through the Windows Apple device service; installation-proxy metadata confirms build 5 on `iPad15,5`, iPadOS 26.6.1. It contains the native managed-network address fix, light/dark instrument palettes in monochrome and green, correct handling of successful Wi-Fi setting replies, and bounded slider coalescing. The latest shared changes passed 41 protocol/audio checks, 45 interaction/contrast checks across nine browser configurations, and three cancelled-touch recovery checks. Desktop changes passed all 72 UI checks.
+
+The user confirmed Safari opens `/setup` on BECA's direct Wi-Fi and the native app connects with **192.168.4.1**. A `.local` timeout on the setup access point does not establish a broken HTTP connection; use the numeric AP address. The native app still uses CoreMIDI for live notes, while Safari at `/play/` uses browser Wi-Fi MIDI. The user subsequently confirmed that knob changes apply without rejection, both appearances stay monochrome/green, Test sound plays and Panic stops it on build 5. Actual live BLE note delivery and audio interruptions remain separate acceptance checks.
+
+The WSL xtool install transport stalled after uploading later updates. Its signed IPA was verified and installed through Windows `pymobiledevice3` in an isolated, ignored test environment; no product dependency was added. Screenshots/debug automation still require a compatible developer image and enabled inspection.

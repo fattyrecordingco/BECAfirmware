@@ -1,25 +1,25 @@
-.midi-routing { margin: 12px 0; border: 1px solid #b9ccbc; border-radius: 10px; background: #fafbf8; color: #174d36; }
+.midi-routing { margin: 12px 0; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); color: var(--text); }
 .midi-routing > summary { padding: 12px 14px; display: flex; align-items: center; gap: 14px; cursor: pointer; font-size: 11px; }
 .midi-routing > summary > span:first-child { font-weight: 700; }
-.midi-routing > summary > span:nth-child(2) { flex: 1; color: #42604d; font-size: 10px; }
-.midi-routing[data-running="true"] > summary > span:nth-child(2) { color: #006b42; }
-.midi-routing[open] > summary { border-bottom: 1px solid #b9ccbc; }
+.midi-routing > summary > span:nth-child(2) { flex: 1; color: var(--muted-text); font-size: 10px; }
+.midi-routing[data-running="true"] > summary > span:nth-child(2) { color: var(--accent); }
+.midi-routing[open] > summary { border-bottom: 1px solid var(--border); }
 .midi-routing-body { padding: 14px; }
 .midi-routing-heading, .midi-routing-actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .midi-routing-heading p { font-size: 10px; line-height: 1.5; max-width: 580px; margin: 0; }
 .midi-routing-heading button { flex-shrink: 0; }
 .midi-routing-actions { justify-content: start; flex-wrap: wrap; margin-top: 14px; }
 .midi-routing .performance-button { font-size: 10px; }
-.midi-bridge-start { margin-left: auto; background: #008351; color: white; border-color: #008351; }
-.midi-bridge-start:hover:enabled { background: #006b42; color: white; }
+.midi-bridge-start { margin-left: auto; background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+.midi-bridge-start:hover:enabled { background: var(--accent); color: var(--on-accent); }
 .midi-routes { display: grid; gap: 8px; margin-top: 10px; }
-.midi-route { min-width: 0; display: grid; grid-template-columns: 28px 1fr 1.8fr repeat(5, .65fr) 58px auto; gap: 8px; align-items: center; padding: 12px; margin: 0; border: 1px solid #b9ccbc; border-radius: 8px; background: white; }
+.midi-route { min-width: 0; display: grid; grid-template-columns: 28px 1fr 1.8fr repeat(5, .65fr) 58px auto; gap: 8px; align-items: center; padding: 12px; margin: 0; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); }
 .midi-route legend { padding: 0 5px; font-size: 10px; }
 .midi-route label { min-width: 0; display: grid; gap: 7px; font-size: 9px; }
-.midi-route input:not([type="checkbox"]), .midi-route select { width: 100%; min-width: 0; min-height: 34px; font: inherit; font-size: 10px; color: #174d36; background: white; border: 1px solid #a8b9ab; border-radius: 4px; padding: 5px; }
-.midi-route input[type="checkbox"] { width: 22px; height: 22px; accent-color: #008351; margin: 0; }
+.midi-route input:not([type="checkbox"]), .midi-route select { width: 100%; min-width: 0; min-height: 34px; font: inherit; font-size: 10px; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 5px; }
+.midi-route input[type="checkbox"] { width: 22px; height: 22px; accent-color: var(--accent); margin: 0; }
 .midi-routing-status { min-height: 16px; font-size: 10px; line-height: 1.5; }
-.midi-routing-help { font-size: 9px; line-height: 1.6; color: #42604d; margin-bottom: 0; }
+.midi-routing-help { font-size: 9px; line-height: 1.6; color: var(--muted-text); margin-bottom: 0; }
 @media (max-width: 1200px) {
   .midi-route { grid-template-columns: 28px 1.2fr 1.8fr 1fr 1fr; }
   .midi-route-note_min { grid-column: 2; }

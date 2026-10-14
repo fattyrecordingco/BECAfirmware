@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-    <meta name="theme-color" content="#f6f4ef">
+    <meta name="theme-color" content="#101719">
     <meta name="description" content="BECA plant instrument with an onboard web synth, live plant graph, MIDI monitor and sound design for phones and tablets.">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -19,7 +19,7 @@
     <header class="topbar">
       <a class="brand" href="#controller" aria-label="BECA controller home">
         <img src="./icons/wordmark.svg" alt="" aria-hidden="true">
-        <small>PHONE CONTROL</small>
+        <small>INSTRUMENT</small>
       </a>
       <button id="updateButton" class="update-button hidden" type="button">Update</button>
       <button id="installButton" class="icon-button hidden" type="button" aria-label="Install app" title="Install app">↓</button>
@@ -29,20 +29,45 @@
     </header>
 
     <main>
-      <section id="compatibilityNotice" class="notice warning hidden" role="status"></section>
       <section class="listen-panel panel" aria-labelledby="listenTitle">
-        <div><p class="eyebrow">BECA SOUND ENGINE</p><h2 id="listenTitle">Your device. Your sound.</h2>
+        <div><p class="eyebrow">AUDIO</p><h2 id="listenTitle">Monitor</h2>
           <p id="audioStatus" role="status">Loading the original BECA synth…</p>
-          <p class="instrument-caption">Use this device’s speaker or choose headphones / Bluetooth in system audio settings. Bluetooth may add delay.</p>
+          <p class="instrument-caption">Audio output follows your device’s sound settings.</p>
         </div>
         <div class="listen-actions">
           <button id="listenButton" class="connect-button" type="button" aria-pressed="false">Listen on this device</button>
-          <button id="panicButton" class="text-button" type="button">Silence all notes</button>
+          <button id="panicButton" class="text-button" type="button">Panic</button>
         </div>
       </section>
+        <article class="panel instrument-modes"><p class="eyebrow">INSTRUMENT</p><h2>Play mode</h2>
+          <div class="mode-buttons" role="group" aria-label="Instrument mode">
+            <button type="button" data-play-mode="0" aria-pressed="true">Notes</button>
+            <button type="button" data-play-mode="1" aria-pressed="false">Arpeggiator</button>
+            <button type="button" data-play-mode="2" aria-pressed="false">Chords</button>
+            <button type="button" data-play-mode="3" aria-pressed="false">Drums</button>
+          </div>
+
+        </article>
+        <div class="control-grid two-column">
+          <article class="panel master-card">
+            <div class="card-title"><div><p class="eyebrow">LEVEL</p><h2>Master volume</h2></div><output id="masterOutput" for="master">—</output></div>
+            <label class="sr-only" for="master">Master volume</label>
+            <input id="master" class="range" type="range" min="0" max="1" step="0.01" value="0.7" data-key="master" data-source="synth" disabled>
+            <div class="range-labels"><span>Quiet</span><span>Full</span></div>
+          </article>
+          <article class="panel action-card">
+            <p class="eyebrow">QUICK ACTIONS</p>
+            <div class="action-row">
+              <button id="muteButton" class="action-button" type="button" disabled><span class="action-icon" aria-hidden="true">◼</span><span>Mute</span></button>
+              <button id="testButton" class="action-button accent" type="button" disabled><span class="action-icon" aria-hidden="true">♪</span><span>Test sound</span></button>
+              <button id="refreshButton" class="action-button" type="button" disabled><span class="action-icon" aria-hidden="true">↻</span><span>Refresh</span></button>
+            </div>
+          </article>
+        </div>
+
       <section id="liveDeck" class="live-deck panel" aria-labelledby="signalTitle">
         <header class="live-deck-header">
-          <div><p class="eyebrow">LIVING SIGNAL / MIDI</p><h1 id="signalTitle">Plant activity</h1></div>
+          <div><p class="eyebrow">INPUT</p><h1 id="signalTitle">Plant activity</h1></div>
           <p id="connectionMessage" class="muted">Connect your Android phone to BECA with a USB-C data cable.</p>
         </header>
         <div class="live-deck-grid">
@@ -60,7 +85,7 @@
             </div>
           </section>
           <section class="live-midi" aria-labelledby="midiLeafTitle">
-            <div class="live-section-title"><span id="midiLeafTitle">MIDI NOTE GARDEN</span><span id="midiReadout" class="midi-readout">No notes</span></div>
+            <div class="live-section-title"><span id="midiLeafTitle">MIDI / ROOT</span><span id="midiReadout" class="midi-readout">No notes</span></div>
             <div id="midiLeaves" class="midi-leaves" role="radiogroup" aria-label="Root note selector and live MIDI activity"></div>
             <div class="sensitivity-control">
               <label for="sensitivity"><span>SENSITIVITY</span><output id="sensitivityOutput" for="sensitivity">—</output></label>
@@ -71,13 +96,126 @@
         </div>
       </section>
 
+      <section class="status-strip" aria-label="Device status">
+        <div><span>DEVICE</span><strong id="deviceStatus">Not connected</strong></div>
+        <div><span>OUTPUT</span><strong id="outputStatus">—</strong></div>
+        <div><span>PLANT</span><strong id="plantStatus">—</strong></div>
+        <div><span>LAST NOTE</span><strong id="noteStatus">—</strong></div>
+      </section>
+
+      <nav class="tabs" aria-label="Controller sections">
+        <button class="tab active" data-tab="controller" type="button">Controller</button>
+        <button class="tab" data-tab="synth" type="button">Synth</button>
+        <button class="tab" data-tab="performance" type="button">Performance</button>
+        <button class="tab" data-tab="settings" type="button">Settings</button>
+        <button class="tab" data-tab="console" type="button">Console</button>
+      </nav>
+
+      <section id="controller" class="tab-page active">
+        <article class="panel preset-card">
+          <div class="card-title"><div><p class="eyebrow">TIMBRE</p><h2>Preset</h2></div><span id="presetName" class="pill green">—</span></div>
+          <div id="presetGrid" class="preset-grid"></div>
+        </article>
+      </section>
+
+      <section id="synth" class="tab-page">
+        <div class="section-heading"><div><p class="eyebrow">BECA ENGINE</p><h2>Sound design</h2></div><button id="resetPreset" class="text-button" type="button" disabled>Reset preset</button></div>
+        <article class="panel expression-card" aria-labelledby="expressionTitle">
+          <div class="card-title"><div><p class="eyebrow">MODULATION</p><h2 id="expressionTitle">XY expression</h2></div><span class="pill green">2D</span></div>
+          <label class="playground-label" for="playgroundMode">Playground controls</label>
+          <select id="playgroundMode"><option value="tone">Tone / bite</option><option value="space">Delay / reverb</option><option value="envelope">Attack / release</option><option value="texture">Oscillator mix / detune</option></select>
+          <div id="expressionPad" class="expression-pad" tabindex="0" role="group" aria-label="Cutoff and resonance trackpad" aria-describedby="expressionHelp" aria-disabled="true">
+            <svg viewBox="0 0 400 220" preserveAspectRatio="none" aria-hidden="true"><path d="M100 0V220 M200 0V220 M300 0V220 M0 55H400 M0 110H400 M0 165H400"></path></svg>
+            <span class="pad-y-label">soft → sharp</span>
+            <span class="pad-x-label">dark → bright</span>
+            <span class="expression-crosshair" aria-hidden="true"></span>
+            <span class="expression-point" aria-hidden="true"></span>
+          </div>
+          <div class="expression-readout"><output id="expressionValues">Connect to shape sound</output><span>X / Y</span></div>
+          <p id="expressionHelp" class="instrument-caption">Drag to shape the synth. Connected settings also update BECA. Arrow keys move; Shift makes fine changes.</p>
+        </article>
+        <div id="synthControls" class="control-grid"></div>
+        <p class="instrument-caption">Drag knobs up or down. Use arrow keys for fine steps; Shift-drag for precision.</p>
+      </section>
+
+      <section id="performance" class="tab-page">
+        <div class="section-heading"><div><p class="eyebrow">PLANT RESPONSE</p><h2>Performance</h2></div><button id="randomizeButton" class="text-button" type="button" disabled>Randomize</button></div>
+        <div id="performanceControls" class="control-grid"></div>
+        <article class="panel arp-panel" data-modes="1" hidden><h2>Plant arpeggiator</h2>
+          <p class="instrument-caption">Browser arp: follows plant contour. Device AUX and MIDI use BECA’s pattern.</p>
+          <p id="arpReadout" role="status">Select Arpeggiator to explore the plant’s chord.</p>
+          <div id="arpControls" class="control-grid"></div>
+        </article>
+        <article class="panel preset-card" data-modes="3" hidden><h2>Drum parts</h2><div id="drumParts" class="drum-parts"></div></article>
+
+      </section>
+
+      <section id="console" class="tab-page">
+        <div class="section-heading"><div><p class="eyebrow">ADVANCED</p><h2>Serial console</h2></div><button id="clearConsole" class="text-button" type="button">Clear</button></div>
+        <article class="panel console-panel">
+          <div class="quick-commands" aria-label="Quick serial commands">
+            <button type="button" data-command="STATE">STATE</button><button type="button" data-command="PARAMS">PARAMS</button>
+            <button type="button" data-command="SYNTH">SYNTH</button><button type="button" data-command="PLANT">PLANT</button>
+            <button type="button" data-command="NOTES">NOTES</button><button type="button" data-command="PINS">PINS</button>
+          </div>
+          <div id="consoleLog" class="console-log" role="log" aria-live="polite"><p class="log-system">Ready. Connect BECA to begin.</p></div>
+          <form id="commandForm" class="command-form">
+            <label class="sr-only" for="commandInput">Serial command</label>
+            <input id="commandInput" type="text" autocomplete="off" placeholder="SET cutoff 4200" disabled>
+            <button type="submit" disabled>Send</button>
+          </form>
+        </article>
+      </section>
+      <section id="settings" class="tab-page">
+        <article class="panel wifi-player-settings">
+          <label for="themeSelect">Appearance</label>
+          <select id="themeSelect" class="theme-select" aria-label="Appearance">
+            <option value="dark">Dark</option>
+            <option value="light">Light</option>
+          </select>
+        </article>
+      <section id="compatibilityNotice" class="notice warning hidden" role="status"></section>
+
+        <div class="section-heading"><div><p class="eyebrow">ROUTING</p><h2>Device output</h2></div><span id="auxReadiness" class="pill">Waiting for device</span></div>
+        <div id="outputModes" class="output-grid" role="radiogroup" aria-label="Audio output mode"></div>
+
+
+        <article class="panel wifi-player-settings">
+          <h2>Wi-Fi instrument</h2>
+          <p class="instrument-caption">Join BECA’s Wi-Fi or the same home network / hotspot. Enter BECA’s address, then Connect Wi-Fi and Listen on the device page.</p>
+          <form id="wifiOpenForm" class="wifi-settings-grid">
+            <label for="wifiHost">BECA IP address or hostname</label>
+            <input id="wifiHost" value="192.168.4.1" autocapitalize="none" autocomplete="off" spellcheck="false" required>
+            <button id="openWifiPlayer" class="text-button" type="submit">Open Wi-Fi instrument</button>
+          </form>
+        </article>
+      <details id="networkSettings" class="connection-help panel">
+        <summary>Wi-Fi &amp; phone hotspot</summary>
+        <p>Wi-Fi MAC: <strong id="wifiMac">Connect BECA to view</strong> <button id="copyWifiMac" class="text-button" type="button" disabled>Copy MAC</button></p>
+        <p class="instrument-caption">Use this address for manual home-router registration. It is BECA’s Wi-Fi address, separate from its setup access point and Bluetooth.</p>
+        <p id="wifiNetwork">Connect BECA to view its network.</p>
+        <form id="wifiForm" class="wifi-settings-grid">
+          <label for="hotspotSsid">Home Wi-Fi or phone hotspot name (SSID)</label>
+          <input id="hotspotSsid" maxlength="32" autocomplete="off" autocapitalize="none" spellcheck="false" required>
+          <label for="hotspotPass">Wi-Fi / hotspot password</label>
+          <input id="hotspotPass" type="password" minlength="8" maxlength="63" autocomplete="off" required>
+          <button id="saveHotspot" class="text-button" type="submit" disabled>Save Wi-Fi &amp; restart BECA</button>
+        </form>
+        <p id="wifiSettingsStatus" role="status">Connect Android USB to save here, or use BECA’s Wi-Fi setup page.</p>
+        <ol>
+          <li>For a hotspot, turn it on in your phone’s system settings. Choose 2.4 GHz on Android; on iPhone enable <a href="https://support.apple.com/en-gb/119837" target="_blank" rel="noopener">Maximise Compatibility</a> when available.</li>
+          <li>On Android, connect BECA by USB, enter the hotspot name and password above, then save. Home Wi-Fi uses the same form. BECA tests the connection before saving.</li>
+          <li>On iPhone/iPad or without USB, join BECA’s setup Wi-Fi and open <a id="wifiSetupLink" href="http://192.168.4.1/setup" target="_blank" rel="noopener">BECA Wi-Fi settings</a>. If this phone cannot run a hotspot while joined to BECA, use a second device for setup while this phone hosts the hotspot.</li>
+        </ol>
+        <p class="instrument-caption">Keep BECA powered and the hotspot enabled. After saving, reconnect the app; Wi-Fi controls use BECA’s new IP address from the router/hotspot client list. Some phones isolate hotspot clients; Android USB control remains available.</p>
+      </details>
       <details id="appleConnectionHelp" class="connection-help">
         <summary>Connect directly on iPhone, iPad or Mac</summary>
         <section class="panel">
           <h2>BECA without a computer</h2>
           <p>Power BECA from a charger or power bank. Join its setup Wi-Fi, then <a href="http://192.168.4.1/" target="_blank" rel="noopener">open its Wi-Fi controller</a> in Safari. If BECA has joined your router, open its current local IP address instead. This controller changes BECA’s settings and AUX sound directly.</p>
           <p>For live sound in a native music app, choose <strong>BLE MIDI</strong> output on BECA, open that app’s <strong>Bluetooth MIDI</strong> panel and connect <strong>BECA BLE-MIDI</strong>. On Mac, use Audio MIDI Setup → MIDI Studio → Bluetooth. Pair through the MIDI panel.</p>
-          <p>The BECA Apple app combines these direct Wi-Fi controls with native MIDI and the BECA synth. It requires installation of the native app; installing this web page on the Home Screen does not add MIDI access. The browser synth below uses the computer link for live input.</p>
+          <p>The BECA Apple app combines these direct Wi-Fi controls with native MIDI and the BECA synth. It requires installation of the native app; installing this web page on the Home Screen does not add MIDI access. For browser sound over Wi-Fi, open BECA’s /play/ instrument, then Connect Wi-Fi and Listen.</p>
           <p>Allow Local Network and Bluetooth when prompted. Keep the app visible while playing. If the setup network reports no internet, stay connected and open Safari manually.</p>
         </section>
       </details>
@@ -86,7 +224,7 @@
         <div class="usb-guide-copy">
           <p class="eyebrow">DIRECT USB</p>
           <h2 id="usbGuideTitle">Connect BECA</h2>
-          <p>On Android or a supported desktop browser, connect BECA and tap <strong>Connect USB</strong>. On iPad/iPhone, browsers cannot access BECA’s USB serial adapter, even with a USB-C cable. Use the computer link below for live input.</p>
+          <p>On Android or a supported desktop browser, connect BECA and tap <strong>Connect USB</strong>. On iPad/iPhone, browsers cannot access BECA’s USB serial adapter, even with a USB-C cable. Open BECA’s Wi-Fi instrument from Settings, or use the computer link for live input.</p>
         </div>
         <div class="usb-checks" aria-label="USB connection diagnostics">
           <div><span>Browser</span><strong id="browserStatus">Checking…</strong></div>
@@ -100,7 +238,7 @@
           <label for="connectionIssue">What is happening?</label>
           <select id="connectionIssue"><option value="missing">BECA has power but is not listed</option><option value="power">BECA has no lights / no power</option><option value="lost">Connection stops during use</option></select>
           <p id="connectionAdvice" role="status"></p>
-          <p>Phone/OS names alone do not guarantee compatibility. Direct USB needs a working host/power connection and browser access. Modern iPhone/iPad browsers can play the synth and use the computer link, but cannot access BECA’s USB serial port directly.</p>
+          <p>Phone/OS names alone do not guarantee compatibility. Direct USB needs a working host/power connection and browser access. iPhone/iPad browsers can play the synth over BECA’s Wi-Fi instrument or the computer link.</p>
         </div>
         <details class="usb-details">
           <summary>Connection help</summary>
@@ -131,109 +269,13 @@
         <p id="linkStatus" role="status">Not linked. iPad browsers cannot connect directly to BECA’s USB serial port.</p>
       </details>
 
-      <section class="status-strip" aria-label="Device status">
-        <div><span>DEVICE</span><strong id="deviceStatus">Not connected</strong></div>
-        <div><span>OUTPUT</span><strong id="outputStatus">—</strong></div>
-        <div><span>PLANT</span><strong id="plantStatus">—</strong></div>
-        <div><span>LAST NOTE</span><strong id="noteStatus">—</strong></div>
-      </section>
-
-      <nav class="tabs" aria-label="Controller sections">
-        <button class="tab active" data-tab="controller" type="button">Controller</button>
-        <button class="tab" data-tab="synth" type="button">Synth</button>
-        <button class="tab" data-tab="performance" type="button">Performance</button>
-        <button class="tab" data-tab="console" type="button">Console</button>
-      </nav>
-
-      <section id="controller" class="tab-page active">
-        <article class="panel instrument-modes"><p class="eyebrow">INSTRUMENT</p><h2>How the plant plays</h2>
-          <div class="mode-buttons" role="group" aria-label="Instrument mode">
-            <button type="button" data-play-mode="0" aria-pressed="true">Notes</button>
-            <button type="button" data-play-mode="1" aria-pressed="false">Arpeggiator</button>
-            <button type="button" data-play-mode="2" aria-pressed="false">Chords</button>
-            <button type="button" data-play-mode="3" aria-pressed="false">Drums</button>
-          </div>
-          <p class="instrument-caption">Choose a mode, then Test sound. Connected mode changes also update BECA.</p>
-        </article>
-        <div class="section-heading"><div><p class="eyebrow">ROUTING</p><h2>Audio output</h2></div><span id="auxReadiness" class="pill">Waiting for device</span></div>
-        <div id="outputModes" class="output-grid" role="radiogroup" aria-label="Audio output mode"></div>
-
-        <div class="control-grid two-column">
-          <article class="panel master-card">
-            <div class="card-title"><div><p class="eyebrow">LEVEL</p><h2>Master volume</h2></div><output id="masterOutput" for="master">—</output></div>
-            <label class="sr-only" for="master">Master volume</label>
-            <input id="master" class="range" type="range" min="0" max="1" step="0.01" value="0.7" data-key="master" data-source="synth" disabled>
-            <div class="range-labels"><span>Quiet</span><span>Full</span></div>
-          </article>
-          <article class="panel action-card">
-            <p class="eyebrow">QUICK ACTIONS</p>
-            <div class="action-row">
-              <button id="muteButton" class="action-button" type="button" disabled><span class="action-icon" aria-hidden="true">◼</span><span>Mute</span></button>
-              <button id="testButton" class="action-button accent" type="button" disabled><span class="action-icon" aria-hidden="true">♪</span><span>Test sound</span></button>
-              <button id="refreshButton" class="action-button" type="button" disabled><span class="action-icon" aria-hidden="true">↻</span><span>Refresh</span></button>
-            </div>
-          </article>
-        </div>
-
-        <article class="panel preset-card">
-          <div class="card-title"><div><p class="eyebrow">TIMBRE</p><h2>Synth preset</h2></div><span id="presetName" class="pill green">—</span></div>
-          <div id="presetGrid" class="preset-grid"></div>
-        </article>
-      </section>
-
-      <section id="synth" class="tab-page">
-        <div class="section-heading"><div><p class="eyebrow">BECA ENGINE</p><h2>Sound design</h2></div><button id="resetPreset" class="text-button" type="button" disabled>Reset preset</button></div>
-        <article class="panel expression-card" aria-labelledby="expressionTitle">
-          <div class="card-title"><div><p class="eyebrow">TOUCH THE SOUND</p><h2 id="expressionTitle">Sound playground</h2></div><span class="pill green">2D</span></div>
-          <label class="playground-label" for="playgroundMode">Playground controls</label>
-          <select id="playgroundMode"><option value="tone">Tone / bite</option><option value="space">Delay / reverb</option><option value="envelope">Attack / release</option><option value="texture">Oscillator mix / detune</option></select>
-          <div id="expressionPad" class="expression-pad" tabindex="0" role="group" aria-label="Cutoff and resonance trackpad" aria-describedby="expressionHelp" aria-disabled="true">
-            <svg viewBox="0 0 400 220" preserveAspectRatio="none" aria-hidden="true"><path d="M100 0V220 M200 0V220 M300 0V220 M0 55H400 M0 110H400 M0 165H400"></path></svg>
-            <span class="pad-y-label">soft → sharp</span>
-            <span class="pad-x-label">dark → bright</span>
-            <span class="expression-crosshair" aria-hidden="true"></span>
-            <span class="expression-point" aria-hidden="true"></span>
-          </div>
-          <div class="expression-readout"><output id="expressionValues">Connect to shape sound</output><span>X / Y</span></div>
-          <p id="expressionHelp" class="instrument-caption">Drag to shape the synth. Connected settings also update BECA. Arrow keys move; Shift makes fine changes.</p>
-        </article>
-        <div id="synthControls" class="control-grid"></div>
-        <p class="instrument-caption">Drag knobs up or down. Use arrow keys for fine steps; Shift-drag for precision.</p>
-      </section>
-
-      <section id="performance" class="tab-page">
-        <div class="section-heading"><div><p class="eyebrow">PLANT RESPONSE</p><h2>Performance</h2></div><button id="randomizeButton" class="text-button" type="button" disabled>Randomize</button></div>
-        <div id="performanceControls" class="control-grid"></div>
-        <article class="panel arp-panel"><h2>Plant arpeggiator</h2>
-          <p class="instrument-caption">For sound on this phone or tablet. BECA provides tempo, swing and note gates; the plant’s energy selects a chord in your scale. Rising and falling signals move through its notes; sharper turns skip chord tones. AUX and external MIDI keep the firmware’s original pattern.</p>
-          <p id="arpReadout" role="status">Select Arpeggiator to explore the plant’s chord.</p>
-          <div id="arpControls" class="control-grid"></div>
-        </article>
-        <article class="panel preset-card"><h2>Drum parts</h2><div id="drumParts" class="drum-parts"></div></article>
-        <div class="section-heading"><div><p class="eyebrow">CONNECTED BECA</p><h2>Device settings</h2></div></div>
+        <div class="section-heading"><h2>Device</h2></div>
         <div id="deviceControls" class="control-grid"></div>
-      </section>
-
-      <section id="console" class="tab-page">
-        <div class="section-heading"><div><p class="eyebrow">ADVANCED</p><h2>Serial console</h2></div><button id="clearConsole" class="text-button" type="button">Clear</button></div>
-        <article class="panel console-panel">
-          <div class="quick-commands" aria-label="Quick serial commands">
-            <button type="button" data-command="STATE">STATE</button><button type="button" data-command="PARAMS">PARAMS</button>
-            <button type="button" data-command="SYNTH">SYNTH</button><button type="button" data-command="PLANT">PLANT</button>
-            <button type="button" data-command="NOTES">NOTES</button><button type="button" data-command="PINS">PINS</button>
-          </div>
-          <div id="consoleLog" class="console-log" role="log" aria-live="polite"><p class="log-system">Ready. Connect BECA to begin.</p></div>
-          <form id="commandForm" class="command-form">
-            <label class="sr-only" for="commandInput">Serial command</label>
-            <input id="commandInput" type="text" autocomplete="off" placeholder="SET cutoff 4200" disabled>
-            <button type="submit" disabled>Send</button>
-          </form>
-        </article>
       </section>
     </main>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
-    <footer><span>BECA phone control</span><span id="appVersion">v1.6.0</span></footer>
+    <footer><span>BECA phone control</span><span id="appVersion">v1.7.0</span></footer>
     <script type="module" src="./app.js"></script>
   </body>
 </html>

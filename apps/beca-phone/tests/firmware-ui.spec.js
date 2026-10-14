@@ -25,6 +25,7 @@ test("firmware controller detects stalled SSE and recovers after Safari backgrou
     const payloads = {
       "/api/params": { modes: ["Notes", "Arp", "Chords", "Drums"], scales: ["Major"], synth_presets: ["Warm Pad"], time_signatures: ["4-4"], output_modes: ["BLE MIDI", "Serial MIDI", "Aux audio", "Serial MIDI + Aux", "Wi-Fi MIDI"] },
       "/effects": { list: ["Flow"] }, "/palettes": { list: ["Forest"] },
+      "/api/info": { sta_mac: "AA:BB:CC:11:22:33" },
       "/api/state": state, "/api/synth": synth, "/api/notes": { notes: [], vel: 0 },
       "/api/drum": { hit: 0, sel: 255 }, "/api/plant": { value: 0.42 },
       "/api/live": { state, notes: { notes: [], vel: 0 }, plant: { value: 0.42 }, drum: { hit: 0, sel: 255 } }
@@ -34,6 +35,7 @@ test("firmware controller detects stalled SSE and recovers after Safari backgrou
     return route.fulfill({ status: 404, body: "" });
   });
   await page.goto("/firmware");
+  await expect(page.locator("#device-wifi-mac")).toHaveText("AA:BB:CC:11:22:33");
   await expect.poll(() => page.evaluate(() => window.__streams.length)).toBe(1);
   await page.evaluate(() => window.__streams[0].emit("scope", "0.42"));
   await expect.poll(() => liveRequests, { timeout: 9000 }).toBeGreaterThan(0);

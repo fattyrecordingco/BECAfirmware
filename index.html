@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>BECA Control</title>
     <style>
+      [hidden] { display: none !important; }
       :root {
         color-scheme: light;
         --bg: #edf3ed;
@@ -789,6 +790,26 @@
           grid-template-columns: 1fr 1fr;
         }
       }
+
+      /* Compact instrument surface; the scope and MIDI remain live in every mode. */
+      :root { color-scheme: dark; --bg: #101719; --bg-deep: #101719; --panel: #182225; --panel-soft: #182225; --edge: #354348; --edge-strong: #45575c; --accent: #65d4d4; --accent-strong: #a5ecec; --accent-soft: #22383c; --text: #e4eeee; --text-soft: #abbfc3; --muted: #354348; --muted-deep: #45575c; --radius-xl: 12px; --radius-lg: 6px; --radius-md: 5px; --radius-sm: 4px; --shadow: none; --shadow-soft: none; }
+      body, .surface, .glass-panel { background: var(--bg); }
+      body::before, .surface::before, .flower-wrap { display: none; }
+      .beca-app { padding: 16px; }
+      .surface { padding: 20px; gap: 18px; }
+      .glass-panel { background: var(--panel); padding: 14px; }
+      .control-card, .control-card.is-featured { background: var(--panel); min-height: 90px; padding: 12px; }
+      .control-card select, .control-card input[type="number"], .field-inline select, .field-inline input[type="number"], .segmented button, .toggle-button, .action-button, .status-chip, .drum-button, .pill, .mode-chip, .inline-chip, .mode-button { background: #223034; color: var(--text); border-color: var(--edge-strong); border-radius: 5px; }
+      .segmented button.is-active, .toggle-button.is-active, .action-button.primary, .drum-button.is-active { background: var(--accent); color: #101719; border-color: var(--accent); }
+      .control-value { color: #f4c27c; }
+      .drum-button.is-active .drum-state { color: #223034; }
+      .mode-button { text-decoration: none; }
+      .panel-copy { font-size: 12px; }
+      .panel-title { font-size: 16px; }
+      .plant-wrap, .plant-chart, .chart-frame, .stat-card, .note-cell { background: #101719; border-color: var(--edge); }
+      .toggle-button.warn { color: #f4c27c; }
+      .dashboard { gap: 16px; }
+      @media (max-width: 600px) { .beca-app { padding: 8px; } .surface { padding: 12px; } .surface-header { flex-wrap: wrap; } }
     </style>
   </head>
   <body>
@@ -808,11 +829,8 @@
             </div>
             <div class="brand-copy">
               <span class="eyebrow">Plant Music Interface</span>
-              <h1>BECA Unified Control</h1>
-              <p>
-                One responsive surface for plant input, music generation, board LEDs, output
-                routing, and synth shaping. Settings opens setup while the live controls stay here.
-              </p>
+              <h1>BECA Control</h1>
+
             </div>
           </div>
 
@@ -822,7 +840,7 @@
               <div class="pill" id="mode-pill">Mode: --</div>
               <div class="pill" id="output-pill">Output: --</div>
             </div>
-            <div class="mode-buttons">
+            <div class="mode-buttons"><a class="mode-button" href="/play/" aria-label="Play in browser" title="Play in browser">Play</a>
               <button class="mode-button pulse" id="activity-button" type="button" aria-label="Live activity">
                 <span class="icon" aria-hidden="true">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
@@ -848,7 +866,7 @@
               <div class="panel-head">
                 <div>
                   <div class="card-label">Plant input</div>
-                  <h2 class="panel-title">Responsive live monitor</h2>
+                  <h2 class="panel-title">Plant scope</h2>
                 </div>
                 <div class="mode-chip" id="scope-pill">Signal 0.000</div>
               </div>
@@ -877,7 +895,7 @@
             <section class="glass-panel">
               <div class="note-head">
                 <div>
-                  <div class="card-label">Note or chord played</div>
+                  <div class="card-label">MIDI</div>
                   <h2 class="panel-title">Pitch activity</h2>
                 </div>
                 <div class="note-readout" id="note-readout">Waiting for notes...</div>
@@ -892,16 +910,14 @@
                   <span class="control-value" id="value-sens">0.00</span>
                 </div>
                 <input id="control-sens" type="range" min="0" max="0.5" step="0.01" />
-                <p class="panel-copy">Balance how strongly plant movement drives note energy.</p>
               </article>
 
               <article class="control-card">
                 <div class="control-label-row">
-                  <span class="control-name">preset</span>
+                  <span class="control-name">playing mode</span>
                   <span class="control-value" id="value-mode">--</span>
                 </div>
                 <select id="control-mode"></select>
-                <p class="panel-copy">Switch between notes, arp, chords, and drums without leaving the live page.</p>
               </article>
 
               <article class="control-card">
@@ -910,7 +926,6 @@
                   <span class="control-value" id="value-scale">--</span>
                 </div>
                 <select id="control-scale"></select>
-                <p class="panel-copy">Keep harmony musical while the plant keeps moving.</p>
               </article>
 
               <article class="control-card">
@@ -919,7 +934,6 @@
                   <span class="control-value" id="value-root">--</span>
                 </div>
                 <select id="control-root"></select>
-                <p class="panel-copy">Pin the harmonic center for the current scale.</p>
               </article>
 
               <article class="control-card">
@@ -928,7 +942,6 @@
                   <span class="control-value" id="value-bpm">--</span>
                 </div>
                 <input id="control-bpm" type="range" min="20" max="240" step="5" />
-                <p class="panel-copy">Move from slow ambient drift to punchier rhythmic motion.</p>
               </article>
 
               <article class="control-card">
@@ -946,7 +959,6 @@
                   <span class="control-value" id="value-swing">0%</span>
                 </div>
                 <input id="control-swing" type="range" min="0" max="60" step="1" />
-                <p class="panel-copy">Introduce groove without losing timing stability.</p>
               </article>
 
               <article class="control-card">
@@ -955,7 +967,6 @@
                   <span class="control-value" id="value-rest">0%</span>
                 </div>
                 <input id="control-rest" type="range" min="0" max="0.8" step="0.01" />
-                <p class="panel-copy">Create space in the phrases and let the board breathe.</p>
               </article>
 
               <article class="control-card">
@@ -968,7 +979,6 @@
                   <span class="inline-chip">to</span>
                   <select id="control-hi"></select>
                 </div>
-                <p class="panel-copy">Keep pitch output inside the range that feels right for the performance.</p>
               </article>
 
               <article class="control-card">
@@ -986,7 +996,7 @@
                   <span class="control-value" id="value-norep">OFF</span>
                 </div>
                 <div class="toggle-row">
-                  <button class="toggle-button" id="control-norep" type="button">Keep notes moving</button>
+                  <button class="toggle-button" id="control-norep" type="button">Avoid repeated notes</button>
                 </div>
                 <p class="panel-copy">Reduce repeated notes when you want more melodic variation.</p>
               </article>
@@ -1000,15 +1010,14 @@
                   <button class="action-button primary" id="random-button" type="button">Randomize</button>
                   <button class="action-button" id="refresh-button" type="button">Refresh</button>
                 </div>
-                <p class="panel-copy">Shuffle the live rig or reload the page state without leaving the session.</p>
               </article>
             </section>
 
             <details class="glass-panel advanced-panel" open>
               <summary>
                 <div>
-                  <div class="card-label">Aux synth and rhythm</div>
-                  <h2 class="panel-title">Advanced voice shaping</h2>
+                  <div class="card-label">Aux synth</div>
+                  <h2 class="panel-title">Sound controls</h2>
                 </div>
                 <div class="mode-chip" id="aux-pill">Aux status: --</div>
               </summary>
@@ -1107,7 +1116,7 @@
               <div class="panel-head-inline">
                 <div>
                   <div class="card-label">Board LEDs</div>
-                  <h2 class="panel-title">Linked LED surface</h2>
+                  <h2 class="panel-title">Device lights</h2>
                 </div>
                 <div class="mode-chip" id="led-pill">LEDs idle</div>
               </div>
@@ -1169,8 +1178,8 @@
             <section class="glass-panel output-card">
               <div class="panel-head-inline">
                 <div>
-                  <div class="card-label">Routing and safety</div>
-                  <h2 class="panel-title">Output + sync</h2>
+                  <div class="card-label">Routing</div>
+                  <h2 class="panel-title">Output & clock</h2>
                 </div>
               </div>
 
@@ -1222,11 +1231,12 @@
               <div class="panel-head-inline">
                 <div>
                   <div class="card-label">Board identity</div>
-                  <h2 class="panel-title">Session summary</h2>
+                  <h2 class="panel-title">Connection</h2>
                 </div>
               </div>
+              <p class="panel-copy">Wi-Fi MAC: <strong id="device-wifi-mac">Connect BECA to view</strong><br>Use this address for manual router registration. <a href="/setup">Wi-Fi settings</a></p>
               <p class="panel-copy" id="summary-copy">
-                Waiting for the current BECA state so the desktop app and browser board view stay in sync.
+                Waiting for BECA.
               </p>
               <div class="flower-wrap" aria-hidden="true">
                 <div class="flower">
@@ -1240,7 +1250,7 @@
         </div>
 
         <div class="footer-note">
-          <p>Settings opens setup. The rest of the board stays controllable from this page.</p>
+
           <div class="banner" id="banner">Loading live state…</div>
         </div>
       </section>
@@ -1491,15 +1501,15 @@
           el.chart.innerHTML = `
             <defs>
               <linearGradient id="line-gradient" x1="0" x2="1" y1="0" y2="0">
-                <stop offset="0%" stop-color="#008351" />
-                <stop offset="100%" stop-color="#88c439" />
+                <stop offset="0%" stop-color="#65d4d4" />
+                <stop offset="100%" stop-color="#65d4d4" />
               </linearGradient>
               <linearGradient id="fill-gradient" x1="0" x2="0" y1="0" y2="1">
-                <stop offset="0%" stop-color="rgba(0,131,81,0.22)" />
+                <stop offset="0%" stop-color="rgba(101,212,212,0.18)" />
                 <stop offset="100%" stop-color="rgba(0,131,81,0.02)" />
               </linearGradient>
             </defs>
-            <rect x="0" y="0" width="${width}" height="${height}" fill="#ffffff" />
+            <rect x="0" y="0" width="${width}" height="${height}" fill="#101719" />
             <g opacity="0.24" stroke="#a9b8ae" stroke-width="1">
               <line x1="0" x2="${width}" y1="52" y2="52" />
               <line x1="0" x2="${width}" y1="104" y2="104" />
@@ -1845,6 +1855,10 @@
           state.auxReady = runtime.aux_ready !== 0;
           state.syncLocked = runtime.daw_lock !== 0;
           const modeName = state.params?.modes?.[runtime.mode] || "Unknown";
+          const drums = Number(runtime.mode) === 3;
+          el.drumGrid.closest(".control-card").hidden = !drums || Number(runtime.outputmode) === 2;
+          for (const id of ["control-scale", "control-root", "control-lo"]) document.getElementById(id).closest(".control-card").hidden = drums;
+          for (const id of ["control-rest", "control-norep"]) document.getElementById(id).closest(".control-card").hidden = Number(runtime.mode) !== 0;
           const scaleName = state.params?.scales?.[runtime.scale] || "Unknown";
           const rootName = NOTE_NAMES[runtime.root] || "--";
           const outputName = OUTPUT_LABELS[runtime.outputmode] || "--";
@@ -1883,8 +1897,7 @@
             ? "Aux: ready"
             : `Aux: wait ${runtime.aux_wait_ms || 0} ms`;
           el.summaryCopy.textContent =
-            `${modeName} in ${scaleName} on ${rootName}, routed to ${outputName}. ` +
-            `${state.auxReady ? "Aux engine is available." : "Aux engine is cooling down before it can be selected."}`;
+            `${modeName} · ${rootName} ${scaleName} · ${outputName}`;
           el.fxChip.textContent = `Effect: ${runtime.fxname || state.effects[runtime.fx] || "--"}`;
           el.paletteChip.textContent = `Palette: ${runtime.palname || state.palettes[runtime.pal] || "--"}`;
           el.brightnessChip.textContent = `Brightness: ${runtime.bright}`;
@@ -1915,7 +1928,7 @@
           el.muteButton.classList.toggle("is-active", Boolean(runtime.io_muted));
           el.muteButton.textContent = runtime.io_muted ? "Muted" : "Mute outputs";
           el.norepButton.classList.toggle("is-active", Boolean(runtime.nr));
-          el.norepButton.textContent = runtime.nr ? "No repeat ON" : "Keep notes moving";
+          el.norepButton.textContent = runtime.nr ? "No repeat ON" : "Avoid repeated notes";
 
           updateSegmented(el.outputGroup, runtime.outputmode);
           el.outputGroup.querySelectorAll("button").forEach((button) => {
@@ -2054,7 +2067,23 @@
           tick();
         }
 
+        let identityBusy = false;
+        let identityLastAt = 0;
+        async function refreshIdentity() {
+          if (identityBusy || Date.now() - identityLastAt < 3000) return;
+          identityBusy = true;
+          identityLastAt = Date.now();
+          const label = document.querySelector("#device-wifi-mac");
+          try {
+            const info = await getJson("/api/info");
+            const value = info.sta_mac || "Unavailable on this firmware";
+            if (label.textContent !== value) label.textContent = value;
+          } catch { label.textContent = "Unavailable — check Wi-Fi settings"; }
+          finally { identityBusy = false; }
+        }
+
         async function refreshAll() {
+          refreshIdentity();
           setConnection("Refreshing BECA...", "status-live");
           setBanner("Refreshing live state…");
           try {
@@ -2158,7 +2187,14 @@
             el.valueVi.textContent = String(value);
           });
 
-          el.controlMode.addEventListener("change", () => postSet("mode", el.controlMode.value));
+          el.controlMode.addEventListener("change", async () => {
+            const previous = state.runtime;
+            const mode = Number(el.controlMode.value);
+            state.runtime = { ...previous, mode };
+            renderRuntime();
+            try { await postSet("mode", mode); }
+            catch { applyStatePayload(previous); }
+          });
           el.controlScale.addEventListener("change", () => postSet("scale", el.controlScale.value));
           el.controlRoot.addEventListener("change", () => postSet("root", el.controlRoot.value));
           el.controlTs.addEventListener("change", () => postSet("ts", el.controlTs.value));
@@ -2281,9 +2317,6 @@
         }
 
         function seedVisuals() {
-          for (let i = 0; i < 12; i += 1) {
-            state.plantPoints[i] = 0.35 + Math.sin(i * 0.45) * 0.08;
-          }
           renderChart();
           renderNoteStrip();
           renderLedStack();

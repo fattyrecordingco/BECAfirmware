@@ -35,7 +35,7 @@ const toggle = (key, label) => ({ key, label, toggle: true });
 
 const GROUPS = [
 
-  { title: "Plant & timing", controls: [
+  { title: "Input & clock", controls: [
 
     select("outputmode", "Output", ["BLE MIDI", "Serial MIDI", "Aux audio", "Serial MIDI + Aux", "Wi-Fi MIDI"]),
 
@@ -55,7 +55,7 @@ const GROUPS = [
 
   ] },
 
-  { title: "Harmony & rhythm", controls: [
+  { title: "Notes", controls: [
 
     select("scale", "Scale", "scales"), select("root", "Root note", NOTES),
 
@@ -75,7 +75,7 @@ const GROUPS = [
 
   ] },
 
-  { title: "Aux · oscillators", synth: true, controls: [
+  { title: "Oscillators", synth: true, controls: [
 
     select("wave_a", "Oscillator A", WAVEFORMS), select("wave_b", "Oscillator B", WAVEFORMS),
 
@@ -87,7 +87,7 @@ const GROUPS = [
 
   ] },
 
-  { title: "Aux · envelope & filter", synth: true, controls: [
+  { title: "Envelope & filter", synth: true, controls: [
 
     range("attack", "Attack", 0, 5, 0.01, "s"), range("decay", "Decay", 0, 5, 0.01, "s"),
 
@@ -99,7 +99,7 @@ const GROUPS = [
 
   ] },
 
-  { title: "Aux · space & character", synth: true, controls: [
+  { title: "Effects", synth: true, controls: [
 
     range("reverb", "Reverb", 0, 1), range("delay_ms", "Delay time", 0, 800, 1, "ms"),
 
@@ -141,7 +141,7 @@ export function createPerformancePage({ invoke, getTarget }) {
 
       <header class="performance-header">
 
-        <div class="performance-identity"><div class="performance-logo" aria-hidden="true"></div><div><span class="performance-brand">BECA / LIVE INSTRUMENT</span><h1>Performance</h1></div></div>
+        <div class="performance-identity"><div class="performance-logo" aria-hidden="true"></div><div><span class="performance-brand">BECA</span><h1>Performance</h1></div></div>
 
         <button type="button" class="performance-button" data-performance-reconnect>Reconnect</button>
 
@@ -150,6 +150,8 @@ export function createPerformancePage({ invoke, getTarget }) {
       <div class="performance-monitor" aria-label="Live signal">
 
         <span data-performance-device>No device selected</span>
+
+        <span>Wi-Fi MAC: <strong data-performance-mac>Connect BECA to view</strong></span>
 
         <span data-performance-signal>Signal —</span><span data-performance-raw>Sensor —</span>
 
@@ -165,11 +167,11 @@ export function createPerformancePage({ invoke, getTarget }) {
 
       <p class="performance-sine-hint" data-performance-sine hidden>Raw Sensor Sine: sensor 1's ADC number is the frequency in Hz, updated on the device. Use Aux audio or Serial MIDI + Aux to hear it. Master volume applies; envelope, filter and effects are bypassed.</p>
 
-      <div class="performance-controls-heading"><h2>Shape the performance</h2><p>Type a value for precision.<br>Shift + arrows for fine moves · double-click a slider to reset.</p></div>
+      <div class="performance-controls-heading"><h2>Sound controls</h2><p>Type a value for precision.<br>Shift + arrows for fine moves · double-click a slider to reset.</p></div>
 
       <div class="performance-grid"></div>
 
-      <details class="performance-diagnostics"><summary>Signal & connection notes</summary><p data-performance-health>Local assistant: waiting for fresh plant data.</p></details>
+      <details class="performance-diagnostics"><summary>Connection details</summary><p data-performance-health>Waiting for plant data.</p></details>
 
     </div>`;
 
@@ -261,7 +263,7 @@ export function createPerformancePage({ invoke, getTarget }) {
 
   function showHealth(result) {
 
-    text(screen.querySelector("[data-performance-health]"), `Local assistant: ${result.message}`);
+    text(screen.querySelector("[data-performance-health]"), result.message);
 
     retryMs = result.ok ? SNAPSHOT_INTERVAL_MS : result.retryMs;
 
@@ -310,6 +312,7 @@ export function createPerformancePage({ invoke, getTarget }) {
     if (!control.options && !control.toggle) field.input.style.setProperty("--fill", `${Math.max(0, Math.min(100, (Number(value) - Number(field.input.min)) / (Number(field.input.max) - Number(field.input.min)) * 100))}%`);
 
     refreshInstrument();
+    if (control.key === "mode" || control.key === "outputmode") refreshMode();
 
   }
 
@@ -498,8 +501,9 @@ export function createPerformancePage({ invoke, getTarget }) {
   drumSection.className = "performance-midi-drums";
 
   drumSection.setAttribute("aria-label", "MIDI drums");
+  drumSection.hidden = true;
 
-  drumSection.innerHTML = '<div><h2>MIDI drums <span>CH 10</span></h2><p>Enable percussion parts for your external drum instrument.</p></div>';
+  drumSection.innerHTML = '<div><h2>Drum machine <span>CH 10</span></h2><p>Enabled parts</p></div>';
 
   drumSection.appendChild(drumGroup);
 
@@ -510,7 +514,7 @@ export function createPerformancePage({ invoke, getTarget }) {
 
   const liveStrip = screen.querySelector(".performance-live-strip");
 
-  for (const key of ["master", "bpm", "outputmode"]) liveStrip.insertBefore(fields.get(key).input.closest(".performance-field"), liveStrip.lastElementChild);
+  for (const key of ["mode", "master", "bpm", "outputmode"]) liveStrip.insertBefore(fields.get(key).input.closest(".performance-field"), liveStrip.lastElementChild);
 
   const silenceButton = screen.querySelector("[data-silence]");
 
@@ -522,9 +526,9 @@ export function createPerformancePage({ invoke, getTarget }) {
 
     event.currentTarget.setAttribute("aria-pressed", String(focused));
 
-    event.currentTarget.textContent = focused ? "Sound playground ↑" : "Focus controls ↓";
+    event.currentTarget.textContent = focused ? "Expression pad ↑" : "Focus controls ↓";
 
-    screen.querySelector(".performance-instrument").hidden = focused;
+    // Keep measured signal and MIDI visible while focusing on parameters.
 
     screen.scrollTo({ top: 0, behavior: "instant" });
 
@@ -551,6 +555,17 @@ export function createPerformancePage({ invoke, getTarget }) {
   }
 
 
+
+  function refreshMode() {
+    if (!fields.has("mode") || !fields.has("outputmode") || !instrument) return;
+    const mode = Number(fields.get("mode").input.value);
+    const drums = mode === 3;
+    drumSection.hidden = !drums || Number(fields.get("outputmode").input.value) === 2;
+    for (const key of ["scale", "root", "lo", "hi"]) fields.get(key).input.closest(".performance-field").hidden = drums;
+    for (const key of ["rest", "norep"]) fields.get(key).input.closest(".performance-field").hidden = mode !== 0;
+    const harmony = fields.get("scale").input.closest("fieldset");
+    text(harmony.querySelector("legend"), ["Notes", "Arpeggiator", "Chords", "Drum timing"][mode] || "Notes");
+  }
 
   function paintDrums() {
 
@@ -600,7 +615,7 @@ export function createPerformancePage({ invoke, getTarget }) {
 
     }
 
-    drumSection.hidden = Number(fields.get("outputmode").input.value) === 2;
+    refreshMode();
 
     const preset = fields.get("preset").input;
 
@@ -940,6 +955,8 @@ export function createPerformancePage({ invoke, getTarget }) {
 
     targetId = target.id;
 
+    text(screen.querySelector("[data-performance-mac]"), "Connect BECA to view");
+
     text(screen.querySelector("[data-performance-device]"), target.name || "No device selected");
 
     if (!target.id || !target.ready) {
@@ -983,10 +1000,15 @@ export function createPerformancePage({ invoke, getTarget }) {
       instrument.signal(snapshot);
 
       enableControls(true);
+      request("/api/info").then(info => {
+        if (epoch === generation) text(screen.querySelector("[data-performance-mac]"), info.sta_mac || "Unavailable on this firmware");
+      }).catch(() => {
+        if (epoch === generation) text(screen.querySelector("[data-performance-mac]"), "Unavailable — open Setup");
+      });
 
       synthDue = Date.now() + SYNTH_INTERVAL_MS;
 
-      setStatus("Connected. Controls apply as you move them.");
+      setStatus("Connected.");
 
       poll();
 

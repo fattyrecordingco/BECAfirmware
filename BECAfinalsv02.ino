@@ -37,6 +37,7 @@ BLEMIDI_CREATE_INSTANCE("BECA BLE-MIDI", MIDI);
 
 #include "logo_svg.h"
 #include "index_html.h"
+#include "device_player.h"
 #include "synth_engine.h"
 #include "timing_utils.h"
 #include "output_modes.h"
@@ -173,7 +174,23 @@ static inline bool ioMuteManualActive() { return gIoMuted; }
 static inline bool plantAutoMuteActive() { return gPlantAutoMuted; }
 static inline bool ioMuteActive() { return gIoMuted || gPlantAutoMuted; }
 static inline bool midiOutIsSerial() { return outputModeIsSerial(); }
-static inline bool midiOutReady()    { return !ioMuteActive() && (outputModeIsSerial() || (outputModeIsBle() && gMidiConnected) || (outputModeIsWifi() && networkMidiReady())); }
+#ifndef BECA_BROWSER_PLAYER
+#define BECA_BROWSER_PLAYER 1
+#endif
+struct BrowserMidiEvent { uint32_t sequence; uint8_t status, data1, data2; uint32_t timestamp; };
+constexpr uint16_t BROWSER_MIDI_CAPACITY = 128;
+BrowserMidiEvent gBrowserMidi[BROWSER_MIDI_CAPACITY];
+uint32_t gBrowserMidiSequence = 0;
+uint32_t gBrowserMidiActiveUntilMs = 0;
+static inline bool browserMidiActive() {
+  return BECA_BROWSER_PLAYER && (int32_t)(millis() - gBrowserMidiActiveUntilMs) < 0;
+}
+static inline void browserMidiPush(uint8_t status, uint8_t data1, uint8_t data2) {
+  if (!browserMidiActive()) return;
+  uint32_t sequence = ++gBrowserMidiSequence;
+  gBrowserMidi[sequence % BROWSER_MIDI_CAPACITY] = {sequence, status, (uint8_t)(data1 & 127), (uint8_t)(data2 & 127), millis()};
+}
+static inline bool midiOutReady()    { return !ioMuteActive() && (outputModeIsSerial() || (outputModeIsBle() && gMidiConnected) || (outputModeIsWifi() && networkMidiReady()) || browserMidiActive()); }
 static inline bool plantJackConnected();
 static inline bool auxJackConnected();
 static inline void setupJackInputs();
@@ -235,7 +252,9 @@ static inline bool serialMidiSend3(uint8_t st, uint8_t d1, uint8_t d2) {
 static inline void midiSendNoteOn(uint8_t note, uint8_t vel, uint8_t ch) {
   uint8_t status = 0x90 | ((ch - 1) & 0x0F);
   serialJsonMidiEvent(note, vel, ch, true);
-  if (gOutputMode == OUTPUT_AUX || ioMuteActive()) return;
+  if (ioMuteActive()) return;
+  browserMidiPush(status, note, vel);
+  if (gOutputMode == OUTPUT_AUX) return;
   if (midiOutIsSerial()) serialMidiSend3(status, note, vel);
   else if (outputModeIsBle() && gMidiConnected) MIDI.sendNoteOn(note, vel, ch);
 #if BECA_WIFI_MIDI
@@ -243,9 +262,11 @@ static inline void midiSendNoteOn(uint8_t note, uint8_t vel, uint8_t ch) {
 #endif
 }
 
-static inline bool midiSendNoteOff(uint8_t note, uint8_t vel, uint8_t ch) {
+static inline bool midiSendNoteOff(uint8_t note, uint8_t vel, uint8_t ch, bool captureBrowser = true) {
   uint8_t status = 0x80 | ((ch - 1) & 0x0F);
-  if (gOutputMode == OUTPUT_AUX || ioMuteActive()) return true;
+  if (ioMuteActive()) return true;
+  if (captureBrowser) browserMidiPush(status, note, vel);
+  if (gOutputMode == OUTPUT_AUX) return true;
   if (midiOutIsSerial()) {
     if (!serialMidiSend3(status, note, vel)) return false;
   } else if (outputModeIsBle() && gMidiConnected) MIDI.sendNoteOff(note, vel, ch);
@@ -258,7 +279,9 @@ static inline bool midiSendNoteOff(uint8_t note, uint8_t vel, uint8_t ch) {
 
 static inline void midiSendControlChange(uint8_t cc, uint8_t val, uint8_t ch) {
   uint8_t status = 0xB0 | ((ch - 1) & 0x0F);
-  if (gOutputMode == OUTPUT_AUX || ioMuteActive()) return;
+  if (ioMuteActive()) return;
+  browserMidiPush(status, cc, val);
+  if (gOutputMode == OUTPUT_AUX) return;
   if (midiOutIsSerial()) serialMidiSend3(status, cc, val);
   else if (outputModeIsBle() && gMidiConnected) MIDI.sendControlChange(cc, val, ch);
 #if BECA_WIFI_MIDI
@@ -268,6 +291,7 @@ static inline void midiSendControlChange(uint8_t cc, uint8_t val, uint8_t ch) {
 
 static inline void allNotesOffBothTransports() {
   for (uint8_t ch = 1; ch <= 16; ++ch) {
+    browserMidiPush((uint8_t)(0xB0 | ((ch - 1) & 0x0F)), 123, 0);
     MIDI.sendControlChange(123, 0, ch);
     serialMidiSend3((uint8_t)(0xB0 | ((ch - 1) & 0x0F)), 123, 0);
 #if BECA_WIFI_MIDI
@@ -277,7 +301,7 @@ static inline void allNotesOffBothTransports() {
 }
 
 static inline void allNotesOffCurrentTransport() {
-  if (gOutputMode == OUTPUT_AUX) return;
+  if (gOutputMode == OUTPUT_AUX && !browserMidiActive()) return;
   for (uint8_t ch = 1; ch <= 16; ++ch) midiSendControlChange(123, 0, ch);
 }
 
@@ -297,6 +321,7 @@ struct PendingNoteOff {
   uint8_t  ch;
   uint32_t tOff;
   bool     on;
+  bool     browserOffSent;
 };
 PendingNoteOff offQ[32];
 
@@ -606,7 +631,7 @@ static inline void onBleMidiDisconnect() {
 static inline bool queueNoteOff(uint8_t note, uint8_t ch, uint16_t durMs) {
   uint32_t t = millis() + durMs;
   for (auto &q : offQ) {
-    if (!q.on) { q.note = note; q.ch = ch; q.tOff = t; q.on = true; return true; }
+    if (!q.on) { q.note = note; q.ch = ch; q.tOff = t; q.on = true; q.browserOffSent = false; return true; }
   }
   // Reserve before Note On so queue pressure cannot leave an untracked note.
   return false;
@@ -616,7 +641,9 @@ static inline void serviceNoteOffs() {
   uint32_t now = millis();
   for (auto &q : offQ) {
     if (q.on && (int32_t)(now - q.tOff) >= 0) {
-      if (midiSendNoteOff(q.note, 0, q.ch)) q.on = false;
+      const bool captureBrowser = !q.browserOffSent;
+      q.browserOffSent = true;
+      if (midiSendNoteOff(q.note, 0, q.ch, captureBrowser)) q.on = false;
     }
   }
 }
@@ -2186,6 +2213,7 @@ static inline void serviceMDNS(uint32_t now);
 static inline String sanitizeDeviceName(const String &raw);
 static inline void normalizeDeviceName();
 static inline bool setupPortalActive();
+static inline void startAPPortal();
 
 static void WiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
   switch (event) {
@@ -2707,7 +2735,24 @@ static inline void transportTick() {
 }
 
 // -------------------- WebServer + SSE --------------------
-WebServer server(80);
+uint32_t gHttpIdleClosed = 0;
+class BecaWebServer : public WebServer {
+public:
+  explicit BecaWebServer(uint16_t port) : WebServer(port) {}
+  void handleClient() {
+    // Core 2.0.14 exposes these fields; release only unparsed, empty connections.
+    if (BECA_BROWSER_PLAYER && _currentStatus == HC_WAIT_READ &&
+        _currentClient.connected() && !_currentClient.available() &&
+        (uint32_t)(millis() - _statusChange) >= 250u) {
+      _currentClient.stop();
+      _currentStatus = HC_NONE;
+      _currentUpload.reset();
+      ++gHttpIdleClosed;
+    }
+    WebServer::handleClient();
+  }
+};
+BecaWebServer server(80);
 static inline void noteWebActivity() {
   // Hook kept so all web handlers consistently mark user-facing activity.
 }
@@ -3084,14 +3129,23 @@ static inline void handleLogo() {
   server.send_P(200, "image/svg+xml", (const char*)LOGO_SVG_GZ, LOGO_SVG_GZ_LEN);
 }
 
+static inline void handleControlPage() {
+  sendNoCacheHeaders();
+  server.send_P(200, "text/html", INDEX_HTML);
+}
+
 static inline void handlePage() {
+  if (BECA_BROWSER_PLAYER) {
+    server.sendHeader("Location", "/play/", true);
+    server.send(302, "text/plain", "");
+    return;
+  }
   if (setupPortalActive()) {
     server.sendHeader("Location", "/setup", true);
     server.send(302, "text/plain", "");
     return;
   }
-  sendNoCacheHeaders();
-  server.send_P(200, "text/html", INDEX_HTML);
+  handleControlPage();
 }
 
 static inline void handleSetupPage() {
@@ -3825,6 +3879,59 @@ static inline String buildApiPlantJson() {
   return String(buf);
 }
 
+static inline void handleApiBrowserMidi() {
+  sendNoCacheHeaders();
+  static uint32_t windowMs = 0, requests = 0, boot = 0;
+  uint32_t now = millis();
+  if ((uint32_t)(now - windowMs) >= 1000u) { windowMs = now; requests = 0; }
+  if (!BECA_BROWSER_PLAYER) { server.send(404, "application/json", "{\"err\":\"browser player disabled\"}"); return; }
+  if (++requests > 40) {
+    server.send(429, "application/json", "{\"err\":\"poll limit\"}"); return;
+  }
+  if (!boot) boot = esp_random() | 1u;
+  gBrowserMidiActiveUntilMs = now + 1500u;
+  uint32_t after = server.hasArg("after") ? (uint32_t)strtoul(server.arg("after").c_str(), nullptr, 10) : gBrowserMidiSequence;
+  uint32_t latest = gBrowserMidiSequence;
+  uint32_t pending = latest - after;
+  bool lost = pending > BROWSER_MIDI_CAPACITY;
+  if (lost) after = latest;
+  uint32_t count = min((uint32_t)64, latest - after);
+  String json; json.reserve(3400);
+  json += "{\"boot\":"; json += boot;
+  json += ",\"now\":"; json += now;
+  json += ",\"lost\":"; json += lost ? "true" : "false";
+  json += ",\"next\":"; json += after + count;
+  json += ",\"events\":[";
+  for (uint32_t offset = 1; offset <= count; ++offset) {
+    const BrowserMidiEvent &event = gBrowserMidi[(after + offset) % BROWSER_MIDI_CAPACITY];
+    if (offset > 1) json += ',';
+    json += '['; json += event.sequence; json += ','; json += event.status;
+    json += ','; json += event.data1; json += ','; json += event.data2; json += ','; json += event.timestamp; json += ']';
+  }
+  json += "]}";
+  server.send(200, "application/json", json);
+}
+
+static inline bool handleDevicePlayerAsset() {
+  String path = server.uri();
+  if (!BECA_BROWSER_PLAYER) return false;
+  if (path == "/play") {
+    server.sendHeader("Location", "/play/", true); server.send(302, "text/plain", ""); return true;
+  }
+  if (path == "/play/") path = "/play/index.html";
+  for (size_t i = 0; i < DEVICE_PLAYER_ASSET_COUNT; ++i) {
+    const DevicePlayerAsset &asset = DEVICE_PLAYER_ASSETS[i];
+    if (path != asset.path) continue;
+    sendNoCacheHeaders();
+    server.sendHeader("Content-Encoding", "gzip");
+    server.sendHeader("Vary", "Accept-Encoding");
+    server.send_P(200, asset.mime, (const char*)asset.data, asset.size);
+    return true;
+  }
+  if (path.startsWith("/play/")) { server.send(404, "text/plain", "Asset not found"); return true; }
+  return false;
+}
+
 static inline void handleApiPlantGet() {
   sendNoCacheHeaders();
   server.send(200, "application/json", buildApiPlantJson());
@@ -4370,6 +4477,8 @@ static inline String buildWifiScanJson() {
 
 static inline String buildApiInfoJson() {
   String json = "{";
+  json += "\"http_idle_closed\":"; json += gHttpIdleClosed; json += ",";
+  json += "\"browser_midi\":"; json += BECA_BROWSER_PLAYER ? "true," : "false,";
   json += "\"sta_mac\":\""; json += deviceMac(); json += "\",";
   json += "\"ap_mac\":\""; json += deviceMac(true); json += "\",";
   json += "\"wifi_connected\":"; json += (wifiReady() ? "true" : "false"); json += ",";
@@ -4629,7 +4738,8 @@ const char SETUP_HTML[] PROGMEM = R"HTML(
 <main class="shell">
   <section class="card hero">
     <div class="eyebrow">BECA Recovery Setup</div>
-    <h1>Join Wi-Fi and return to the desktop flow</h1>
+    <h1>Wi-Fi setup</h1>
+    <p><a href="/play/">Open instrument</a> · <a href="/control">Device controls</a></p>
     <p>
       This lightweight page is BECA's fallback setup environment. Use it when the desktop app
       cannot provision Wi-Fi directly, or when the device is still in setup mode after a reset.
@@ -4648,15 +4758,19 @@ const char SETUP_HTML[] PROGMEM = R"HTML(
           <span class="label">Saved SSID</span>
           <span class="value" id="ssidVal">Loading...</span>
         </div>
+        <div class="info-row">
+          <span class="label">Wi-Fi MAC (router registration)</span>
+          <span class="value" id="macVal">Loading...</span>
+        </div>
       </div>
       <div class="note-list">
         <div class="note">
           <strong>2.4 GHz only</strong>
-          Use a 2.4 GHz network for ESP32 compatibility.
+          Use a 2.4 GHz home network or phone hotspot. On Android select the 2.4 GHz hotspot band; on iPhone enable Maximise Compatibility when available.
         </div>
         <div class="note">
           <strong>Manual fallback</strong>
-          If scanning is unreliable, type the SSID manually below.
+          If scanning is unreliable, type the SSID manually below. For a hotspot on this phone, enter its name and password, then enable the hotspot before saving. If your phone cannot keep the setup Wi-Fi and hotspot active together, use Android USB settings or a second device on BECA setup Wi-Fi to save while this phone hosts the hotspot.
         </div>
       </div>
     </div>
@@ -4744,6 +4858,7 @@ async function loadInfo() {
     document.getElementById('modeVal').textContent = info.mode || '--';
     document.getElementById('ipVal').textContent = info.ip || '--';
     document.getElementById('ssidVal').textContent = info.ssid || 'Not saved';
+    document.getElementById('macVal').textContent = info.sta_mac || 'Unavailable on this firmware';
     if (info.name) nameEl.value = info.name;
     if (info.ssid) {
       [...ssidEl.options].forEach((option) => {
@@ -4973,6 +5088,19 @@ static inline void handleSerialControlLine(const char *line) {
     for (uint8_t i=0; i<LED_COUNT; ++i) { if(i) json += ","; json += "[" + String(leds[i].r) + "," + String(leds[i].g) + "," + String(leds[i].b) + "]"; }
     json += "]}"; serialCtrlReply("LEDS", json); return;
   }
+#if BECA_BROWSER_PLAYER
+  if (strcmp(cmd, "WIFI_PORTAL") == 0) {
+    // Temporary direct access when a router isolates its clients; saved Wi-Fi stays intact.
+    if (WiFi.getMode() != WIFI_AP) {
+      WiFi.disconnect(false, false);
+      startAPPortal();
+    }
+    gPortalRecoveryState = RECOVERY_PAUSED;
+    serialCtrlReply("WIFI_PORTAL", "{\"ok\":1,\"ip\":\"192.168.4.1\",\"msg\":\"Setup Wi-Fi active until restart. Saved Wi-Fi unchanged.\"}");
+    return;
+  }
+#endif
+
   if (strcmp(cmd, "WIFI_INFO") == 0) {
     serialCtrlReply("WIFI_INFO", buildApiInfoJson());
     return;
@@ -5537,6 +5665,7 @@ void setup() {
 
   // Routes
   server.on("/",         handlePage);
+  server.on("/control",   handleControlPage);
   server.on("/logo",     handleLogo);
   server.on("/effects",  handleEffects);
   server.on("/palettes", handlePalettes);
@@ -5579,6 +5708,7 @@ void setup() {
   server.on("/api/live",       HTTP_GET,  handleApiLiveGet);
   server.on("/api/state",      HTTP_GET,  handleApiStateGet);
   server.on("/api/plant",      HTTP_GET,  handleApiPlantGet);
+  server.on("/api/midi",       HTTP_GET,  handleApiBrowserMidi);
   server.on("/api/notes",      HTTP_GET,  handleApiNotesGet);
   server.on("/api/drum",       HTTP_GET,  handleApiDrumGet);
   server.on("/api/params",     HTTP_GET,  handleApiParamsGet);
@@ -5598,6 +5728,7 @@ void setup() {
   server.on("/reboot",      handleReboot);
 
   server.onNotFound([](){
+    if (handleDevicePlayerAsset()) return;
     if (setupPortalActive()) {
       sendCaptiveRedirect("/setup");
     } else {

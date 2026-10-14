@@ -4,6 +4,10 @@ import { createMidiRouting } from "./midi-routing.js";
 import { mountControlSurface } from "./control-loader.js";
 import { createPerformancePage, PERFORMANCE_ENABLED } from "./performance.js";
 
+import { initializeAppearance, createAppearanceSelector } from "./appearance.js";
+
+initializeAppearance();
+
 const el = {
   connectStatus: document.querySelector("#connect-status"),
   portChip: document.querySelector("#port-chip"),
@@ -104,6 +108,15 @@ if (performancePage) {
   }
   document.querySelector(".app-root").appendChild(navigation);
 }
+
+const appNavigation = document.querySelector(".app-view-navigation") || (() => {
+  const navigation = document.createElement("nav");
+  navigation.className = "app-view-navigation";
+  navigation.setAttribute("aria-label", "App views");
+  document.querySelector(".app-root").appendChild(navigation);
+  return navigation;
+})();
+appNavigation.appendChild(createAppearanceSelector());
 
 function setSetupScale() {
   const activeSetupSurface = document.querySelector('[data-screen-view="setup"].active');
@@ -360,6 +373,7 @@ function requireWifiReady(actionText) {
 
 function resetWifiSection() {
   state.wifiCooldownUntil = 0;
+  document.querySelector("#wifi-mac").textContent = "Connect BECA to view";
   el.wifiName.value = "";
   el.wifiPass.value = "";
   el.wifiSsidManual.value = "";
@@ -418,6 +432,22 @@ function describeTarget(target) {
   return parts.join(" • ");
 }
 
+let macTargetId = null;
+function refreshTargetMac(target) {
+  if (!target?.control_ready || macTargetId === target.id) return;
+  macTargetId = target.id;
+  const label = document.querySelector("#wifi-mac");
+  label.textContent = "Reading device…";
+  invoke("control_request", { method: "GET", path: "/api/info", query: {}, form: {} }).then(response => {
+    if (state.selectedTargetId !== target.id) return;
+    const info = JSON.parse(response.body);
+    const mac = info.sta_mac || "Unavailable on this firmware";
+    if (label.textContent !== mac) label.textContent = mac;
+  }).catch(() => {
+    if (state.selectedTargetId === target.id) label.textContent = "Unavailable — reconnect BECA";
+  });
+}
+
 function updateTargetSummary(status) {
   const target = status?.target;
   state.selectedTargetId = status?.selected_id || null;
@@ -426,6 +456,8 @@ function updateTargetSummary(status) {
   state.controlIssue = target?.issue || status?.detail || "";
 
   if (!target) {
+    macTargetId = null;
+    document.querySelector("#wifi-mac").textContent = "Connect BECA to view";
     state.controlReady = false;
     state.controlIssue = "";
     el.targetName.textContent = "No device selected";
@@ -436,6 +468,7 @@ function updateTargetSummary(status) {
     return;
   }
 
+  refreshTargetMac(target);
   el.targetName.textContent = target.name || "BECA";
   el.targetTransport.textContent = status.transport ? status.transport.toUpperCase() : "--";
   el.targetDetail.textContent =
@@ -631,6 +664,7 @@ async function refreshWifiInfo() {
 
   try {
     const info = await invoke("get_wifi_setup_info", { serialPort: state.selectedPort });
+    document.querySelector("#wifi-mac").textContent = info.sta_mac || "Unavailable on this firmware";
     el.wifiName.value = info.name || "";
 
     if (info.wifi_error) {

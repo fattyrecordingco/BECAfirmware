@@ -1219,6 +1219,7 @@ async fn serial_request(
     let upper = method.to_ascii_uppercase();
 
     let (command, expected_tag, timeout_ms) = match (upper.as_str(), path) {
+        ("GET", "/api/info") => ("@C WIFI_INFO".to_string(), "WIFI_INFO", 2_500),
         ("GET", "/api/live") => ("@C LIVE".to_string(), "LIVE", 2_500),
         ("GET", "/api/state") => ("@C STATE".to_string(), "STATE", 2_500),
         ("GET", "/api/plant") => ("@C PLANT".to_string(), "PLANT", 2_500),

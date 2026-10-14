@@ -59,3 +59,14 @@ test("worklet error can recover with a fresh processor", async () => {
   assert.notEqual(audio.node, old);
   assert.equal(audio.enabled, true);
 });
+
+test("Wi-Fi arp notes are played at the exact device pitch", async () => {
+  const audio = new PhoneAudio();
+  audio.load = async () => {};
+  audio.setPerformance({ mode: 1, root: 7 });
+  await audio.start({ master: 0.4 });
+  audio.midiExact([0x90, 71, 91]);
+  audio.midiExact([0x80, 71, 0]);
+  assert.deepEqual(audio.node.messages.filter((message) => message.type === "midi").map((message) => message.bytes), [[0x90, 71, 91], [0x80, 71, 0]]);
+  assert.equal(audio.activeNotes.size, 0);
+});

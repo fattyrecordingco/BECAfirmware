@@ -60,7 +60,9 @@ async function openPerformance(page, { offline = false, transport = "serial", in
             if (initialFailures-- > 0) throw new Error("Temporary connection loss");
             payload = params;
           }
+          else if (args.path === "/api/info") payload = {sta_mac:"AA:BB:CC:11:22:33"};
           else if (args.path === "/api/synth") payload = synth;
+          else if (args.path === "/api/state") payload = runtime;
           else if (args.path === "/api/set") {
             const { key: wireKey, value } = args.form;
             const key = wireKey === "preset_live" ? "preset" : wireKey;
@@ -324,7 +326,8 @@ test("pad keyboard fine movement, focus layout and reduced motion stay accessibl
   await pad.press("Shift+ArrowUp");
   await expect(page.locator("#performance-drive")).toHaveValue("0.11");
   await page.getByRole("button", { name: "Focus controls" }).click();
-  await expect(page.locator(".performance-instrument")).toBeHidden();
+  await expect(page.locator(".instrument-expression")).toBeHidden();
+  await expect(page.locator(".instrument-scope")).toBeVisible();
   await expect(page.locator("#performance-master")).toBeVisible();
   await expect(page.locator("#performance-outputmode")).toBeVisible();
   const overflow = await page.locator(".performance-frame").evaluate((root) => root.scrollWidth > root.clientWidth + 1);
@@ -350,12 +353,14 @@ test("combined output keeps drums separate and uses the device's LED names", asy
   await openPerformance(page);
   await expect(page.locator("#performance-outputmode option")).toHaveCount(4);
   await expect(page.locator("#performance-drumkit")).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "MIDI drums", exact: true })).toBeHidden();
+  await page.locator("#performance-mode").selectOption("3");
   await expect(page.getByRole("region", { name: "MIDI drums", exact: true })).toBeVisible();
   await page.locator("#performance-outputmode").selectOption("2");
   await expect(page.getByRole("region", { name: "MIDI drums", exact: true })).toBeHidden();
   await page.locator("#performance-outputmode").selectOption("3");
   await expect(page.getByRole("region", { name: "MIDI drums", exact: true })).toBeVisible();
-  await expect(page.locator("[data-route-hint]")).toContainText("shaping");
+  await expect(page.locator("[data-route-hint]")).toContainText("BECA synth");
   await expect(page.locator("#performance-fx option")).toHaveText(["Flow", "Wave"]);
   await page.locator("#performance-fx").selectOption("1");
   await expect.poll(() => page.evaluate(() => window.__performanceMock.runtime.fx)).toBe(1);
@@ -468,4 +473,130 @@ test("the bundled manual opens and closes without leaving the instrument", async
   await expect(page.frameLocator('.manual-dialog iframe').getByRole('heading', {name:'First BECA: installing a unit shipped without code'})).toBeVisible();
   await page.getByRole("button", { name: "Close manual", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
+});
+
+test("station MAC stays visible in Setup and Performance", async ({ page }) => {
+  await openPerformance(page);
+  await expect(page.locator("[data-performance-mac]")).toHaveText("AA:BB:CC:11:22:33");
+  await page.getByRole("navigation", { name: "App views" }).getByRole("button", { name: "Setup", exact: true }).click();
+  await expect(page.locator("#wifi-mac")).toHaveText("AA:BB:CC:11:22:33");
+});
+
+
+test("playing modes expose only relevant controls without losing MIDI feedback", async ({ page }, testInfo) => {
+  await openPerformance(page);
+  const drums = page.getByRole("region", { name: "MIDI drums", exact: true });
+  for (const mode of ["0", "1", "2", "3", "0"]) {
+    await page.locator("#performance-mode").selectOption(mode);
+    await expect.poll(() => page.evaluate(() => window.__performanceMock.runtime.mode)).toBe(Number(mode));
+    if (mode === "3") {
+      await expect(drums).toBeVisible();
+      for (const key of ["scale", "root", "lo", "hi"]) await expect(page.locator(`#performance-${key}`)).toBeHidden();
+    } else {
+      await expect(drums).toBeHidden();
+      for (const key of ["scale", "root", "lo", "hi"]) await expect(page.locator(`#performance-${key}`)).toBeVisible();
+    }
+    for (const key of ["rest", "norep"]) {
+      if (mode === "0") await expect(page.locator(`#performance-${key}`)).toBeVisible();
+      else await expect(page.locator(`#performance-${key}`)).toBeHidden();
+    }
+    await expect(page.locator(".instrument-scope")).toBeVisible();
+    await expect(page.locator("[data-note-chips]")).toBeVisible();
+    expect(await page.locator(".performance-frame").evaluate(node => node.scrollWidth > node.clientWidth + 1)).toBe(false);
+  }
+  await page.locator("#performance-mode").selectOption("3");
+  await page.screenshot({ path: testInfo.outputPath("drum-instrument.png"), fullPage: true });
+  for (const width of [360, 768, 1024]) {
+    await page.setViewportSize({ width, height: 900 });
+    expect(await page.locator(".performance-frame").evaluate(node => node.scrollWidth > node.clientWidth + 1)).toBe(false);
+    await expect(page.locator("#performance-mode")).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath(`instrument-${width}.png`), fullPage: true });
+  }
+});
+
+
+test("Appearance covers Setup, Performance and embedded Control without changing the instrument", async ({ page }, testInfo) => {
+  await openPerformance(page);
+  const appearance = page.getByRole("combobox", { name: "Appearance", exact: true });
+  await expect(appearance).toHaveValue("dark");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  const nav = page.getByRole("navigation", { name: "App views" });
+  await page.addScriptTag({ content: axeCore.source });
+  for (const theme of ["light", "dark"]) {
+    const writes = await page.evaluate(() => window.__performanceMock.writes.length);
+    await appearance.selectOption(theme);
+    expect(await page.evaluate(() => window.__performanceMock.writes.length)).toBe(writes);
+    await expect(page.locator("#performance-cutoff")).toHaveValue("1000");
+    await expect(page.locator("#performance-mode")).toHaveValue("0");
+    await expect(page.locator("#performance-bpm")).toBeEnabled();
+    const expected = theme === "light"
+      ? { bg: "rgb(255, 255, 255)", panel: "rgb(245, 247, 247)", accent: "rgb(0, 105, 67)" }
+      : { bg: "rgb(16, 23, 25)", panel: "rgb(24, 33, 36)", accent: "rgb(103, 227, 188)" };
+    expect(await page.locator(".performance-frame").evaluate(node => getComputedStyle(node).backgroundColor)).toBe(expected.bg);
+    expect(await page.locator(".instrument-energy strong").evaluate(node => getComputedStyle(node).color)).toBe(expected.accent);
+    for (const view of ["Setup", "Performance", "Control"]) {
+      await nav.getByRole("button", { name: view, exact: true }).click();
+      const screen = page.locator(`[data-screen-view="${view.toLowerCase()}"]`);
+      await expect(screen).toBeVisible();
+      await expect(screen).toHaveCSS("opacity", "1");
+      await expect(page.locator(".surface-screen:not(.active)").first()).toHaveCSS("visibility", "hidden");
+      if (view === "Control") {
+        const iframe = page.locator(".control-surface-frame");
+        await expect(iframe).toBeVisible();
+        const frame = await (await iframe.elementHandle()).contentFrame();
+        await expect(frame.locator("html")).toHaveAttribute("data-theme", theme);
+        expect(await frame.locator(".control-frame").evaluate(node => getComputedStyle(node).backgroundColor)).toBe(expected.panel);
+        expect(await frame.locator(".meter-dot").last().evaluate(node => getComputedStyle(node).backgroundColor)).toBe(expected.accent);
+        await expect.poll(() => frame.evaluate(() => getComputedStyle(document.querySelector(".led.is-on")).color)).toBe(expected.accent);
+        await expect.poll(() => frame.evaluate(() => getComputedStyle(document.querySelector("#plant-chart polyline")).stroke)).toBe(expected.accent);
+        await frame.addScriptTag({ content: axeCore.source });
+        const violations = await frame.evaluate(async () => (await window.axe.run(document, {
+          runOnly: { type: "tag", values: ["wcag2a", "wcag2aa"] }
+        })).violations.filter(v => ["critical", "serious"].includes(v.impact)).map(v => ({ id: v.id, nodes: v.nodes.map(n => n.target) })));
+        expect(violations).toEqual([]);
+      } else {
+        if (view === "Setup") expect(await page.locator(".setup-frame").evaluate(node => getComputedStyle(node).backgroundColor)).toBe(expected.panel);
+        const violations = await page.evaluate(async () => (await window.axe.run(document, {
+          runOnly: { type: "tag", values: ["wcag2a", "wcag2aa"] }
+        })).violations.filter(v => ["critical", "serious"].includes(v.impact)).map(v => ({ id: v.id, nodes: v.nodes.map(n => n.target) })));
+        expect(violations).toEqual([]);
+      }
+      expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)).toBe(false);
+      await page.screenshot({ path: testInfo.outputPath(`${view.toLowerCase()}-${theme}.png`), fullPage: true });
+    }
+    // Switch an already mounted Control frame without remounting its transport.
+    const previousFrame = await page.locator(".control-surface-frame").elementHandle();
+    await appearance.selectOption(theme === "dark" ? "light" : "dark");
+    await expect(page.frameLocator(".control-surface-frame").locator("html")).toHaveAttribute("data-theme", theme === "dark" ? "light" : "dark");
+    expect(await previousFrame.evaluate(node => node.isConnected)).toBe(true);
+    await appearance.selectOption(theme);
+    await nav.getByRole("button", { name: "Performance", exact: true }).click();
+    for (const width of [360, 768, 1280]) {
+      await page.setViewportSize({ width, height: 900 });
+      await expect(appearance).toBeVisible();
+      expect(await page.locator(".performance-frame").evaluate(node => node.scrollWidth > node.clientWidth + 1)).toBe(false);
+      expect(await page.locator(".app-view-navigation").evaluate(node => node.scrollWidth > node.clientWidth + 1)).toBe(false);
+      await page.screenshot({ path: testInfo.outputPath(`performance-${theme}-${width}.png`), fullPage: true });
+    }
+  }
+  await appearance.selectOption("light");
+  await page.reload();
+  await expect(appearance).toHaveValue("light");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+});
+
+test("Appearance remains usable when its browser storage is unavailable", async ({ page }) => {
+  await page.addInitScript(() => {
+    const read = Storage.prototype.getItem;
+    const write = Storage.prototype.setItem;
+    Storage.prototype.getItem = function(key) { if (key === "beca-appearance") throw new Error("Storage unavailable"); return read.call(this, key); };
+    Storage.prototype.setItem = function(key, value) { if (key === "beca-appearance") throw new Error("Storage unavailable"); return write.call(this, key, value); };
+  });
+  await openPerformance(page);
+  const appearance = page.getByRole("combobox", { name: "Appearance", exact: true });
+  await expect(appearance).toHaveValue("dark");
+  await appearance.selectOption("light");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  await expect(page.locator("#performance-bpm")).toBeEnabled();
+  expect(await page.evaluate(() => window.__performanceMock.writes.length)).toBe(0);
 });

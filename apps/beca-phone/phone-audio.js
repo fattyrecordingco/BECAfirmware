@@ -1,4 +1,4 @@
-import { instantiateEngine, readParams } from "./audio-engine.js";
+import { instantiateEngine, readParams, PARAM_KEYS } from "./audio-engine.js";
 import { PlantArp, ARP_DEFAULTS } from "./plant-arp.js";
 
 export class PhoneAudio extends EventTarget {
@@ -34,14 +34,14 @@ export class PhoneAudio extends EventTarget {
     return this.loading;
   }
   async start(params) {
-    if (!globalThis.AudioContext || !globalThis.AudioWorkletNode || !globalThis.isSecureContext) {
-      throw new Error("Live audio needs a current browser with AudioWorklet on HTTPS or localhost.");
+    if (!(globalThis.AudioContext || globalThis.webkitAudioContext)) {
+      throw new Error("Audio is unavailable in this browser.");
     }
     const generation = ++this.startGeneration;
     if (this.context?.state === "closed") { this.context = null; this.node = null; this.lastParams = null; }
     // Create/resume before awaiting downloads to retain the user's audio gesture.
     if (!this.context) {
-      this.context = new AudioContext({ latencyHint: "interactive", sampleRate: 44100 });
+      this.context = new (globalThis.AudioContext || globalThis.webkitAudioContext)({ latencyHint: "interactive", sampleRate: 44100 });
       this.context.onstatechange = () => {
         if (this.enabled && this.context.state !== "running") this.stop();
         else this.dispatchEvent(new Event("statechange"));
@@ -52,11 +52,15 @@ export class PhoneAudio extends EventTarget {
     if (generation !== this.startGeneration) return;
     if (this.context.state !== "running") throw new Error("Audio was interrupted. Keep the app visible, then tap Listen again.");
     if (!this.node) {
-      await this.context.audioWorklet.addModule(new URL("./audio-worklet.js", import.meta.url));
-      if (generation !== this.startGeneration) return;
-      this.node = new AudioWorkletNode(this.context, "beca-synth", {
-        numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2], processorOptions: { bytes: this.bytes }
-      });
+      if (!globalThis.isSecureContext || !globalThis.AudioWorkletNode || !this.context.audioWorklet) {
+        this.node = this.createFallback();
+      } else {
+        await this.context.audioWorklet.addModule(new URL("./audio-worklet.js", import.meta.url));
+        if (generation !== this.startGeneration) return;
+        this.node = new AudioWorkletNode(this.context, "beca-synth", {
+          numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2], processorOptions: { bytes: this.bytes }
+        });
+      }
       this.node.onprocessorerror = () => {
         this.stop();
         this.node.disconnect();
@@ -74,6 +78,46 @@ export class PhoneAudio extends EventTarget {
     this.setParams(params);
     this.gain.gain.setTargetAtTime(1, this.context.currentTime, 0.015);
     this.dispatchEvent(new Event("statechange"));
+  }
+  createFallback() {
+    // Local HTTP on iOS cannot use AudioWorklet. Render bounded WASM blocks.
+    if (!this.context.createScriptProcessor) throw new Error("Open the HTTPS app or update Safari to use audio.");
+    const engine = instantiateEngine(this.module);
+    engine.init(this.context.sampleRate);
+    const node = this.context.createScriptProcessor(1024, 0, 2);
+    const samples = new Int16Array(engine.memory.buffer);
+    let mode = Number(this.performance.mode);
+    node.port = { postMessage: (data) => {
+      if (data.type === "mode") { mode = Number(data.mode); engine.mode(mode); }
+      else if (data.type === "params") PARAM_KEYS.forEach((key, index) => {
+        const value = index === 0 && mode === 3 && Number(data.params.preset) === 12 ? 0 : Number(data.params[key]);
+        if (Number.isFinite(value)) engine.set_param(index, value);
+      });
+      else if (data.type === "midi") engine.midi(...data.bytes);
+      else if (data.type === "sensor") engine.sensor(data.raw, data.connected);
+      else if (data.type === "panic") engine.init(this.context.sampleRate);
+    } };
+    node.onaudioprocess = ({ outputBuffer }) => {
+      for (let offset = 0; offset < outputBuffer.length; offset += 128) {
+        const count = Math.min(128, outputBuffer.length - offset);
+        const pointer = engine.render(count) / 2;
+        for (let channel = 0; channel < outputBuffer.numberOfChannels; channel++) {
+          const output = outputBuffer.getChannelData(channel);
+          for (let i = 0; i < count; i++) output[offset + i] = samples[pointer + i * 2 + (channel % 2)] / 32768;
+        }
+      }
+    };
+    return node;
+  }
+  midiExact(bytes) {
+    if (!this.enabled) return;
+    const [status, note, velocity = 0] = bytes;
+    const command = status & 0xf0;
+    if (command === 0xb0 && [120, 123].includes(note)) { this.panic(); return; }
+    if (command === 0x90 && velocity > 0) { this.activeNotes.add(note); this.lastNote = note; this.lastVelocity = velocity; }
+    else if (command === 0x80 || (command === 0x90 && velocity === 0)) this.activeNotes.delete(note);
+    this.node?.port.postMessage({ type: "midi", bytes: [status, note, velocity] });
+    this.dispatchEvent(new Event("noteschange"));
   }
   stop() {
     ++this.startGeneration;

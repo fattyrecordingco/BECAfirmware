@@ -1,0 +1,34 @@
+name: Phone release checks
+
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-22.04
+    defaults:
+      run:
+        working-directory: apps/beca-phone
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/beca-phone/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Install browser test runtimes
+        run: npx playwright install --with-deps chrome webkit
+      - name: Check UI copy rules
+        run: python3 ../../tools/check_ui_copy.py
+      - name: Run protocol and PWA checks
+        run: npm test
+      - name: Run browser controller checks
+        run: npm run test:ui
+      - name: Build static app
+        run: npm run build

@@ -1,4 +1,4 @@
-const CACHE_NAME = "beca-phone-v1.6.0";
+const CACHE_NAME = "beca-phone-v1.7.0-instrument-1";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -7,6 +7,7 @@ const APP_SHELL = [
   "./protocol.js",
   "./webusb-serial.js",
   "./tablet-link.js",
+  "./wifi-provider.js",
   "./phone-audio.js", "./plant-arp.js", "./compatibility.js", "./apple-native.js",
   "./audio-engine.js",
   "./audio-worklet.js",

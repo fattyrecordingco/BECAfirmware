@@ -26,7 +26,7 @@ The web delay now stores floating-point samples instead of inheriting the firmwa
 
 ## Listen on a phone or tablet
 
-Open the app over HTTPS (or localhost on a computer), tap **Listen on this device**, select a preset, and use **Test sound**. Synth controls, instrument mode, root/scale/octave and arp settings work without hardware for previews; the plant graph stays empty until real data arrives. Clock, plant sensitivity and device controls require BECA. The layout supports phone and tablet portrait/landscape, and the manifest allows either orientation.
+Open the published app over HTTPS (or localhost), or the new device-hosted `http://DEVICE_IP/play/` page, tap **Listen on this device**, select a preset, and use **Test sound**. Synth controls, instrument mode, root/scale/octave and arp settings work without hardware for previews; the plant graph stays empty until real data arrives. Clock, plant sensitivity and device controls require BECA. The layout supports phone and tablet portrait/landscape, and the manifest allows either orientation.
 
 For live input on Android, connect USB and tap Listen. Listening selects **Serial MIDI** on BECA; **Serial MIDI + Aux** can also be selected when AUX is ready. The synth consumes live `@M` messages, including note-offs and channel-10 drums; it never synthesizes from the slower display snapshots or duplicates telemetry notes. Presets and parameters synchronize from BECA, and edits also update the connected board. Select the output route you want on BECA after stopping phone playback.
 
@@ -34,7 +34,7 @@ Audio follows the device's system output: built-in speaker, wired headphones or 
 
 ## iPad and browser-to-browser tablet link
 
-iPad/iPhone Safari and Chrome cannot directly access this board's USB serial bridge. A USB-C cable or installing the page to the Home Screen does not grant that browser capability. The app disables Connect USB and explains the supported route instead of asking for cable/OTG changes. See [Google's USB/Serial browser support notice](https://support.google.com/chrome/answer/12576972). Local synth previews work, but live plant input in this browser synth requires a connected computer. Direct Safari settings/AUX and native BLE-MIDI are available separately; the BECA Apple project adds a direct native synth path after installation and validation. No direct iPad BLE-MIDI support is claimed; direct hardware access uses the separate native Apple project and still requires physical hardware/protocol verification before release.
+iPad/iPhone Safari and Chrome cannot directly access this board's USB serial bridge. A USB-C cable or installing the page to the Home Screen does not grant that browser capability. The app disables Connect USB and explains the supported route instead of asking for cable/OTG changes. See [Google's USB/Serial browser support notice](https://support.google.com/chrome/answer/12576972). With the rebuilt development firmware, open `http://DEVICE_IP/play/` for direct Wi-Fi browser sound and plant input. Older firmware can use the computer link. Direct Safari settings/AUX and native BLE-MIDI are available separately; the BECA Apple project adds a direct native synth path after installation and validation. No direct iPad BLE-MIDI support is claimed; direct hardware access uses the separate native Apple project and still requires physical hardware/protocol verification before release.
 
 1. Open the HTTPS app on the computer and tablet on the same local network. Connect BECA by USB in desktop Chrome/Edge.
 2. Expand **Link an iPad or tablet through a computer** on both devices.
@@ -61,9 +61,9 @@ npm run test:ui
 
 The build script also detects a workspace `.beca-cache/emsdk` installation. The engine requests 44.1 kHz audio, retains 16-bit output and the eight-voice limit, and uses fixed WASM memory and 128-frame render blocks. The 48 kHz fallback is tested, but the fixed delay buffer has less maximum delay at that rate. There is no audio recording/export feature in this version. Reuse of the original DSP is not a claim of bit-identical analog speaker output.
 
-Raw Sensor Sine uses the firmware's `raw` and `connected` plant fields, retaining the ADC-value-to-frequency mapping. Its phone update cadence is limited by serial plant telemetry; it is not sample-accurate to the onboard sensor loop. Test sound supplies 440 Hz temporarily for that preset.
+Raw Sensor Sine uses the firmware's `raw` and `connected` plant fields, retaining the ADC-value-to-frequency mapping. Its browser update cadence is limited by plant telemetry/snapshots; it is not sample-accurate to the onboard sensor loop. Test sound supplies 440 Hz temporarily for that preset.
 
-The plant graph retains at most 60 state-diff samples over 24 seconds. Parameters sent to the worklet are deduplicated. Sliders coalesce serial changes for 80 ms; the two-parameter expression pad sends at most four pairs per second plus the final release. No SSE endpoint or BLE stack is changed. New audio/link assets are included in the offline cache.
+The plant graph retains at most 60 state-diff samples over 24 seconds. Parameters sent to the worklet are deduplicated. Sliders coalesce serial changes for 80 ms; the two-parameter expression pad sends at most four pairs per second plus the final release. The browser note stream is separate from SSE snapshots; the BLE stack is unchanged. New audio/link assets are included in the offline cache.
 
 Automated checks cover all presets, drum mapping, release, reset silence, raw sensor frequency/disconnection, actual browser AudioWorklet output, USB note playback, controls, offline reload, responsive layouts and a real two-browser WebRTC link. Chrome tests exercise audio, offline reload and the tablet link. WebKit tests exercise layout, controls and audio on Linux; Windows Playwright WebKit has no Web Audio implementation, so audio checks skip when that capability is missing. Playwright WebKit fails offline navigation internally on both Windows and Linux, so its offline-reload check is skipped. Offline use on physical Safari, USB devices and real iPad/Bluetooth speaker behavior still require physical verification.
 
@@ -83,11 +83,11 @@ Compatibility depends on browser capabilities, USB host power and the cable, not
 | --- | --- | --- |
 | Android Chromium with WebUSB and Web Audio | Yes | USB with OTG power and permission, or computer link |
 | Desktop Chromium with Web Serial | Yes | USB; can host the tablet link |
-| iPhone/iPad browser with Web Audio and WebRTC | Yes | Computer link; no direct USB serial access |
+| iPhone/iPad browser with Web Audio | Yes | Direct device `/play/` Wi-Fi page on new firmware, or computer link; no direct USB serial access |
 | Other browsers with Web Audio and WebRTC | Yes | Computer link |
-| Browser without AudioWorklet or WebAssembly | Unavailable | Update the browser; supported controller functions may still work |
+| Browser without WebAssembly or Web Audio | Unavailable | Update the browser; supported controller functions may still work |
 
-All audio routes require HTTPS and a user tap. Layout tests use emulated phone/tablet viewports; they are not physical certification of every phone or OS. A web update cannot provide USB APIs or power that the operating system withholds.
+The published app uses HTTPS; the device-hosted `/play/` page uses a same-origin HTTP audio fallback. Both require a user tap. Layout tests use emulated phone/tablet viewports; they are not physical certification of every phone or OS. A web update cannot provide USB APIs or power that the operating system withholds.
 
 For direct Android USB:
 
@@ -97,7 +97,7 @@ For direct Android USB:
 - BECA firmware with the serial control protocol used by this repository.
 - The published HTTPS app or a localhost development server.
 
-iPhone and iPad browsers do not expose BECA's USB serial bridge to web apps. Use local previews or the tablet link described above. Desktop Chromium browsers use native Web Serial; Android uses the app's WebUSB drivers for CH340/CH341, CP210x, FTDI, and Espressif USB Serial/JTAG.
+iPhone and iPad browsers do not expose BECA's USB serial bridge to web apps. Use the device-hosted Wi-Fi instrument, local previews or the optional tablet link described above. Desktop Chromium browsers use native Web Serial; Android uses the app's WebUSB drivers for CH340/CH341, CP210x, FTDI, and Espressif USB Serial/JTAG.
 
 ## Connect and use AUX
 
@@ -186,3 +186,33 @@ Physical verification should also confirm the actual AUX signal and USB behavior
 ## Firmware compatibility
 
 This app introduces no firmware dependency and does not edit the embedded `index.html`. The repository remains pinned to ESP32 Arduino core 2.0.14, BLE-MIDI 2.2, MIDI Library 5.0.2, NimBLE-Arduino 1.4.3, FastLED 3.10.3, and AppleMIDI 3.5.0.
+
+## Wi-Fi MAC and phone hotspot settings
+
+The device controller, recovery setup, desktop Setup/Control, and phone/Apple controller display BECA’s **Wi-Fi MAC** (`sta_mac`). Copy this station address when registering BECA manually with a home router or managed network. The setup access point (`ap_mac`) and Bluetooth addresses are different. Firmware that does not report the station MAC displays an unavailable message.
+
+Open **Settings · Wi-Fi & phone hotspot** in the phone controller. On Android, connect BECA by USB, enable a **2.4 GHz** hotspot in the phone’s system settings, enter its exact name and password, then choose **Save Wi-Fi & restart BECA**. The same form accepts home Wi-Fi credentials. BECA tests credentials before saving; allow up to 25 seconds. The protected-network form accepts SSIDs up to 32 UTF-8 bytes and passwords of 8–63 characters, without tabs/newlines or outer spaces. Use the recovery page for open networks. Credentials are not saved in browser storage or shown in the serial console.
+
+On iPhone/iPad, or without Android USB, join BECA’s setup Wi-Fi and open `http://192.168.4.1/setup` (or `/setup` at its current local IP). Configure the hotspot using this page. Enable **Maximise Compatibility** where available on iPhone; Apple documents that this uses 2.4 GHz: https://support.apple.com/en-ca/guide/security/secfd166f620/web . If the same phone cannot host its hotspot while connected to BECA’s setup network, use a second phone/tablet for provisioning while the first hosts the hotspot. The app cannot turn on the system hotspot itself.
+
+After saving, reconnect USB or update the native Apple app’s address using BECA’s new IP from the router/hotspot client list. Keep the hotspot and BECA powered. If Wi-Fi control fails, check the band, password, Local Network permission and hotspot client isolation; Android USB control remains available. Enterprise authentication and captive portals still require a compatible personal network.
+
+Network identity is fetched on connection/settings opening or manual refresh, with a 3-second minimum interval and no continuous network polling. Identity labels only change when their value changes. Provisioning pauses phone live polling and control writes, allows one save at a time, and has a 3-second retry cooldown. Existing SSE rate limits and state-diff updates remain in place.
+
+## Direct Wi-Fi instrument and layout
+
+See the repository [browser Wi-Fi instrument instructions](../../README.md#browser-instrument-over-wi-fi-local-development-firmware) for firmware installation, `/play/`, latency/recovery limits, and deterministic embedded-asset builds. The phone/Apple UI now groups play, sound and feedback controls and places setup/help in Settings. Mode-specific modules are hidden when unused; their saved values are retained. UI work follows [the design rules](../../docs/design/INSTRUMENT_UI.md) and [copy rules](../../docs/design/UI_COPY.md).
+
+## Instrument layout and direct Wi-Fi sound
+
+Notes, Arpeggiator, Chords and Drums share the play surface, plant trace, MIDI feedback, master level and Panic. Pitched controls disappear in Drums; drum kit and parts appear only in Drums. Browser arp settings appear only for the browser’s local arpeggiator. Oscillators, Filter, Envelope and Effects are grouped in Synth. Network identity, hotspot setup, device output, LED settings and connection help live in Settings.
+
+To play on an iPhone or iPad browser without a computer, power BECA and join its setup Wi-Fi or the same home network/hotspot. Open `http://<BECA-IP>/play/`, tap **Connect Wi-Fi**, then **Listen on this device**. The page runs the same BECA WebAssembly sound engine locally and receives ordered device MIDI. Device arp notes retain their original pitches. On local HTTP, the audio engine uses the browser’s ScriptProcessor fallback because AudioWorklet requires a secure context. The published HTTPS app can open the device page from **Settings → Wi-Fi instrument**; it cannot fetch a local HTTP device through mixed content.
+
+Wi-Fi MIDI polling is bounded and does not overlap. Existing snapshots update state/plant/notes at 2 Hz and synth at 0.5 Hz, with unchanged payloads skipped during rendering. Stream loss and disconnect panic held notes. Keep the browser visible while playing. This requires firmware containing the `/play/` assets and ordered browser MIDI endpoint; older firmware must be updated. Phone hotspot client isolation can prevent a connection.
+
+## Appearance
+
+Open **Settings → Appearance** and choose **Light** or **Dark**. Light uses a white background with dark text, green active controls and green sound controls. Knobs, graphs, menus, warnings and the logo use the same palette. The browser remembers the choice on this device when local storage is available; the native Apple shell keeps it within its current web session. Appearance does not send commands to BECA or change audio settings.
+
+Setting acknowledgements accept the Wi-Fi API's successful state response as well as serial `ok:1`; only explicit `ok:0` is a rejection. Consecutive queued changes to the same continuous control keep the latest value, while preset/actions remain ordered. State/synth polling waits during edits and briefly after writes so old snapshots cannot pull a knob back. Plant and note feedback continue at the existing bounded rates. BECA interface colours are monochrome and green only.

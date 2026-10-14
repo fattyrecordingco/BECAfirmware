@@ -1,19 +1,19 @@
 :root {
   color-scheme: light;
-  --bg: #f6f4ef;
+  --bg: #ffffff;
   --panel: #ffffff;
-  --panel-ghost: #faf8f3;
-  --panel-muted: #f1efe8;
+  --panel-ghost: #f5f7f7;
+  --panel-muted: #eeeeee;
   --accent: #008351;
   --border: #bebebe;
   --muted: #d2d2cd;
   --muted-text: #667067;
   --text: #008351;
-  --danger: #ff4a42;
+  --danger: #152529;
   --ok: #008351;
-  --disabled-bg: #efede6;
-  --disabled-border: #d8d4cb;
-  --disabled-text: #aca79d;
+  --disabled-bg: #eeeeee;
+  --disabled-border: #cccccc;
+  --disabled-text: #777777;
   --frame-radius: 26px;
   --card-radius: 12px;
   --pill-radius: 999px;
@@ -256,7 +256,7 @@ button {
   border-radius: var(--frame-radius);
   background: var(--panel);
   overflow: hidden;
-  color: var(--accent);
+  color: var(--text);
   display: grid;
   grid-template-columns: 1fr;
   align-content: start;
@@ -292,7 +292,7 @@ button {
 .setup-frame { width: 100%; height: auto; min-height: 740px; transform: none; overflow: visible; }
 .setup-music { min-width: 0; }
 .setup-music .midi-routing { margin-top: 0; }
-.setup-guide { border: 2px solid var(--accent); border-radius: 20px; padding: 20px; background: white; }
+.setup-guide { border: 2px solid var(--accent); border-radius: 20px; padding: 20px; background: var(--panel); }
 .setup-guide h2 { font: 800 18px var(--display); margin: 0; }
 .setup-guide p, .setup-guide a { font-size: 12px; line-height: 1.65; }
 .setup-guide a { color: var(--accent); font-weight: 700; }
@@ -462,14 +462,14 @@ button {
 }
 
 .setup-status-box.is-error {
-  border-color: #efc4bf;
-  background: #fff6f4;
+  border-color: var(--border);
+  background: var(--panel-ghost);
   color: var(--danger);
 }
 
 .setup-status-box.is-ok {
   border-color: var(--accent);
-  background: #f2faf6;
+  background: var(--panel-muted);
   color: var(--accent);
 }
 
@@ -494,12 +494,12 @@ button {
 .setup-button-solid {
   border-color: var(--accent);
   background: var(--accent);
-  color: #ffffff;
+  color: var(--on-accent);
 }
 
 .setup-button-danger {
   border-color: var(--danger);
-  background: #fff6f4;
+  background: var(--panel-ghost);
   color: var(--danger);
 }
 
@@ -520,7 +520,7 @@ button {
 
 .setup-button-danger:hover:not(:disabled),
 .setup-button-danger:focus-visible:not(:disabled) {
-  background: #fff1ef;
+  background: var(--panel-ghost);
   border-color: var(--danger);
 }
 
@@ -573,7 +573,7 @@ button {
 
 .setup-row-firmware progress::-webkit-progress-bar {
   border-radius: var(--pill-radius);
-  background: #ecebe7;
+  background: var(--line-soft);
 }
 
 .setup-row-firmware progress::-webkit-progress-value {
@@ -640,7 +640,7 @@ button {
   display: grid;
   place-items: center;
   padding: 24px;
-  background: rgba(246, 244, 239, 0.92);
+  background: rgba(255, 255, 255, 0.92);
 }
 
 .first-launch-sheet {

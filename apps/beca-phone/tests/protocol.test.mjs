@@ -62,3 +62,65 @@ test("compatibility is based on exposed APIs, including iPad desktop user agents
   assert.match(connectionHelp("missing",insecure),/HTTPS/);
   assert.equal(capabilities({...env,RTCPeerConnection:undefined}).relay,false);
 });
+
+test("slow slider writes keep the final value without a stale backlog", async () => {
+  const writes = [];
+  let release;
+  const queue = new WriteQueue(async value => {
+    writes.push(value);
+    if (writes.length === 1) await new Promise(resolve => { release = resolve; });
+  }, 1);
+  const promises = [queue.enqueue("@C SET cutoff 100")];
+  for (let value = 101; value <= 200; value++) promises.push(queue.enqueue(`@C SET cutoff ${value}`));
+  assert.equal(queue.items.length, 1);
+  assert.equal(queue.items[0].value, "@C SET cutoff 200");
+  release();
+  const results = await Promise.all(promises);
+  assert.equal(results.filter(result => result === true).length, 2);
+  assert.deepEqual(writes, ["@C SET cutoff 100", "@C SET cutoff 200"]);
+  queue.clear();
+});
+
+test("slider coalescing preserves command barriers and real write failures", async () => {
+  let release;
+  const writes = [];
+  const queue = new WriteQueue(async value => {
+    writes.push(value);
+    if (value === "block") await new Promise(resolve => { release = resolve; });
+    if (value === "@C SET cutoff 200") throw new Error("Link lost");
+  }, 1);
+  const first = queue.enqueue("block");
+  const older = queue.enqueue("@C SET cutoff 100");
+  const preset = queue.enqueue("@C SET preset_live 2");
+  const latest = queue.enqueue("@C SET cutoff 200");
+  const rejection = assert.rejects(latest, /Link lost/);
+  release();
+  await Promise.all([first, older, preset, rejection]);
+  assert.deepEqual(writes, ["block", "@C SET cutoff 100", "@C SET preset_live 2", "@C SET cutoff 200"]);
+  queue.clear();
+});
+
+test("clearing an active queue rejects old work and preserves FIFO on reuse", async () => {
+  const writes = [];
+  let finishOld, finishFirstNew;
+  const queue = new WriteQueue(async value => {
+    writes.push(value);
+    if (value === "old") await new Promise(resolve => { finishOld = resolve; });
+    if (value === "new1") await new Promise(resolve => { finishFirstNew = resolve; });
+  }, 1);
+  const old = queue.enqueue("old");
+  const waiting = queue.enqueue("waiting");
+  const oldRejected = assert.rejects(old, /closed/);
+  const waitingRejected = assert.rejects(waiting, /closed/);
+  queue.clear();
+  const first = queue.enqueue("new1"), second = queue.enqueue("new2");
+  await Promise.all([oldRejected, waitingRejected]);
+  assert.deepEqual(writes, ["old"]);
+  finishOld();
+  await new Promise(resolve => setTimeout(resolve, 10));
+  assert.deepEqual(writes, ["old", "new1"]);
+  finishFirstNew();
+  await Promise.all([first, second]);
+  assert.deepEqual(writes, ["old", "new1", "new2"]);
+  queue.clear();
+});

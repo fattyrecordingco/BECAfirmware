@@ -25,32 +25,38 @@ struct BECAAppleApp: App {
 @MainActor struct ContentView: View {
     @ObservedObject var session: AppleSession
     @State private var bluetooth = false
+    @State private var showConnection = false
     var body: some View {
         VStack(spacing: 8) {
-            HStack {
-                Text("BECA address")
-                TextField("192.168.4.1", text: $session.address).textFieldStyle(.roundedBorder)
-                    .disabled(session.webURL == nil)
-                Button("Refresh MIDI") { session.refreshSources() }
-            }
-            HStack {
-                Picker("MIDI source", selection: $session.selectedSource) {
-                    Text("Choose BECA").tag(Int32(0))
-                    ForEach(session.sources) { source in Text(source.name).tag(source.id) }
-                }.onChange(of: session.selectedSource) { _ in session.selectMIDI() }
-                #if os(iOS)
-                Button("Bluetooth MIDI") { bluetooth = true }
-                #else
-                Button("Bluetooth MIDI") {
-                    NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Utilities/Audio MIDI Setup.app"))
+            DisclosureGroup("Connection", isExpanded: $showConnection) {
+                HStack {
+                    Text("BECA address")
+                    TextField("192.168.4.1", text: $session.address).textFieldStyle(.roundedBorder)
+                        .disabled(session.webURL == nil)
+                    Button("Refresh MIDI") { session.refreshSources() }
                 }
-                #endif
-            }
-            Text(session.status).font(.caption).frame(maxWidth: .infinity, alignment: .leading)
+                HStack {
+                    Picker("MIDI source", selection: $session.selectedSource) {
+                        Text("Choose BECA").tag(Int32(0))
+                        ForEach(session.sources) { source in Text(source.name).tag(source.id) }
+                    }.onChange(of: session.selectedSource) { _ in session.selectMIDI() }
+                    #if os(iOS)
+                    Button("Bluetooth MIDI") { bluetooth = true }
+                    #else
+                    Button("Bluetooth MIDI") {
+                        NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Utilities/Audio MIDI Setup.app"))
+                    }
+                    #endif
+                }
+                Text(session.status).font(.caption).frame(maxWidth: .infinity, alignment: .leading)
+            }.font(.caption)
             if let url = session.webURL { InstrumentView(session: session, url: url) }
             else { ProgressView("Loading BECA…").frame(maxWidth: .infinity, maxHeight: .infinity) }
         }
         .padding(8)
+        .preferredColorScheme(session.appearance == "light" ? .light : .dark)
+        .tint(session.appearance == "light" ? Color(red: 0, green: 105.0/255, blue: 67.0/255) : Color(red: 103.0/255, green: 227.0/255, blue: 188.0/255))
+        .background(session.appearance == "light" ? Color.white : Color(red: 16.0/255, green: 23.0/255, blue: 25.0/255))
         #if os(iOS)
         .sheet(isPresented: $bluetooth, onDismiss: { session.refreshSources() }) { BluetoothPicker() }
         .onAppear {
@@ -66,6 +72,9 @@ struct BECAAppleApp: App {
 @MainActor private func makeWebView(_ session: AppleSession, url: URL) -> WKWebView {
     let config = WKWebViewConfiguration()
     config.userContentController.add(session, name: "beca")
+    config.userContentController.addUserScript(WKUserScript(
+        source: "globalThis.__BECA_NATIVE_THEME__ = \"\(session.appearance)\";",
+        injectionTime: .atDocumentStart, forMainFrameOnly: true))
     config.websiteDataStore = .nonPersistent()
     #if os(iOS)
     config.allowsInlineMediaPlayback = true

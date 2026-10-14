@@ -14,7 +14,7 @@ with (app / "Info.plist").open("rb") as stream:
     info = plistlib.load(stream)
 assert info["CFBundleSupportedPlatforms"] == ["iPhoneOS"], "Not a physical iOS build"
 assert set(info["UIDeviceFamily"]) == {1, 2}, "Both iPhone and iPad must be supported"
-assert info["CFBundleShortVersionString"] == "1.6.0", "Unexpected version"
+assert info["CFBundleShortVersionString"] == json.loads((Path(__file__).resolve().parent.parent / "beca-phone/package.json").read_text())["version"], "Unexpected version"
 assert info["NSLocalNetworkUsageDescription"] and info["NSBluetoothAlwaysUsageDescription"]
 assert info.get("CFBundleIcons", {}).get("CFBundlePrimaryIcon"), "Missing compiled iPhone icon"
 assert info.get("CFBundleIcons~ipad", {}).get("CFBundlePrimaryIcon"), "Missing compiled iPad icon"
