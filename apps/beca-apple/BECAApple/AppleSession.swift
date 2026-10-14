@@ -132,8 +132,8 @@ final class AppleSession: NSObject, ObservableObject, WKScriptMessageHandler, WK
         let componentsOfHost = host.split(separator: ".", omittingEmptySubsequences: false)
         let octets = componentsOfHost.compactMap { Int($0) }
         let privateIP = componentsOfHost.count == 4 && octets.count == 4 && octets.allSatisfy { (0...255).contains($0) } &&
-            (octets[0] == 10 || (octets[0] == 192 && octets[1] == 168) || (octets[0] == 172 && (16...31).contains(octets[1])))
-        guard privateIP || host.hasSuffix(".local") else { throw failure("Use BECA’s private Wi-Fi IP address or .local name.") }
+            (octets[0] == 10 || (octets[0] == 100 && (64...127).contains(octets[1])) || (octets[0] == 192 && octets[1] == 168) || (octets[0] == 172 && (16...31).contains(octets[1])))
+        guard privateIP || host.hasSuffix(".local") else { throw failure("Use BECA’s local Wi-Fi IP address or .local name.") }
         guard let url = URL(string: "http://\(host)/") else { throw failure("Invalid device address.") }
         return url
     }
