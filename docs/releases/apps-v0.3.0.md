@@ -32,7 +32,7 @@ Completed browser checks cover mode visibility after gestures and device updates
 
 The final laptop access-point HTTP runs did not complete: one timed out after checking 17 embedded assets; another stopped when Windows lost its IPv4 address. These runs do not certify sustained physical Wi-Fi playback. Automated browser transport/audio checks and the earlier physical access-point checks remain separate evidence.
 
-The final 1.7.0 native candidate was development-signed and installed successfully on the connected iPad, with its bundled resources verified. User interaction acceptance for that build is recorded separately.
+The final 1.7.0 native candidate was development-signed and installed successfully on the connected iPad, with its bundled resources verified. The user confirmed the final 1.7.0 build connects at 192.168.4.1, applies knob changes, switches Light/Dark, plays Test sound and stops it with Panic.
 
 The earlier physical native build 5 on `iPad15,5` has user-confirmed setup-access-point connection, knobs, Light/Dark, Test sound and Panic. That record is separate from the new unsigned release candidate and does not certify all iPhone/iPad models. Direct CH340 USB serial is unavailable in iPhone/iPad browsers and is not implemented in the native Apple app.
 
