@@ -88,3 +88,38 @@ test("expired backlog is discarded and pending notes clear on stream reset", asy
   assert.equal(serial.pendingMidi.size, 0);
   assert.ok(lines.every((line) => line.type !== "midi"));
 });
+
+test("cold Wi-Fi handshake gets four seconds while controls and MIDI keep 1200ms deadlines", async (t) => {
+  const budgets = [];
+  t.mock.method(globalThis, "setTimeout", (_callback, delay) => { budgets.push(delay); return budgets.length; });
+  t.mock.method(globalThis, "clearTimeout", () => {});
+  const serial = new WifiBecaSerial({ origin: "http://beca.test", fetch: async () => ({ ok: true, json: async () => ({ browser_midi: true }) }) });
+  serial.poll = () => {};
+  await serial.connect();
+  await serial.json("/api/state");
+  await serial.json("/api/midi");
+  assert.deepEqual(budgets, [4000, 1200, 1200]);
+  await serial.disconnect();
+});
+
+test("disconnect aborts a pending cold handshake and prevents a late connection", async (t) => {
+  t.mock.method(globalThis, "setTimeout", () => 1);
+  t.mock.method(globalThis, "clearTimeout", () => {});
+  let signal, requested;
+  const started = new Promise(resolve => { requested = resolve; });
+  const serial = new WifiBecaSerial({ origin: "http://beca.test", fetch: async (_, options) => {
+    signal = options.signal;
+    requested();
+    return new Promise((_, reject) => signal.addEventListener("abort", () => reject(new Error("request aborted")), { once: true }));
+  } });
+  let connections = 0;
+  serial.addEventListener("connect", () => connections++);
+  const connecting = serial.connect();
+  const rejected = assert.rejects(connecting, /aborted/);
+  await started;
+  await serial.disconnect();
+  await rejected;
+  assert.equal(signal.aborted, true);
+  assert.equal(serial.connected, false);
+  assert.equal(connections, 0);
+});
