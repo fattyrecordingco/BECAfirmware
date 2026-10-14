@@ -35,7 +35,7 @@ The native app requires iOS/iPadOS 15 or later. Installation needs a computer, a
 
 A free Apple Personal Team's development profile expires after **seven days**. Re-sign and reinstall before or after expiry; this is Apple's provisioning limit, not a BECA firmware failure. [Apple's account documentation](https://developer.apple.com/help/account/basics/about-your-developer-account) explains these limits. Installing a development IPA is separate from public App Store/TestFlight distribution.
 
-The existing development **build 5** on `iPad15,5` has user-confirmed setup-AP connection, knobs, Light/Dark, Test sound and Panic. That record does not certify the newly published package or every iPhone/iPad model. Direct CH340 USB serial is not included in the native app either.
+The final **1.7.0** build installed on the connected iPad has user-confirmed setup-AP connection at `192.168.4.1`, knobs, Light/Dark, Test sound and Panic. This does not certify every iPhone/iPad model. Direct CH340 USB serial is not included in the native app either.
 
 ## macOS desktop
 

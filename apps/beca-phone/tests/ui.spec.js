@@ -494,9 +494,13 @@ test("keeps hotspot errors visible and does not reboot on rejection", async ({ p
 
 test("mode modules follow gestures and incoming state without losing values", async ({ page }, testInfo) => {
   await page.getByRole("button", { name: "Connect USB", exact: true }).click();
+  await expect(page.locator("#deviceStatus")).toHaveText("BECA connected");
   await page.getByRole("button", { name: "Performance", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Performance", exact: true })).toHaveClass(/active/);
   for (const mode of [0, 1, 2, 3]) {
+    const writesBefore = await page.evaluate(() => globalThis.__MOCK_WRITES.length);
     await page.locator(`[data-play-mode="${mode}"]`).click();
+    await expect.poll(() => page.evaluate((start) => globalThis.__MOCK_WRITES.slice(start).some((line) => line.startsWith("@C SET mode ")), writesBefore)).toBe(true);
     await expect.poll(() => page.evaluate(() => globalThis.__MOCK_STATE.mode)).toBe(mode);
     const pitched = page.locator("#control-scale");
     const arp = page.locator("#control-arp_pattern");

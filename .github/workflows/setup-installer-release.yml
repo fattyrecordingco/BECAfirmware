@@ -6,7 +6,7 @@ on:
       platform:
         description: Platform build selection
         type: choice
-        options: [all, windows]
+        options: [all, windows, macos-arm64]
         default: all
       firmware_run:
         description: Optional successful firmware run to reuse for an installer retry
@@ -63,7 +63,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ fromJSON(inputs.platform == 'windows' && '["windows-latest"]' || '["windows-latest","macos-latest","macos-15-intel","ubuntu-22.04"]') }}
+        os: ${{ fromJSON(inputs.platform == 'windows' && '["windows-latest"]' || inputs.platform == 'macos-arm64' && '["macos-latest"]' || '["windows-latest","macos-latest","macos-15-intel","ubuntu-22.04"]') }}
 
     runs-on: ${{ matrix.os }}
     env:

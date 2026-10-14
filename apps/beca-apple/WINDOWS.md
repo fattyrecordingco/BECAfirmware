@@ -32,6 +32,8 @@ The helper forwards port 27015 only on the WSL host interface, with the firewall
 
 The current Apple Devices package uses `AppleMobileDeviceProcess` rather than a Windows service. The helper starts its packaged `AMPDevicesAgent` entry if needed, verifies the loopback listener's owning process, then creates the forwarding rule. Both `ideviceinfo` and xtool device detection passed through this bridge, followed by successful provisioning/signing/install verification. Windows PowerShell 5.1 syntax and argument forwarding checks passed, including unlabelled xtool subcommands after `-Step`.
 
+When using the release ZIP, run commands from its extracted folder and substitute `.\apple-install\` for `.\apps\beca-apple\` in the examples below. Setup/Auth/Devices/Install work with the prebuilt IPA; source Build/Run and SDK extraction are optional development steps.
+
 ## 1. Install Windows prerequisites
 
 From an **Administrator PowerShell**, in the BECA repository:

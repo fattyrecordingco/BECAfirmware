@@ -4,7 +4,7 @@ This artifact is an **unsigned native device build**, not an App Store or TestFl
 
 The GitHub macOS runner compiles the app with Xcode. On Windows, xtool can sign/install that prebuilt IPA without compiling it locally or extracting an Apple SDK. Local Swift development builds still require the SDK described in [WINDOWS.md](WINDOWS.md).
 
-Status on 11 October 2026: the candidate from commit `3f0a59c` was signed and installed on the user's iPad Air M3, and the user confirmed it opens after completing Developer Mode. This is a Wi-Fi/BLE candidate. The user's required **USB-C serial connection to both iPad and iPhone remains unimplemented and untested**. See [wired serial constraints](README.md#shared-app-experience-and-wired-serial) before treating installation as product acceptance.
+Status on 14 October 2026: BECA 1.7.0 was development-signed and installed on the connected iPad. The user confirmed connection at `192.168.4.1`, knob changes, Light/Dark, Test sound and Panic. This validates those checks on that device; CH340 wired serial remains unsupported and live BLE MIDI audio was not separately certified.
 
 ## Install on the connected device
 

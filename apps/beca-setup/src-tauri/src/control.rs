@@ -1320,6 +1320,9 @@ mod tests {
                     thread::sleep(Duration::from_millis(20));
                     continue;
                 };
+                // Darwin inherits the listener's nonblocking flag on accepted sockets.
+                stream.set_nonblocking(false).expect("blocking mock stream");
+                stream.set_read_timeout(Some(Duration::from_secs(2))).expect("mock read timeout");
                 let mut buf = [0u8; 4096];
                 let n = stream.read(&mut buf).expect("read request");
                 let req = String::from_utf8_lossy(&buf[..n]);
@@ -1391,6 +1394,9 @@ mod tests {
                     thread::sleep(Duration::from_millis(20));
                     continue;
                 };
+                // Darwin inherits the listener's nonblocking flag on accepted sockets.
+                stream.set_nonblocking(false).expect("blocking mock stream");
+                stream.set_read_timeout(Some(Duration::from_secs(2))).expect("mock read timeout");
                 let mut buf = [0u8; 4096];
                 let n = stream.read(&mut buf).expect("read request");
                 let req = String::from_utf8_lossy(&buf[..n]);

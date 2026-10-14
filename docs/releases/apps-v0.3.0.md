@@ -22,11 +22,12 @@ Use [SHA256SUMS](https://github.com/fattyrecordingco/BECAfirmware/releases/downl
 - BECA hosts the complete browser instrument at `/play/`; the root redirects there. `/control` retains the legacy controller and `/setup` handles network provisioning.
 - iPhone/iPad Safari can play the original BECA WASM sound engine from ordered Wi-Fi MIDI without an Apple Account. The local HTTP audio fallback, bounded timestamp buffer and gap/disconnect panic preserve device note events.
 - Android USB, native Apple Wi-Fi plus BLE MIDI, the desktop USB bridge, AUX and network MIDI remain separate connection/output paths. Wi-Fi MAC is visible for manual network registration.
+- Cancelled desktop Control loads cannot create hidden background polling after switching views.
 - Repo design/copy rules require functional instrument labels and meaningful feedback, with bounded writes, polling and state-diff rendering.
 
 ## Verification and limits
 
-Desktop checks passed 76/76, with four final appearance checks. Phone audio/transport checks passed 44/44; all 254 applicable browser checks passed across nine layouts, with 25 capability skips (two browser-startup timeouts passed on retry). Rust checks passed 32/32. The final firmware compiled with core 2.0.14 and passed the connected-device serial check: 13 presets, 40 bounded plant readings, maximum response 13.9 ms, no captured firmware errors.
+Desktop checks passed 82/82, with four final appearance checks. Phone audio/transport checks passed 44/44; all 254 applicable browser checks passed across nine layouts, with 25 capability skips (two browser-startup timeouts passed on retry). Rust checks passed 32/32. The final firmware compiled with core 2.0.14 and passed the connected-device serial check: 13 presets, 40 bounded plant readings, maximum response 13.9 ms, no captured firmware errors.
 
 Completed browser checks cover mode visibility after gestures and device updates, layouts on phone/tablet orientations, accessibility, controls, audio release/panic and reconnect. An automated insecure HTTP `/play/` test with mocked device responses rendered nonzero WASM audio in Chromium, preserved the device's arp pitch, followed live plant updates, released notes and panicked on stream gaps. Desktop interaction and appearance checks passed. These automated checks do not establish physical Safari latency or every device's connectivity.
 

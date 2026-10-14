@@ -75,7 +75,11 @@ case "$action" in
         xtool --version
         xtool sdk status
         # Parse the manifest without compiling Apple frameworks or signing.
-        swift package dump-package > /dev/null
+        if [[ -f Package.swift ]]; then
+            swift package dump-package > /dev/null
+        else
+            echo "Prebuilt IPA installer: no source manifest or Apple SDK is required."
+        fi
         ;;
     build|run)
         if [[ ! -f build/xtool-Info.plist || ! -f BECAApple/Web/beca-synth.wasm ]]; then
