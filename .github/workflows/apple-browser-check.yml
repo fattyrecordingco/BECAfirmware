@@ -1,0 +1,32 @@
+name: Apple browser checks
+on:
+  workflow_dispatch:
+  push:
+    branches: ['codex/apps-v0.3.0-candidate']
+    paths: ['apps/beca-phone/**', '.github/workflows/apple-browser-check.yml']
+permissions:
+  contents: read
+jobs:
+  safari:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install browser dependencies
+        working-directory: apps/beca-phone
+        run: |
+          npm ci
+          npx playwright install webkit
+      - name: Verify shared sound and transports
+        working-directory: apps/beca-phone
+        run: npm test
+      - name: Safari phone, tablet and desktop checks
+        working-directory: apps/beca-phone
+        run: npx playwright test --project=iphone-webkit --project=ipad-webkit --project=mac-webkit --workers=2
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: apple-browser-failure-${{ github.sha }}
+          path: apps/beca-phone/test-results/

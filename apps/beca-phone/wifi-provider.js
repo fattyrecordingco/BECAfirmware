@@ -25,7 +25,7 @@ export class WifiBecaSerial extends EventTarget {
     this.signatures.set(tag, text);
     this.emit(`@R ${tag} ${text}`);
   }
-  async json(path, body) {
+  async json(path, body, timeoutMs = 1200) {
     const controller = new AbortController();
     const onDisconnect = () => controller.abort();
     this.abort?.signal.addEventListener("abort", onDisconnect, { once: true });
@@ -40,7 +40,7 @@ export class WifiBecaSerial extends EventTarget {
         if (!response.ok || payload.ok === 0) throw new Error(payload.err || payload.msg || `BECA returned ${response.status}.`);
         return payload;
       })(), new Promise((_, reject) => {
-        timeout = setTimeout(() => { controller.abort(); reject(new Error("BECA Wi-Fi timed out.")); }, 1200);
+        timeout = setTimeout(() => { controller.abort(); reject(new Error("BECA Wi-Fi timed out.")); }, timeoutMs);
       })]);
     } finally {
       clearTimeout(timeout);
@@ -51,7 +51,7 @@ export class WifiBecaSerial extends EventTarget {
   async connect() {
     await this.disconnect();
     this.abort = new AbortController();
-    const info = await this.json("/api/info");
+    const info = await this.json("/api/info", undefined, 4000);
     if (!info.browser_midi) throw new Error("Update BECA firmware for browser sound over Wi-Fi.");
     this.connected = true;
     this.sequence = undefined;
