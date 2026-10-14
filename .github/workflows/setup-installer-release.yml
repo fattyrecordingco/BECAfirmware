@@ -2,6 +2,16 @@ name: Build Setup Installer
 
 on:
   workflow_dispatch:
+    inputs:
+      platform:
+        description: Platform build selection
+        type: choice
+        options: [all, windows]
+        default: all
+      firmware_run:
+        description: Optional successful firmware run to reuse for an installer retry
+        required: false
+        type: string
   push:
     tags:
       - "setup-v*"
@@ -9,9 +19,11 @@ on:
 
 permissions:
   contents: write
+  actions: read
 
 jobs:
   firmware:
+    if: ${{ !inputs.firmware_run }}
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -46,12 +58,12 @@ jobs:
   build-installers:
     needs: firmware
     if: |
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'push' && (startsWith(github.ref_name, 'setup-v') || startsWith(github.ref_name, 'apps-v')))
+      always() && (needs.firmware.result == 'success' ||
+        (needs.firmware.result == 'skipped' && inputs.firmware_run != ''))
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest, macos-15-intel, ubuntu-22.04]
+        os: ${{ fromJSON(inputs.platform == 'windows' && '["windows-latest"]' || '["windows-latest","macos-latest","macos-15-intel","ubuntu-22.04"]') }}
 
     runs-on: ${{ matrix.os }}
     env:
@@ -80,6 +92,8 @@ jobs:
         with:
           name: beca-firmware
           path: apps/beca-setup/src-tauri/resources/firmware
+          run-id: ${{ inputs.firmware_run || github.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Stage included firmware
         shell: bash
         run: mv apps/beca-setup/src-tauri/resources/firmware/beca-1.2.0-merged.bin apps/beca-setup/src-tauri/resources/firmware/beca-merged.bin

@@ -97,6 +97,10 @@ async function openPerformance(page, { offline = false, transport = "serial", in
 }
 
 async function dragValues(page, entries) {
+  // Synthetic range events must wait for the same readiness as a user gesture.
+  for (const key of new Set(entries.map(([key]) => key))) {
+    await expect(page.locator(`#performance-${key}`)).toBeEnabled();
+  }
   await page.evaluate((entries) => {
     entries.forEach(([key, value]) => {
       const field = document.querySelector(`#performance-${key}`);
@@ -383,6 +387,7 @@ test("live MIDI splits can be added, edited and removed while controls continue"
   await page.getByLabel("Transpose, split 1", { exact: true }).fill("-12");
   await page.getByRole("button", { name: "Apply splits", exact: true }).click();
   await expect.poll(() => page.evaluate(() => window.__performanceMock.bridge.routes[0].transpose)).toBe(-12);
+  await page.evaluate(() => { window.__performanceMock.readDelay = 300; });
   await page.getByRole("navigation", { name: "App views" }).getByRole("button", { name: "Performance", exact: true }).click();
   await dragValues(page, [["bpm", 155], ["cutoff", 5700]]);
   await expect.poll(() => page.evaluate(() => window.__performanceMock.synth.cutoff)).toBe(5700);
