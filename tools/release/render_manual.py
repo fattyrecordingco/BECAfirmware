@@ -5,6 +5,8 @@ import markdown
 root = Path(__file__).resolve().parents[2]
 source = (root / 'docs/user/BECA_MANUAL.md').read_text(encoding='utf-8')
 body = markdown.markdown(source, extensions=['extra', 'toc'])
+# Bundled and downloaded manuals open outside the repository tree.
+body = body.replace('href="../install/', 'href="https://github.com/fattyrecordingco/BECAfirmware/blob/master/docs/install/')
 html = '''<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>BECA manual · 0.3.0</title><style>
 :root{color-scheme:light}body{max-width:850px;margin:auto;padding:32px 24px 80px;background:#f6f4ef;color:#174d36;font:16px/1.7 system-ui,sans-serif}
