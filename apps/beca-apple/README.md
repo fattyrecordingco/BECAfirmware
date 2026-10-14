@@ -1,4 +1,8 @@
-# BECA Apple app — iPad launch confirmed; wired serial outstanding
+# BECA Apple app 1.7.0
+
+[Download the separate Apple development ZIP](https://github.com/fattyrecordingco/BECAfirmware/releases/download/apps-v0.3.0/BECA-Apple-1.7.0.zip) · [Installation and Safari option](../../docs/install/APPLE.md) · [Release notes](../../docs/releases/apps-v0.3.0.md)
+
+The **1.7.0 candidate has compiled**. Its new physical installation/acceptance is pending; the public IPA is unsigned and requires each user’s own Apple Account signing. Earlier installed build 5 is the physical verification record below. Release publication and the current Pages deployment are pending until the release workflow completes; the older deployment record below is historical.
 
 This project provides Wi-Fi control and native MIDI for **iPhone/iPad on iOS/iPadOS 15+** and **Mac on macOS 12+**. BECA 1.6.0 was development-signed, installed and opened on the user's iPad Air M3 on 11 October 2026. The user requires **direct USB-C serial on both iPad and iPhone**, which this build does not provide. Instrument acceptance, physical iPhone testing and public distribution remain outstanding. Do not advertise this as a finished wired Apple app.
 
@@ -84,10 +88,10 @@ Current local checks passed: all 29 protocol/audio/adapter unit checks; 36 iPhon
 
 ### Apple tester quick start
 
-Use the current development branch, not the default branch:
+Build the release source from `master`:
 
 ```sh
-git clone --depth 1 --single-branch --branch codex/final-beca-release https://github.com/fattyrecordingco/BECAfirmware.git
+git clone --depth 1 --single-branch --branch master https://github.com/fattyrecordingco/BECAfirmware.git
 cd BECAfirmware
 node apps/beca-apple/prepare.mjs
 open apps/beca-apple/BECAApple.xcodeproj
@@ -97,7 +101,7 @@ This needs a Mac with Xcode 16+ and Node.js 22+. Choose the **BECAApple** scheme
 
 This handoff is for **Wi-Fi controls + BLE/native MIDI**, not iPad USB serial. A custom CH340 DriverKit extension is not included. The public browser app is a separate build and does not acquire native Apple connections through publication.
 
-Publication status (6 October 2026): this branch is public and the Apple checks passed. The browser workflow also passed **188 checks** with **19 skips**, but GitHub's `github-pages` environment rejected deployment because `codex/final-beca-release` is not an allowed deployment branch. The public website therefore has not received this update. The instructions above build the current app from source and do not depend on that website.
+**Historical deployment record — 6 October 2026:** this branch is public and the Apple checks passed. The browser workflow also passed **188 checks** with **19 skips**, but GitHub's `github-pages` environment rejected deployment because `codex/final-beca-release` is not an allowed deployment branch. At that time the public website had not received the branch update. This historical rejection does not describe the new apps-v0.3.0 release; current publication/Pages status must be checked in the release workflow. The source-build instructions do not depend on Pages.
 
 When reporting a test, include the tested commit (`git rev-parse --short HEAD`), device model, OS/Xcode versions, BECA firmware version, connection mode, expected/actual behavior, and any Xcode error. Do not include Wi-Fi passwords or signing secrets. Work through **Required physical validation before release** below; include both first connection and reconnect after screen lock. Report whether the synth's notes stop on disconnect and whether plant readings and settings match the hardware. The [verification record](../../docs/research/apple-compatibility.md) distinguishes completed Windows/browser checks from outstanding Apple checks.
 

@@ -1,10 +1,12 @@
 # BECA Phone Control
 
-BECA Phone Control is an installable web instrument and controller for phones, tablets and desktops. Version 1.6 uses BECA's C++ synthesizer through WebAssembly and AudioWorklet, including all 13 presets and eight drum voices, with higher-precision web delay and band-limited saw/square oscillators. USB control uses the existing `@C` protocol at 115200 baud. The firmware's BLE-MIDI behavior is unchanged.
+[Open the PWA](https://fattyrecordingco.github.io/BECAfirmware/) · [Android installation](../../docs/install/ANDROID.md) · [Apple installation](../../docs/install/APPLE.md) · [Separate web ZIP](https://github.com/fattyrecordingco/BECAfirmware/releases/download/apps-v0.3.0/BECA-Android-Web-1.7.0.zip)
 
-## Direct Apple app transport (1.6)
+BECA Phone Control is an installable web instrument and controller for phones, tablets and desktops. Version 1.7.0 uses BECA's C++ synthesizer through WebAssembly and AudioWorklet, including all 13 presets and eight drum voices, with higher-precision web delay and band-limited saw/square oscillators. USB control uses the existing `@C` protocol at 115200 baud. The firmware's BLE-MIDI behavior is unchanged.
 
-The [BECA Apple app project](../beca-apple/README.md) bundles this controller and synth and adds native Wi-Fi settings plus CoreMIDI notes, without a computer during use. Listening selects **BLE MIDI** on that transport; browser USB and tablet-link transports retain **Serial MIDI**. Unsigned simulator and Mac builds passed on GitHub's Mac runner; signing and physical iPhone/iPad validation remain outstanding. This is native app source, not a released app or a new browser API. The browser also has direct Apple connection instructions for Safari Wi-Fi control and native music apps.
+## Direct Apple app transport (1.7.0)
+
+The [BECA Apple app project](../beca-apple/README.md) bundles this controller and synth and adds native Wi-Fi settings plus CoreMIDI notes, without a computer during use. Listening selects **BLE MIDI** on that transport; browser USB and tablet-link transports retain **Serial MIDI**. The separate Apple 1.7.0 release candidate has compiled; its unsigned IPA requires each user’s own development signing. Installation and physical validation of that new candidate remain pending. An earlier physical build 5 has user-confirmed setup-AP connection, knobs, themes, Test sound and Panic. Safari can separately play the Wi-Fi browser instrument at `/play/`; it does not gain native BLE or USB access. Follow the [Apple installation guide](../../docs/install/APPLE.md).
 
 Audio interruption clears voices and effect tails; hiding/stopping the app while its synth is still loading cannot restart sound later. A processor failure can recreate the AudioWorklet on the next Listen tap. Poll groups skip busy ticks; the command queue has a 128-entry cap. Safari engine tests now include iPhone, iPad and desktop Mac layouts. Native and browser transports share the existing 80 ms control coalescing, parameter differences and bounded graph history. The service worker preserves unrelated caches when updating the BECA app.
 
@@ -30,11 +32,11 @@ Open the published app over HTTPS (or localhost), or the new device-hosted `http
 
 For live input on Android, connect USB and tap Listen. Listening selects **Serial MIDI** on BECA; **Serial MIDI + Aux** can also be selected when AUX is ready. The synth consumes live `@M` messages, including note-offs and channel-10 drums; it never synthesizes from the slower display snapshots or duplicates telemetry notes. Presets and parameters synchronize from BECA, and edits also update the connected board. Select the output route you want on BECA after stopping phone playback.
 
-Audio follows the device's system output: built-in speaker, wired headphones or a Bluetooth audio device. Bluetooth adds device-dependent delay. Audio must be enabled with a user tap. Background playback is not guaranteed by mobile browsers; hiding the page stops local audio; tap Listen when returning. If the OS suspends audio, tap Stop and then Listen after returning. **Silence all notes** clears voices and effect tails; unplugging USB or losing the tablet link stops local playback.
+Audio follows the device's system output: built-in speaker, wired headphones or a Bluetooth audio device. Bluetooth adds device-dependent delay. Audio must be enabled with a user tap. Background playback is not guaranteed by mobile browsers; hiding the page stops local audio; tap Listen when returning. If the OS suspends audio, tap Stop and then Listen after returning. **Panic** clears voices and effect tails; unplugging USB or losing the tablet link stops local playback.
 
 ## iPad and browser-to-browser tablet link
 
-iPad/iPhone Safari and Chrome cannot directly access this board's USB serial bridge. A USB-C cable or installing the page to the Home Screen does not grant that browser capability. The app disables Connect USB and explains the supported route instead of asking for cable/OTG changes. See [Google's USB/Serial browser support notice](https://support.google.com/chrome/answer/12576972). With the rebuilt development firmware, open `http://DEVICE_IP/play/` for direct Wi-Fi browser sound and plant input. Older firmware can use the computer link. Direct Safari settings/AUX and native BLE-MIDI are available separately; the BECA Apple project adds a direct native synth path after installation and validation. No direct iPad BLE-MIDI support is claimed; direct hardware access uses the separate native Apple project and still requires physical hardware/protocol verification before release.
+iPad/iPhone Safari and Chrome cannot directly access this board's USB serial bridge. A USB-C cable or installing the page to the Home Screen does not grant that browser capability. The app disables Connect USB and explains the supported route instead of asking for cable/OTG changes. See [Google's USB/Serial browser support notice](https://support.google.com/chrome/answer/12576972). With the firmware 1.2.0, open `http://DEVICE_IP/play/` for direct Wi-Fi browser sound and plant input. Older firmware can use the computer link. Direct Safari settings/AUX and native BLE-MIDI are available separately; the BECA Apple project adds a direct native synth path after installation and validation. No direct iPad BLE-MIDI support is claimed; direct hardware access uses the separate native Apple project and still requires physical hardware/protocol verification for each intended device.
 
 1. Open the HTTPS app on the computer and tablet on the same local network. Connect BECA by USB in desktop Chrome/Edge.
 2. Expand **Link an iPad or tablet through a computer** on both devices.
@@ -185,7 +187,7 @@ Physical verification should also confirm the actual AUX signal and USB behavior
 
 ## Firmware compatibility
 
-This app introduces no firmware dependency and does not edit the embedded `index.html`. The repository remains pinned to ESP32 Arduino core 2.0.14, BLE-MIDI 2.2, MIDI Library 5.0.2, NimBLE-Arduino 1.4.3, FastLED 3.10.3, and AppleMIDI 3.5.0.
+Direct Wi-Fi playback requires firmware 1.2.0 with `BECA_BROWSER_PLAYER=1` and the generated device assets. Android USB and local previews retain the existing transports. After shared UI edits, rebuild the phone assets, regenerate `device_player.h` with `python3 tools/build_device_player.py`, regenerate the legacy controller header with `python3 make_index_header.py` when `index.html` changes, and rebuild firmware. BLE-MIDI behavior and the core baseline remain stable. The repository remains pinned to ESP32 Arduino core 2.0.14, BLE-MIDI 2.2, MIDI Library 5.0.2, NimBLE-Arduino 1.4.3, FastLED 3.10.3, and AppleMIDI 3.5.0.
 
 ## Wi-Fi MAC and phone hotspot settings
 
@@ -201,7 +203,7 @@ Network identity is fetched on connection/settings opening or manual refresh, wi
 
 ## Direct Wi-Fi instrument and layout
 
-See the repository [browser Wi-Fi instrument instructions](../../README.md#browser-instrument-over-wi-fi-local-development-firmware) for firmware installation, `/play/`, latency/recovery limits, and deterministic embedded-asset builds. The phone/Apple UI now groups play, sound and feedback controls and places setup/help in Settings. Mode-specific modules are hidden when unused; their saved values are retained. UI work follows [the design rules](../../docs/design/INSTRUMENT_UI.md) and [copy rules](../../docs/design/UI_COPY.md).
+See the repository [browser Wi-Fi instrument instructions](../../README.md#browser-instrument-over-wi-fi-firmware-120) for firmware installation, `/play/`, latency/recovery limits, and deterministic embedded-asset builds. The phone/Apple UI now groups play, sound and feedback controls and places setup/help in Settings. Mode-specific modules are hidden when unused; their saved values are retained. UI work follows [the design rules](../../docs/design/INSTRUMENT_UI.md) and [copy rules](../../docs/design/UI_COPY.md).
 
 ## Instrument layout and direct Wi-Fi sound
 
