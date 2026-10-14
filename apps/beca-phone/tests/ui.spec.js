@@ -479,6 +479,7 @@ test("tablet browser link forwards live input and settings without direct USB", 
 
 test("keeps hotspot errors visible and does not reboot on rejection", async ({ page }) => {
   await page.getByRole("button", { name: "Connect USB" }).click();
+  await expect(page.locator("#deviceStatus")).toHaveText("BECA connected");
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   await page.locator("#networkSettings summary").click();
   await expect(page.locator("#wifiMac")).toHaveText("AA:BB:CC:11:22:33");
