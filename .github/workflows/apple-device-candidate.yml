@@ -1,0 +1,36 @@
+name: Apple device development candidate
+permissions:
+  contents: read
+on:
+  push:
+    paths: ['.github/workflows/apple-device-candidate.yml']
+jobs:
+  device:
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node apps/beca-apple/prepare.mjs
+      - name: MIDI parser checks
+        run: |
+          swiftc apps/beca-apple/BECAApple/MIDIStream.swift apps/beca-apple/tests/main.swift -o "$RUNNER_TEMP/beca-midi-check"
+          "$RUNNER_TEMP/beca-midi-check"
+      - name: Compile physical iPhone and iPad candidate
+        run: xcodebuild -project apps/beca-apple/BECAApple.xcodeproj -scheme BECAApple -configuration Release -destination 'generic/platform=iOS' -derivedDataPath build/apple-device CODE_SIGNING_ALLOWED=NO build
+      - name: Verify native bundle and package development candidate
+        run: |
+          python3 apps/beca-apple/verify-bundle.py build/apple-device/Build/Products/Release-iphoneos/BECAApple.app
+          mkdir -p build/handoff/Payload
+          ditto build/apple-device/Build/Products/Release-iphoneos/BECAApple.app build/handoff/Payload/BECAApple.app
+          printf '%s\n' "$GITHUB_SHA" > build/handoff/commit.txt
+          cd build/handoff
+          zip -qr BECAApple-unsigned.ipa Payload
+          shasum -a 256 BECAApple-unsigned.ipa > SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BECAApple-development-device
+          path: build/handoff/*
+          retention-days: 3
