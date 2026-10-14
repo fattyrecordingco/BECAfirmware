@@ -14,6 +14,6 @@ a{color:#00653d;text-underline-offset:3px}a:focus-visible{outline:3px solid #008
 </style><main>''' + body + '</main></html>'
 output = root / 'apps/beca-setup/ui/public/manual.html'
 output.parent.mkdir(parents=True, exist_ok=True)
-output.write_text(html, encoding='utf-8')
-(root / 'docs/user/BECA_MANUAL.html').write_text(html, encoding='utf-8')
+output.write_text(html, encoding='utf-8', newline='\n')
+(root / 'docs/user/BECA_MANUAL.html').write_text(html, encoding='utf-8', newline='\n')
 print('Rendered app and standalone manual.')
