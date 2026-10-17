@@ -1,4 +1,4 @@
-const CACHE_NAME = "beca-phone-v1.7.0-instrument-1";
+const CACHE_NAME = "beca-phone-v1.7.1-controller-1";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -23,7 +23,6 @@ self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then((cache) => cache.addAll(APP_SHELL))
-      .then(() => self.skipWaiting())
   );
 });
 

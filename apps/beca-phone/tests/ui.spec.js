@@ -682,3 +682,21 @@ test("pad edits reject delayed synth snapshots and retain the latest position", 
   });
   await expect(page.locator("#control-cutoff")).toHaveValue("9600");
 });
+
+test("updates announced by another app window wait for Update instead of reloading playback", async ({ page }) => {
+  await page.addInitScript(() => {
+    const events = {};
+    const registration = { waiting: null, installing: null, addEventListener: (type, fn) => { events[type] = fn; }, update: async () => {} };
+    const serviceWorker = { controller: {}, register: async () => registration, addEventListener: (type, fn) => { events[type] = fn; } };
+    Object.defineProperty(navigator, "serviceWorker", { configurable: true, value: serviceWorker });
+    window.__updateMock = { registration, events };
+    sessionStorage.setItem("update-test-loads", String(Number(sessionStorage.getItem("update-test-loads") || 0) + 1));
+  });
+  await page.reload();
+  const before = await page.evaluate(() => sessionStorage.getItem("update-test-loads"));
+  await page.evaluate(() => window.__updateMock.events.controllerchange());
+  await expect(page.locator("#updateButton")).toBeVisible();
+  expect(await page.evaluate(() => sessionStorage.getItem("update-test-loads"))).toBe(before);
+  await page.locator("#updateButton").click();
+  await expect.poll(() => page.evaluate(() => sessionStorage.getItem("update-test-loads"))).toBe(String(Number(before) + 1));
+});

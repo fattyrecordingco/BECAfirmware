@@ -7,7 +7,7 @@ import { capabilities, connectionHelp } from "./compatibility.js";
 import { appleNativeProvider } from "./apple-native.js";
 import { WifiBecaSerial } from "./wifi-provider.js";
 
-const APP_VERSION = "1.7.0";
+const APP_VERSION = "1.7.1";
 // Appearance stays on this device and never changes the instrument's settings.
 let savedTheme = globalThis.__BECA_NATIVE_THEME__ === "light" ? "light" : "dark";
 try { const stored = localStorage.getItem("beca-appearance"); if (["light", "dark"].includes(stored)) savedTheme = stored; } catch {}
@@ -1282,19 +1282,42 @@ phoneAudio.load().then((presets) => {
 if ("serviceWorker" in navigator && location.protocol !== "file:") {
   const hadServiceWorkerController = Boolean(navigator.serviceWorker.controller);
   navigator.serviceWorker.register("./service-worker.js").then((registration) => {
+    const showUpdate = () => {
+      $("#updateButton").classList.remove("hidden");
+      showToast("Update available. Tap Update when you have finished playing.");
+    };
+    if (registration.waiting) showUpdate();
     registration.addEventListener("updatefound", () => {
       const worker = registration.installing;
       worker?.addEventListener("statechange", () => {
         if (worker.state === "installed" && navigator.serviceWorker.controller) {
-          $("#updateButton").classList.remove("hidden");
-          showToast("A controller update is ready.");
+          showUpdate();
         }
       });
     });
-    $("#updateButton").addEventListener("click", () => registration.waiting?.postMessage({ type: "SKIP_WAITING" }));
+    let updateRequested = false;
+    $("#updateButton").addEventListener("click", async () => {
+      updateRequested = true;
+      $("#updateButton").disabled = true;
+      phoneAudio.panic();
+      try { if (transport.connected) await transport.disconnect(); }
+      finally {
+        if (registration.waiting) registration.waiting.postMessage({ type: "SKIP_WAITING" });
+        else location.reload();
+      }
+    });
+    // Check on return to the app, at most once per hour.
+    let lastUpdateCheck = Date.now();
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden && Date.now() - lastUpdateCheck >= 3600000) {
+        lastUpdateCheck = Date.now();
+        registration.update().catch(() => {});
+      }
+    });
     let refreshing = false;
     navigator.serviceWorker.addEventListener("controllerchange", () => {
       if (refreshing || !hadServiceWorkerController) return;
+      if (!updateRequested) { showUpdate(); return; }
       refreshing = true;
       location.reload();
     });

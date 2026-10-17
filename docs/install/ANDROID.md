@@ -1,10 +1,10 @@
 # Install BECA on Android or use the web app
 
-BECA 1.7.0 is an installable Chrome web app. It is not an APK.
+BECA 1.7.1 is an installable Chrome web app. It is not an APK.
 
 - [Open the web app](https://fattyrecordingco.github.io/BECAfirmware/)
-- [Download the separate Android/web folder ZIP](https://github.com/fattyrecordingco/BECAfirmware/releases/download/apps-v0.3.0/BECA-Android-Web-1.7.0.zip)
-- [Release notes and checksums](https://github.com/fattyrecordingco/BECAfirmware/releases/tag/apps-v0.3.0)
+- [Download the separate Android/web folder ZIP](https://github.com/fattyrecordingco/BECAfirmware/releases/download/apps-v0.3.1/BECA-Android-Web-1.7.1.zip)
+- [Release notes and checksums](https://github.com/fattyrecordingco/BECAfirmware/releases/tag/apps-v0.3.1)
 
 ## Install and connect over USB
 
@@ -16,7 +16,7 @@ BECA 1.7.0 is an installable Chrome web app. It is not an APK.
 
 ## Connect over Wi-Fi or a phone hotspot
 
-1. Power BECA from a charger or power bank. Firmware 1.2.0 includes the Wi-Fi browser instrument. An older device needs a firmware update from the Windows app or a supported computer setup.
+1. Power BECA from a charger or power bank. Firmware 1.2.1 includes the Wi-Fi browser instrument. An older device needs a firmware update from the Windows app or a supported computer setup.
 2. For first setup, join BECA's setup Wi-Fi. Open **http://192.168.4.1/setup** to save a home network or a **2.4 GHz** hotspot. On Android USB, the app's **Settings → Wi-Fi & phone hotspot** form can also save it. The displayed **Wi-Fi MAC** is the address to give someone registering BECA manually on a router.
 3. Keep the hotspot enabled. After BECA joins your network, use its new IP address from the router/hotspot client list. The phone and BECA must be able to reach each other. Some hotspots isolate clients; if so, use Android USB or another network.
 4. Open **http://192.168.4.1/play/** while on BECA's setup Wi-Fi, or **http://BECA-IP/play/** on the shared network. You can enter the address through **Settings → Wi-Fi instrument** in the published app.

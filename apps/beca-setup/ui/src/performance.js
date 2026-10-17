@@ -1,4 +1,6 @@
 import "./performance.css";
+import { createMidiController } from "./midi-controller.js";
+import { icon } from "./icons.js";
 
 import { BecaHealth } from "./health.js";
 
@@ -143,7 +145,7 @@ export function createPerformancePage({ invoke, getTarget }) {
 
         <div class="performance-identity"><div class="performance-logo" aria-hidden="true"></div><div><span class="performance-brand">BECA</span><h1>Performance</h1></div></div>
 
-        <button type="button" class="performance-button" data-performance-reconnect>Reconnect</button>
+        <button type="button" class="performance-button" data-performance-reconnect aria-label="Reconnect" title="Reconnect">${icon("refresh")}</button>
 
       </header>
 
@@ -161,8 +163,9 @@ export function createPerformancePage({ invoke, getTarget }) {
 
       <p class="performance-status" role="status" data-performance-status>Open Setup and connect BECA to begin.</p>
 
-      <div class="performance-live-strip" aria-label="Essential live controls"><button class="performance-button" data-controls-focus aria-pressed="false">Focus controls ↓</button></div>
+      <div class="performance-live-strip" aria-label="Essential live controls"><button class="performance-button" data-controls-focus aria-pressed="false" aria-label="Focus controls" title="Focus controls">${icon("focus")}</button></div>
 
+      <div class="performance-midi-controller"></div>
       <div class="performance-instrument"></div>
 
       <p class="performance-sine-hint" data-performance-sine hidden>Raw Sensor Sine: sensor 1's ADC number is the frequency in Hz, updated on the device. Use Aux audio or Serial MIDI + Aux to hear it. Master volume applies; envelope, filter and effects are bypassed.</p>
@@ -222,6 +225,7 @@ export function createPerformancePage({ invoke, getTarget }) {
   let requestTail = Promise.resolve();
 
   let instrument = null;
+  let midiController = null;
 
   let paintFrame = null;
 
@@ -526,7 +530,9 @@ export function createPerformancePage({ invoke, getTarget }) {
 
     event.currentTarget.setAttribute("aria-pressed", String(focused));
 
-    event.currentTarget.textContent = focused ? "Expression pad ↑" : "Focus controls ↓";
+    event.currentTarget.innerHTML = icon("focus");
+    event.currentTarget.setAttribute("aria-label", focused ? "Expression pad" : "Focus controls");
+    event.currentTarget.title = focused ? "Expression pad" : "Focus controls";
 
     // Keep measured signal and MIDI visible while focusing on parameters.
 
@@ -915,17 +921,18 @@ export function createPerformancePage({ invoke, getTarget }) {
     active = nextActive;
 
     instrument.setActive(active);
+    midiController?.setActive(active, true);
 
 
     clearTimeout(pollTimer);
 
     enableControls(false);
 
-    // Finish already authorized edits when the performer changes pages.
-
-    if (!active) return;
+    // Invalidate late reads while finishing already authorized edits.
 
     generation++;
+
+    if (!active) return;
 
     const epoch = generation;
 
@@ -1029,6 +1036,17 @@ export function createPerformancePage({ invoke, getTarget }) {
   }
 
 
+
+  midiController = createMidiController({
+    host: screen.querySelector(".performance-midi-controller"), invoke, change: editValues,
+    controls: new Map([...fields].map(([key, { control, input }]) => [key, () => ({
+      label: control.label, toggle: Boolean(control.toggle),
+      enabled: active && ready && !document.hidden && !input.disabled && !input.closest("[hidden]"),
+      value: control.toggle ? Number(input.checked) : input.value,
+      min: Number(input.min), max: Number(input.max), step: Number(input.step) || 1,
+      options: control.options ? [...input.options].map(option => option.value) : null
+    })]))
+  });
 
   screen.querySelector("[data-performance-reconnect]").addEventListener("click", async () => {
 

@@ -1,6 +1,10 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod control;
+mod controller;
+mod updates;
+use controller::{controller_connect, controller_drain, controller_inputs, ControllerState};
+use updates::{check_app_update, open_app_update};
 
 use anyhow::{anyhow, Context};
 use beca_bridge::list_midi_outputs as bridge_list_midi_outputs;
@@ -1631,6 +1635,7 @@ fn err_to_string<E: std::fmt::Display>(err: E) -> String {
 pub fn run() {
     let app = tauri::Builder::default()
         .manage(RuntimeState::default())
+        .manage(ControllerState::default())
         .setup(|app| {
             let state: State<'_, RuntimeState> = app.state();
             let app_handle = app.handle();
@@ -1653,6 +1658,11 @@ pub fn run() {
             restore_settings,
             backup_restore_available,
             list_midi_outputs,
+            controller_inputs,
+            controller_connect,
+            controller_drain,
+            check_app_update,
+            open_app_update,
             scan_wifi_networks,
             get_wifi_setup_info,
             save_wifi_credentials,

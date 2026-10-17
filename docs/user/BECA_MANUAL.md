@@ -1,6 +1,6 @@
 # BECA manual & quick start
 
-Desktop 0.3.0 · phone/Apple 1.7.0 · firmware 1.2.0 · ESP32-PICO-V3 · October 2026
+Desktop 0.3.1 · phone/Apple 1.7.1 · firmware 1.2.1 · ESP32-PICO-V3 · October 2026
 
 BECA turns changes at its plant electrodes into notes, rhythms and synthesized sound. Use it as a MIDI source for your instruments, play its sound engine through Aux, or record both together. Keep the BECA app open when using the USB MIDI bridge.
 
@@ -25,10 +25,10 @@ The device root redirects to `/play/`; `/control` is the legacy controller and `
 
 A blank BECA needs firmware once before it makes music. Its USB serial chip can appear on your computer while the ESP32 is empty. No lights, MIDI, Wi-Fi network or working controls are expected before installation.
 
-1. Download the matching BECA 0.3.0 installer from the [official release](https://github.com/fattyrecordingco/BECAfirmware/releases/tag/apps-v0.3.0). Read its signing status and compare its checksum with SHA256SUMS.
+1. Download the matching BECA 0.3.1 installer from the [official release](https://github.com/fattyrecordingco/BECAfirmware/releases/tag/apps-v0.3.1). Read its signing status and compare its checksum with SHA256SUMS.
 2. Install the app. Connect BECA directly to the computer using a USB-C **data cable**. Avoid unpowered hubs while installing firmware.
 3. Open BECA → **Setup**. USB scans automatically. If several compatible USB devices appear, choose BECA's port. Unplugging and reconnecting BECA identifies which port belongs to it. A CH340/CP210x description identifies a USB bridge; it does not prove BECA firmware is installed.
-4. Under **upload firmware**, choose **Included 1.2.0 · works offline** and press **install firmware**. The installer includes the bootloader, partition table, first-boot data and application. You do not need Arduino IDE, Python, PlatformIO or a GitHub account.
+4. Under **upload firmware**, choose **Included 1.2.1 · works offline** and press **install firmware**. The installer includes the bootloader, partition table, first-boot data and application. You do not need Arduino IDE, Python, PlatformIO or a GitHub account.
 5. Leave USB connected until completion. Allow approximately 15 seconds for reboot and discovery. Transfers may take longer if the app retries at a lower baud rate.
 6. Connect BECA's plant sensor lead. Attach its leaf and soil electrodes according to the supplied sensor hardware; keep exposed contacts separated. Open **Performance** when the device is ready.
 7. Follow the Aux or DAW quick start below. Wi-Fi is optional for both USB workflows.
@@ -39,7 +39,7 @@ The app checks firmware SHA256 before writing and skips the settings partition a
 
 ## Installing the app
 
-**Windows 64-bit:** use `BECA_0.3.0_x64-setup.exe`. The MSI is available for managed installation. WebView2 is required; its included bootstrapper may need internet if WebView2 is absent. The included firmware works offline after app installation.
+**Windows 64-bit:** use `BECA_0.3.1_x64-setup.exe`. The MSI is available for managed installation. WebView2 is required; its included bootstrapper may need internet if WebView2 is absent. The included firmware works offline after app installation.
 
 If no USB port appears, install the matching board driver from [WCH CH340/CH341](https://www.wch-ic.com/downloads/CH341SER_EXE.html) or [Silicon Labs CP210x](https://www.silabs.com/software-and-tools/usb-to-uart-bridge-vcp-drivers). Restart if the driver installer requests it. Driver packages are not redistributed inside BECA. A charge-only cable cannot carry firmware or MIDI.
 
@@ -141,3 +141,12 @@ An Ableton Max for Live instrument is a separate development item. This update w
 ## Reference sources
 
 [Ableton virtual MIDI setup](https://help.ableton.com/hc/en-us/articles/209774225-Setting-up-a-virtual-MIDI-bus) · [loopMIDI/autostart](https://www.tobias-erichsen.de/software/loopmidi.html) · [LoopBe licensing](https://www.nerds.de/en/loopbe1.html) · [Espressif flash sectors](https://docs.espressif.com/projects/esptool/en/release-v4/esp32/esptool/basic-commands.html) · [BECA updates](https://github.com/fattyrecordingco/BECAfirmware)
+
+
+## Hardware MIDI mapping on desktop
+
+In Performance, open MIDI controller. Select MIDI input and Control, press Learn, then move a knob or press a pad. Learning is silent; move again to play. Pickup waits until the hardware knob crosses the current app value, preventing jumps. Choose the matching Relative format for endless encoders, or Direct for immediate changes; Reverse inverts direction. Trash removes an assignment. Up to 64 mappings stay on this computer. Only visible, available controls respond, and mappings pause outside Performance or while the app is in the background.
+
+Connect BECA separately in Setup. Standard CC, note pads and pitch bend use OS MIDI drivers. If the input is missing, reconnect it, refresh MIDI inputs, or close another app holding exclusive access. Rename duplicate port names in the OS/controller utility. Proprietary SysEx/NRPN/RPN and MIDI 2.0-only modes need configuring to supported MIDI messages.
+
+The desktop app offers future stable releases through a dismissible update notice. Older desktop versions do not contain that receiver. Phone/PWA updates display Update and wait until you choose it; local audio stops and the connection closes before reloading.

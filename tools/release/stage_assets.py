@@ -270,10 +270,10 @@ The native app uses Wi-Fi controls and Bluetooth MIDI; CH340 wired USB serial on
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=ROOT)
-    parser.add_argument("--desktop-version", default="0.3.0")
-    parser.add_argument("--phone-version", default="1.7.0")
-    parser.add_argument("--firmware-version", default="1.2.0")
-    parser.add_argument("--tag", default="apps-v0.3.0")
+    parser.add_argument("--desktop-version", default="0.3.1")
+    parser.add_argument("--phone-version", default="1.7.1")
+    parser.add_argument("--firmware-version", default="1.2.1")
+    parser.add_argument("--tag", default="apps-v0.3.1")
     for name in ("installers", "firmware", "phone-dist", "apple-source", "ipa", "docs", "output"):
         parser.add_argument("--" + name, type=Path)
     parser.add_argument("--phone-url", help="Optional published HTTPS PWA address")

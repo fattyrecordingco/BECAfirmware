@@ -116,3 +116,21 @@ Choose **Dark** or **Light** from **Appearance** beside the app’s view buttons
 
 
 Control startup is cancelled if you switch views before it finishes loading. Returning to Control opens the current view normally; an earlier load cannot create a hidden second live stream behind Performance.
+
+## MIDI controller mapping (0.3.1)
+
+Connect a controller to the computer and open **Performance → MIDI controller**. Select **MIDI input**, choose a BECA **Control**, press **Learn**, then move its knob or press a pad. Learning does not change the sound. Move the control again to play. Up to 64 assignments are saved on this computer, separately by input name, MIDI channel and source. Learning an already assigned source replaces its assignment.
+
+Standard MIDI 1.0 CC 0–119, note pads and pitch bend work through the operating system's MIDI drivers on Windows, Mac and Linux. No browser MIDI permission, new MIDI library or firmware change is needed for desktop mapping. MIDI 2.0-only, SysEx, NRPN/RPN and proprietary controller modes require configuring the controller to send supported messages. Duplicate input names must be renamed in the OS/controller utility. Mappings apply while Performance is visible; mode-hidden and unavailable controls keep their saved values.
+
+Continuous controls default to **Pickup**: match or cross the current app value before the knob takes over. Pickup rearms after mouse edits, preset recall, reconnect or a device change. Choose **Direct** for immediate changes, or the matching **Relative** format for endless encoders (two’s complement, offset or sign magnitude). Relative increments use the control's smallest step. **Reverse** inverts its direction. Note pads toggle switch controls on each new press; CC switches follow their threshold. Delete an assignment with its trash icon.
+
+Incoming gestures use the same serialized, coalesced 20-writes/second path as the on-screen controls. Native input is drained at most 25 times/second with a 256-message queue; overflow drops the partial batch and rearms pickup. Port discovery runs at most every three seconds, reconnects the selected input, and stops when Performance closes or the app goes into the background. Controller input never forwards notes to BECA's MIDI outputs or changes the existing bridge routes.
+
+If no inputs appear, reconnect the controller, install its OS driver if required, press **Refresh MIDI inputs**, and close apps that have exclusive access. Keep BECA connected separately through Setup. A controller's USB connector does not replace BECA's data connection. BLE controllers work if paired as MIDI inputs by the OS; BECA's BLE firmware remains unchanged.
+
+## Update notices
+
+Desktop 0.3.1 checks for a newer stable app release on launch and when returning after six hours. The notice opens the official release downloads; dismissing it does not interrupt music. Offline use is unaffected. Earlier desktop builds do not contain this checker and cannot receive an in-app notice retroactively. GitHub release subscribers receive notifications according to their GitHub settings.
+
+Phone/PWA 1.7.1 shows **Update** when a cached update is ready. It waits until the performer chooses Update, silences local audio and disconnects before reloading. A different app window activating an update also leaves the current performance running until Update is chosen. Foreground checks are limited to once per hour. There is no push-subscription service or installed-user contact database.

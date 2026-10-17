@@ -172,3 +172,18 @@
 @media (min-width: 1550px) { .performance-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } .performance-card { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 950px) { .performance-live-strip { grid-template-columns: repeat(4, minmax(0, 1fr)); } .performance-live-strip .instrument-mute { grid-column: 1 / 3; } .performance-live-strip [data-controls-focus] { grid-column: 3 / 5; max-width: none; } }
 @media (max-width: 540px) { .performance-frame { padding: 12px; } .performance-live-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; } .performance-live-strip .instrument-mute, .performance-live-strip [data-controls-focus] { grid-column: auto; } .performance-live-strip .performance-field select { margin-top: 0; min-height: 40px; } }
+
+/* Playing controls stay reachable with touch and icon actions retain their names. */
+.performance-live-strip { grid-template-columns: 1.1fr .8fr 1.1fr 1fr auto 44px; gap: 12px; }
+.performance-live-strip [data-controls-focus], [data-performance-reconnect], .instrument-preset-actions button { min-width: 44px; min-height: 44px; padding: 10px; }
+.instrument-text-button[data-undo] { min-width: 44px; min-height: 44px; display: grid; place-items: center; }
+.performance-field input[type="range"] { min-height: 36px; }
+.performance-field select { min-height: 44px; }
+@media (max-width: 850px) {
+  .performance-live-strip { grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+}
+@media (max-width: 420px) {
+  .performance-frame { padding: 12px; border-radius: 14px; }
+  .performance-live-strip { grid-template-columns: 1fr 1fr; }
+  .performance-live-strip [data-controls-focus] { justify-self: end; }
+}

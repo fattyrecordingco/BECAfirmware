@@ -2,21 +2,21 @@
 
 BECA is a plant-driven music instrument built around an ESP32 device and a desktop control app.
 
-## Download BECA 0.3.0
+## Download BECA 0.3.1
 
-[Release apps-v0.3.0](https://github.com/fattyrecordingco/BECAfirmware/releases/tag/apps-v0.3.0) contains desktop app **0.3.0**, firmware **1.2.0**, and phone/Apple app **1.7.0**. Choose the package for your device. Windows, Android/web and Apple folders are separate downloads.
+[Release apps-v0.3.1](https://github.com/fattyrecordingco/BECAfirmware/releases/tag/apps-v0.3.1) contains desktop app **0.3.1**, firmware **1.2.1**, and phone/Apple app **1.7.1**. Choose the package for your device. Windows, Android/web and Apple folders are separate downloads.
 
 | Device | Download | Install steps |
 | --- | --- | --- |
-| Windows x64 | [Complete Windows folder ZIP](https://github.com/fattyrecordingco/BECAfirmware/releases/download/apps-v0.3.0/BECA-Windows-0.3.0.zip) · [EXE installer](https://github.com/fattyrecordingco/BECAfirmware/releases/download/apps-v0.3.0/BECA_0.3.0_x64-setup.exe) · [MSI](https://github.com/fattyrecordingco/BECAfirmware/releases/download/apps-v0.3.0/BECA_0.3.0_x64_en-US.msi) | [Windows](docs/install/WINDOWS.md) |
-| Android / web | [Open the Chrome web app](https://fattyrecordingco.github.io/BECAfirmware/) · [Separate web folder ZIP](https://github.com/fattyrecordingco/BECAfirmware/releases/download/apps-v0.3.0/BECA-Android-Web-1.7.0.zip) | [Android / web](docs/install/ANDROID.md) |
-| iPhone / iPad | [Apple development folder ZIP](https://github.com/fattyrecordingco/BECAfirmware/releases/download/apps-v0.3.0/BECA-Apple-1.7.0.zip) · Safari at `http://192.168.4.1/play/` on BECA's setup Wi-Fi | [Apple](docs/install/APPLE.md) |
-| macOS M-series desktop | [Apple Silicon DMG](https://github.com/fattyrecordingco/BECAfirmware/releases/download/apps-v0.3.0/BECA_0.3.0_aarch64.dmg) | [Mac desktop](docs/install/APPLE.md#macos-desktop) |
-| macOS Intel desktop | [Intel DMG](https://github.com/fattyrecordingco/BECAfirmware/releases/download/apps-v0.3.0/BECA_0.3.0_x64.dmg) | [Mac desktop](docs/install/APPLE.md#macos-desktop) |
+| Windows x64 | [Complete Windows folder ZIP](https://github.com/fattyrecordingco/BECAfirmware/releases/download/apps-v0.3.1/BECA-Windows-0.3.1.zip) · [EXE installer](https://github.com/fattyrecordingco/BECAfirmware/releases/download/apps-v0.3.1/BECA_0.3.1_x64-setup.exe) · [MSI](https://github.com/fattyrecordingco/BECAfirmware/releases/download/apps-v0.3.1/BECA_0.3.1_x64_en-US.msi) | [Windows](docs/install/WINDOWS.md) |
+| Android / web | [Open the Chrome web app](https://fattyrecordingco.github.io/BECAfirmware/) · [Separate web folder ZIP](https://github.com/fattyrecordingco/BECAfirmware/releases/download/apps-v0.3.1/BECA-Android-Web-1.7.1.zip) | [Android / web](docs/install/ANDROID.md) |
+| iPhone / iPad | [Apple development folder ZIP](https://github.com/fattyrecordingco/BECAfirmware/releases/download/apps-v0.3.1/BECA-Apple-1.7.1.zip) · Safari at `http://192.168.4.1/play/` on BECA's setup Wi-Fi | [Apple](docs/install/APPLE.md) |
+| macOS M-series desktop | [Apple Silicon DMG](https://github.com/fattyrecordingco/BECAfirmware/releases/download/apps-v0.3.1/BECA_0.3.1_aarch64.dmg) | [Mac desktop](docs/install/APPLE.md#macos-desktop) |
+| macOS Intel desktop | [Intel DMG](https://github.com/fattyrecordingco/BECAfirmware/releases/download/apps-v0.3.1/BECA_0.3.1_x64.dmg) | [Mac desktop](docs/install/APPLE.md#macos-desktop) |
 
-The Windows/desktop installers include firmware **1.2.0**. Connect BECA by USB, open **Setup**, select **Included 1.2.0 · works offline**, and press **install firmware**. A source checkout and Arduino IDE are unnecessary for this installation. See the [first-launch guide](docs/user/READ_BEFORE_FIRST_LAUNCH.md).
+The Windows/desktop installers include firmware **1.2.1**. Connect BECA by USB, open **Setup**, select **Included 1.2.1 · works offline**, and press **install firmware**. A source checkout and Arduino IDE are unnecessary for this installation. See the [first-launch guide](docs/user/READ_BEFORE_FIRST_LAUNCH.md).
 
-Separate assets: [firmware 1.2.0 merged image](https://github.com/fattyrecordingco/BECAfirmware/releases/download/apps-v0.3.0/beca-1.2.0-merged.bin) · [firmware manifest](https://github.com/fattyrecordingco/BECAfirmware/releases/download/apps-v0.3.0/firmware-manifest.json) · [SHA256 checksums](https://github.com/fattyrecordingco/BECAfirmware/releases/download/apps-v0.3.0/SHA256SUMS) · [release notes](docs/releases/apps-v0.3.0.md).
+Separate assets: [firmware 1.2.1 merged image](https://github.com/fattyrecordingco/BECAfirmware/releases/download/apps-v0.3.1/beca-1.2.1-merged.bin) · [firmware manifest](https://github.com/fattyrecordingco/BECAfirmware/releases/download/apps-v0.3.1/firmware-manifest.json) · [SHA256 checksums](https://github.com/fattyrecordingco/BECAfirmware/releases/download/apps-v0.3.1/SHA256SUMS) · [release notes](docs/releases/apps-v0.3.1.md).
 
 Android uses a real installable Chrome PWA; no APK is included. The Apple ZIP contains an **unsigned iPhone/iPad development IPA**, which each user must sign and install using their own Apple Account and xtool. Free-account provisioning expires after seven days. Files/Safari cannot install an IPA directly. Safari Wi-Fi playback requires no Apple Account. Windows installers are unsigned and Mac packages are not notarized; publishing a release does not add platform signing trust. Keep OS protections enabled. Historical installer files under `installers/` are not this update.
 
@@ -692,3 +692,10 @@ For routers that isolate devices, USB Console command `WIFI_PORTAL` opens BECA�
 Hardware verification: run `python tools/verify_browser_player.py COM5 --host DEVICE_IP`. On a Windows laptop where the router isolates clients, use `--portal --network-profile "YOUR_CURRENT_PROFILE" --browser-node "C:/Program Files/nodejs/node.exe"`; this temporarily joins BECA’s AP, verifies embedded assets/source MIDI/real rendered browser audio/legacy SSE, and restores the device settings and laptop network. Close the desktop app while USB tests run. Arduino core 2.0.14’s single-client server can wait five seconds on empty browser preconnections; browser-player builds close those headerless idle connections after 250 ms so real note/control requests can proceed. `/api/info` reports the `http_idle_closed` diagnostic count. SSE connections and requests that have data are retained.
 
 The shared browser instrument also offers **Settings → Appearance → Light / Dark**. Light uses a white background and contrasting text, knobs, scope/MIDI feedback and active controls. Appearance is local to the viewing device and sends no firmware settings.
+
+
+## Hardware MIDI controllers (desktop 0.3.1)
+
+Connect a MIDI controller to the computer, open **Performance → MIDI controller**, select its input and a BECA control, press **Learn**, then move a knob or press a pad. Learning is silent; move again to play. Pickup avoids value jumps. Mappings remember the input and channel; relative encoders, pitch bend, reverse and note-pad switches are supported. Hidden mode controls keep their saved values. See [mapping and troubleshooting](apps/beca-setup/README.md#midi-controller-mapping-031), [release notes](docs/releases/apps-v0.3.1.md), and the [software review](docs/research/software-review-0.3.1.md).
+
+Desktop 0.3.1 adds notices for future stable updates. Previous desktop versions have no receiver; existing PWA users see Update after the new service worker downloads. Choose Update after playing; audio stops before the app reloads. GitHub subscribers receive release notifications according to their own settings.

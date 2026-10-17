@@ -1,0 +1,38 @@
+.beca-icon { width: 20px; height: 20px; flex: 0 0 20px; vertical-align: middle; }
+.performance-button:has(.beca-icon), .view-tab:has(.beca-icon) { display: inline-flex; align-items: center; justify-content: center; gap: 7px; }
+.icon-button { width: 44px; min-width: 44px; min-height: 44px; padding: 10px; }
+.midi-controller { margin: 16px 0; border-block: 1px solid var(--border); }
+.midi-controller > summary { min-height: 48px; cursor: pointer; display: flex; align-items: center; gap: 10px; list-style: none; font-weight: 600; }
+.midi-controller > summary::-webkit-details-marker { display: none; }
+.midi-controller > summary::after { content: "+"; margin-left: auto; font-size: 22px; font-weight: 400; }
+.midi-controller[open] > summary::after { content: "−"; }
+.midi-controller > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.midi-controller [data-midi-count] { color: var(--accent); font-variant-numeric: tabular-nums; }
+.midi-controller-body { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 24px; padding: 4px 0 16px; }
+.midi-controller-input, .midi-controller-learn { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 8px; }
+.midi-controller label { font-size: 11px; }
+.midi-controller-input > label, .midi-controller-learn > label { grid-column: 1 / -1; }
+.midi-controller select { min-width: 0; width: 100%; min-height: 44px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 5px; padding: 6px; font: inherit; }
+.midi-controller-status { grid-column: 1 / -1; margin: 0; min-height: 32px; line-height: 1.5; }
+.midi-controller-help { grid-column: 1 / -1; margin: 0; max-width: 72ch; font-size: 11px; color: var(--muted-text); line-height: 1.5; }
+.midi-mappings { grid-column: 1 / -1; }
+.midi-mapping { display: grid; grid-template-columns: minmax(0, 1fr) minmax(120px, 190px) auto 44px; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line-soft); }
+.midi-mapping strong, .midi-mapping span { display: block; overflow-wrap: anywhere; }
+.midi-mapping span { font-size: 10px; color: var(--muted-text); margin-top: 4px; }
+.midi-reverse { min-height: 44px; display: flex; align-items: center; gap: 6px; }
+.midi-reverse input { width: 20px; height: 20px; accent-color: var(--accent); }
+.performance-field[data-midi-learning] { outline: 2px solid var(--accent); outline-offset: 5px; border-radius: 3px; }
+@media (max-width: 650px) {
+  .midi-controller-body { grid-template-columns: 1fr; }
+  .midi-mapping { grid-template-columns: minmax(0, 1fr) auto 44px; }
+  .midi-mapping > div { grid-column: 1 / -1; }
+  .midi-mapping > select { grid-column: 1; }
+}
+.app-update-notice { position: fixed; z-index: 50; bottom: 18px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 12px; width: max-content; max-width: calc(100vw - 24px); padding: 10px 12px; border: 1px solid var(--accent); border-radius: 8px; background: var(--panel); color: var(--text); font-size: 12px; box-shadow: 0 4px 24px #0003; }
+.app-update-notice[hidden] { display: none; }
+.app-update-notice > span { max-width: 52ch; overflow-wrap: anywhere; }
+@media (max-width: 520px) { .app-update-notice { flex-wrap: wrap; width: calc(100vw - 24px); } .app-update-notice > span { flex-basis: 100%; } }
+@media (max-width: 600px) {
+  .app-view-navigation .view-tab { min-width: 44px; min-height: 44px; padding: 10px; }
+  .app-view-navigation .view-tab > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+}

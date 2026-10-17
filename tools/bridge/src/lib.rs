@@ -1,3 +1,4 @@
+pub mod controller;
 pub mod dependency;
 pub mod parser;
 pub mod ports;

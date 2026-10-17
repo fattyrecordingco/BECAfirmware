@@ -1,6 +1,6 @@
 {
   "name": "beca-setup",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": true,
   "type": "module",
   "scripts": {
@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "verify:browser": "node ./scripts/verify-browser.mjs",
     "test:ui": "playwright test",
+    "test": "node --test scripts/health-check.mjs scripts/midi-mapping.test.mjs",
     "sync:windows": "node ./scripts/sync-windows-artifacts.mjs",
     "release:windows": "tauri build && npm run sync:windows",
     "tauri": "tauri"

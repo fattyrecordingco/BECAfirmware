@@ -1,5 +1,6 @@
 import { captureSound, clamp, mutateSound, PAD_MODES, SOUND_LIMITS } from "./sound-play.js";
 import "./performance-instrument.css";
+import { icon } from "./icons.js";
 
 const STORAGE_KEY = "beca-sound-variations-v1";
 const SOUND_PARAMETER_COUNT = Object.keys(SOUND_LIMITS).length;
@@ -37,7 +38,7 @@ export function createInstrumentDeck({ host, getValues, change }) {
           <span class="expression-crosshair" aria-hidden="true"></span>
           <span class="expression-point" aria-hidden="true"><span></span></span>
         </div>
-        <div class="expression-values"><output data-pad-values>Connect to play</output><button class="instrument-text-button" data-undo disabled>↶ Undo gesture</button></div>
+        <div class="expression-values"><output data-pad-values>Connect to play</output><button class="instrument-text-button" data-undo aria-label="Undo gesture" title="Undo gesture" disabled>${icon("undo")}</button></div>
         <p class="instrument-caption" id="expression-help">Drag to shape two controls. Arrow keys move; Shift moves finely.</p>
       </section>
       <section class="instrument-explore" aria-label="Sound exploration">
@@ -52,7 +53,7 @@ export function createInstrumentDeck({ host, getValues, change }) {
     </div>
     <section class="instrument-library" aria-label="Soundscape browser">
       <div class="instrument-library-title"><span class="instrument-eyebrow">Soundscapes</span><strong data-preset-name>No preset</strong><span data-route-hint>BECA Aux output</span></div>
-      <div class="instrument-preset-actions"><button class="performance-button" data-preset-prev aria-label="Previous soundscape" disabled>←</button><button class="performance-button" data-preset-next aria-label="Next soundscape" disabled>→</button></div>
+      <div class="instrument-preset-actions"><button class="performance-button" data-preset-prev aria-label="Previous soundscape" title="Previous soundscape" disabled>${icon("previous")}</button><button class="performance-button" data-preset-next aria-label="Next soundscape" title="Next soundscape" disabled>${icon("next")}</button></div>
       <div class="instrument-preset-bank" role="group" aria-label="Choose a soundscape"></div>
     </section>
     <section class="instrument-variations" aria-label="Sound variations">

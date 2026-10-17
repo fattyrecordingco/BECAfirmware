@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import axeCore from "axe-core";
 
-async function openPerformance(page, { beforePerformance, offline = false, transport = "serial", initialFailures = 0, livePreset = true, detectedPort = "COM_TEST", discoveryDelay = 0, outputModes = ["BLE MIDI", "Serial MIDI", "Aux audio", "Serial MIDI + Aux"] } = {}) {
+async function openPerformance(page, { beforePerformance, waitForReady = true, offline = false, transport = "serial", initialFailures = 0, livePreset = true, detectedPort = "COM_TEST", discoveryDelay = 0, outputModes = ["BLE MIDI", "Serial MIDI", "Aux audio", "Serial MIDI + Aux"] } = {}) {
   await page.addInitScript(({ offline, transport, initialFailures, livePreset, detectedPort, discoveryDelay, outputModes }) => {
     localStorage.setItem("beca-read-before-first-launch-v1", "1");
     const target = { id: "beca-test", name: "BECA test", control_ready: true, serial_port: "COM_TEST" };
@@ -26,11 +26,17 @@ async function openPerformance(page, { beforePerformance, offline = false, trans
     };
     window.__performanceMock = { runtime, synth, writes: [], snapshots: 0, snapshotBusy: false, readDelay: 0, overlapped: false, inFlight: 0, maxInFlight: 0, delay: 0, failKey: "", stale: false };
     const mock = window.__performanceMock;
+    window.__controllerMock = { inputs: ["Knobs"], messages: [], overflow: false, connected: null, connections: [] };
     mock.bridge = { running: false, connected: false, routes: [], serial_port: "COM_TEST" }; mock.routeWrites = []; mock.panics = 0;
     window.__TAURI_INTERNALS__ = {
       transformCallback: () => 1,
       invoke: async (command, args) => {
         if (command.startsWith("plugin:event|")) return 1;
+        const controller = window.__controllerMock;
+        if (command === "controller_inputs") return [...controller.inputs];
+        if (command === "controller_connect") { controller.connected = args.name; controller.connections.push(args.name); controller.messages = []; return; }
+        if (command === "controller_drain") { const batch = { messages: controller.messages.splice(0), overflow: controller.overflow }; controller.overflow = false; return batch; }
+        if (command === "check_app_update") return null;
         if (command === "bridge_status") return structuredClone(mock.bridge);
         if (command === "list_midi_outputs") return [{ name: "BECA Bass" }, { name: "BECA Pads" }];
         if (command === "start_bridge") { mock.bridge = { ...mock.bridge, running: true, connected: true, routes: structuredClone(args.routes), serial_port: args.serialPort }; mock.starts = (mock.starts || 0) + 1; runtime.outputmode = runtime.outputmode >= 2 ? 3 : 1; return; }
@@ -90,11 +96,11 @@ async function openPerformance(page, { beforePerformance, offline = false, trans
   await page.goto("/");
   await expect(page.locator("#connect-status")).toContainText(detectedPort ? `USB connected · ${detectedPort}` : "not detected");
   // Wait for discovery to finish before opening live controls.
-  await expect(page.locator("#device-select option")).toHaveCount(1);
+  await expect(page.locator("#device-select option")).toHaveCount(1, { timeout: discoveryDelay + 5000 });
   await beforePerformance?.();
   await page.getByRole("navigation", { name: "App views" }).getByRole("button", { name: "Performance" }).click();
   await expect(page.getByRole("heading", { name: "Performance", exact: true })).toBeVisible();
-  if (!offline) await expect(page.locator("#performance-bpm")).toBeEnabled();
+  if (!offline && waitForReady) await expect(page.locator("#performance-bpm")).toBeEnabled();
 }
 
 async function dragValues(page, entries) {
@@ -693,4 +699,117 @@ test("navigation during Control bootstrap removes the inactive frame", async ({ 
   await page.getByRole("navigation", { name: "App views" }).getByRole("button", { name: "Control", exact: true }).click();
   await expect(page.locator(".control-surface-frame")).toHaveCount(1);
   await expect(page.frameLocator(".control-surface-frame").getByRole("button", { name: "On-screen encoder" })).toBeVisible();
+});
+
+async function openController(page) {
+  await page.getByText("MIDI controller", { exact: true }).click();
+  await expect(page.locator("#controller-input option")).toHaveCount(2);
+  await page.locator("#controller-input").selectOption("Knobs");
+  await expect(page.locator("[data-controller-status]")).toHaveText("Knobs connected.");
+}
+async function controllerMessage(page, messages) {
+  await page.evaluate(messages => window.__controllerMock.messages.push(...messages), messages);
+}
+
+test("MIDI Learn is silent and knobs use bounded coalesced writes with pickup", async ({ page }) => {
+  await openPerformance(page); await openController(page);
+  await page.locator("#controller-target").selectOption("cutoff");
+  await page.getByRole("button", { name: "Learn", exact: true }).click();
+  await controllerMessage(page, [[0xb0, 74, 0]]);
+  await expect(page.locator(".midi-mapping")).toHaveCount(1);
+  expect(await page.evaluate(() => window.__performanceMock.writes)).toHaveLength(0);
+  await controllerMessage(page, [[0xb0, 74, 0]]);
+  await expect(page.locator("[data-controller-status]")).toContainText("match Filter cutoff");
+  await controllerMessage(page, Array.from({ length: 128 }, (_, i) => [0xb0, 74, i]));
+  await expect(page.locator("#performance-cutoff")).toHaveValue("18000");
+  await expect.poll(() => page.evaluate(() => window.__performanceMock.writes.at(-1)?.value)).toBe("18000");
+  const writes = await page.evaluate(() => window.__performanceMock.writes);
+  expect(writes.length).toBeLessThan(10);
+  expect(await page.evaluate(() => window.__performanceMock.maxInFlight)).toBe(1);
+  await page.screenshot({ path: test.info().outputPath("midi-learn.png"), fullPage: true });
+});
+
+test("MIDI mappings survive restart, isolate channels, and ignore hidden controls", async ({ page }) => {
+  await openPerformance(page); await openController(page);
+  await page.locator("#controller-target").selectOption("root");
+  await page.getByRole("button", { name: "Learn", exact: true }).click();
+  await controllerMessage(page, [[0xb0, 20, 0]]);
+  await expect(page.locator(".midi-mapping")).toHaveCount(1);
+  await page.reload();
+  await expect(page.locator("#performance-bpm")).toBeEnabled();
+  await page.getByText("MIDI controller", { exact: true }).click();
+  await expect(page.locator("[data-controller-status]")).toHaveText("Knobs connected.");
+  await controllerMessage(page, [[0xb1, 20, 127]]);
+  await page.waitForTimeout(100); await expect(page.locator("#performance-root")).toHaveValue("0");
+  await page.locator("#performance-mode").selectOption("3");
+  await controllerMessage(page, [[0xb0, 20, 127]]);
+  await page.waitForTimeout(120);
+  expect(await page.evaluate(() => window.__performanceMock.writes.filter(write => write.key === "root"))).toHaveLength(0);
+  await page.locator("#performance-mode").selectOption("0");
+  await controllerMessage(page, [[0xb0, 20, 127]]);
+  await expect(page.locator("#performance-root")).toHaveValue("11");
+  await page.getByRole("button", { name: "Remove Root note mapping" }).click();
+  await expect(page.locator(".midi-mapping")).toHaveCount(0);
+});
+
+test("MIDI disconnect, overflow and leaving Performance clear learn and input ownership", async ({ page }) => {
+  await openPerformance(page); await openController(page);
+  await page.getByRole("button", { name: "Learn", exact: true }).click();
+  await page.evaluate(() => { window.__controllerMock.overflow = true; });
+  await expect(page.locator("[data-controller-status]")).toContainText("overloaded");
+  await expect(page.getByRole("button", { name: "Learn", exact: true })).toHaveAttribute("aria-pressed", "false");
+  await page.evaluate(() => { window.__controllerMock.inputs = []; });
+  await page.getByRole("button", { name: "Refresh MIDI inputs" }).click();
+  await expect(page.locator("[data-controller-status]")).toContainText("disconnected");
+  await page.evaluate(() => { window.__controllerMock.inputs = ["Knobs"]; });
+  await page.getByRole("button", { name: "Refresh MIDI inputs" }).click();
+  await expect(page.locator("[data-controller-status]")).toHaveText("Knobs connected.");
+  await page.getByRole("navigation", { name: "App views" }).getByRole("button", { name: "Setup", exact: true }).click();
+  await expect.poll(() => page.evaluate(() => window.__controllerMock.connected)).toBe(null);
+});
+
+test("controller controls and icons stay usable on phone and tablet orientations", async ({ page }) => {
+  await openPerformance(page); await openController(page);
+  await page.locator("#controller-target").selectOption("master");
+  await page.getByRole("button", { name: "Learn", exact: true }).click(); await controllerMessage(page, [[0xb0, 7, 32]]);
+  await expect(page.locator(".midi-mapping")).toHaveCount(1);
+  for (const [width, height] of [[360, 800], [800, 360], [768, 1024], [1024, 768]]) {
+    await page.setViewportSize({ width, height });
+    expect(await page.locator(".performance-frame").evaluate(node => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
+    await page.locator(".midi-controller").scrollIntoViewIfNeeded();
+    await page.screenshot({ path: test.info().outputPath(`controller-${width}x${height}.png`) });
+  }
+  await page.addScriptTag({ content: axeCore.source });
+  const results = await page.evaluate(() => window.axe.run(document, { rules: { "color-contrast": { enabled: true } } }));
+  expect(results.violations.filter(item => ["serious", "critical"].includes(item.impact))).toEqual([]);
+});
+
+test("update notice opens the offered release and can be dismissed without changing sound", async ({ page }) => {
+  await openPerformance(page);
+  await page.evaluate(async () => {
+    const { installUpdateNotice } = await import("/src/updates.js");
+    window.__updateCalls = [];
+    installUpdateNotice({ host: document.querySelector(".app-root"), invoke: async (command, args) => {
+      window.__updateCalls.push({ command, args });
+      return command === "check_app_update" ? { version: "0.3.2" } : null;
+    } });
+  });
+  const notice = page.locator(".app-update-notice:not([hidden])");
+  await expect(notice).toContainText("BECA 0.3.2 is available.");
+  await notice.getByRole("button", { name: "Download update" }).click();
+  expect(await page.evaluate(() => window.__updateCalls.at(-1))).toEqual({ command: "open_app_update", args: { version: "0.3.2" } });
+  await notice.getByRole("button", { name: "Dismiss update" }).click();
+  await expect(notice).toHaveCount(0);
+  expect(await page.evaluate(() => window.__performanceMock.writes)).toHaveLength(0);
+});
+
+test("leaving Performance during its initial snapshot cannot re-enable hidden controls", async ({ page }) => {
+  await openPerformance(page, { waitForReady: false, beforePerformance: () => page.evaluate(() => { window.__performanceMock.readDelay = 800; }) });
+  const nav = page.getByRole("navigation", { name: "App views" });
+  await nav.getByRole("button", { name: "Setup", exact: true }).click();
+  await page.waitForTimeout(1000);
+  await expect(page.locator("#performance-bpm")).toBeDisabled();
+  expect(await page.evaluate(() => window.__controllerMock.connected)).toBe(null);
+  await nav.getByRole("button", { name: "Performance", exact: true }).click();
+  await expect(page.locator("#performance-bpm")).toBeEnabled();
 });

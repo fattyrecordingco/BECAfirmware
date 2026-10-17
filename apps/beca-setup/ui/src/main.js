@@ -1,3 +1,5 @@
+import { installUpdateNotice } from "./updates.js";
+import { icon } from "./icons.js";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { createMidiRouting } from "./midi-routing.js";
@@ -103,7 +105,7 @@ if (performancePage) {
     button.type = "button";
     button.className = "view-tab";
     button.dataset.screen = name;
-    button.textContent = name[0].toUpperCase() + name.slice(1);
+    button.innerHTML = `${icon(name)}<span>${name[0].toUpperCase() + name.slice(1)}</span>`;
     navigation.appendChild(button);
     el.viewTabs.push(button);
   }
@@ -118,6 +120,7 @@ const appNavigation = document.querySelector(".app-view-navigation") || (() => {
   return navigation;
 })();
 appNavigation.appendChild(createAppearanceSelector());
+installUpdateNotice({ invoke, host: document.querySelector(".app-root") });
 
 function setSetupScale() {
   const activeSetupSurface = document.querySelector('[data-screen-view="setup"].active');

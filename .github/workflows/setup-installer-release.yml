@@ -42,13 +42,13 @@ jobs:
           python tools/check_ui_copy.py
           python make_index_header.py
           python tools/release/render_manual.py
-          git diff --exit-code -- index_html.h docs/user/BECA_MANUAL.html apps/beca-setup/ui/public/manual.html
+          git diff --exit-code -- device_player.h index_html.h docs/user/BECA_MANUAL.html apps/beca-setup/ui/public/manual.html
       - name: Test audio and compile core 2.0.14 firmware
         run: |
           g++ -std=c++17 -Itests/audio/stubs -I. tests/audio/audio_test.cpp drum_engine.cpp dsp_blocks.cpp -o /tmp/beca-audio-test
           /tmp/beca-audio-test
           python -m platformio run -e esp32dev
-          python tools/release/prepare_release.py --version 1.2.0 --tag apps-v0.3.0
+          python tools/release/prepare_release.py --version 1.2.1 --tag "${{ startsWith(github.ref, 'refs/tags/apps-v') && github.ref_name || 'apps-v0.3.1' }}"
       - uses: actions/upload-artifact@v4
         with:
           name: beca-firmware
@@ -63,7 +63,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ fromJSON(inputs.platform == 'windows' && '["windows-latest"]' || inputs.platform == 'macos-arm64' && '["macos-15"]' || '["windows-latest","macos-latest","macos-15-intel","ubuntu-22.04"]') }}
+        os: ${{ fromJSON(inputs.platform == 'windows' && '["windows-latest"]' || inputs.platform == 'macos-arm64' && '["macos-15"]' || '["windows-latest","macos-15","macos-15-intel","ubuntu-22.04"]') }}
 
     runs-on: ${{ matrix.os }}
     env:
@@ -96,7 +96,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Stage included firmware
         shell: bash
-        run: mv apps/beca-setup/src-tauri/resources/firmware/beca-1.2.0-merged.bin apps/beca-setup/src-tauri/resources/firmware/beca-merged.bin
+        run: mv apps/beca-setup/src-tauri/resources/firmware/beca-1.2.1-merged.bin apps/beca-setup/src-tauri/resources/firmware/beca-merged.bin
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -209,7 +209,7 @@ jobs:
         working-directory: apps/beca-setup
         run: |
           npx playwright install chromium
-          node --test scripts/health-check.mjs
+          npm test
           npm run test:ui
 
       - name: Build flasher sidecar
@@ -353,4 +353,85 @@ jobs:
           if-no-files-found: error
 
 
-  # Publishing is performed only after the separate Apple and phone checks pass.
+  phone-checks:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/beca-phone/package-lock.json
+      - working-directory: apps/beca-phone
+        run: |
+          npm ci
+          npx playwright install --with-deps chrome webkit
+          npm test
+          npm run test:ui -- --retries=1
+          npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: beca-phone-release
+          path: apps/beca-phone/dist/
+          include-hidden-files: true
+
+  apple-device:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node apps/beca-apple/prepare.mjs
+      - name: Verify native MIDI and address handling
+        run: |
+          swiftc apps/beca-apple/BECAApple/MIDIStream.swift apps/beca-apple/tests/main.swift -o "$RUNNER_TEMP/midi-test"
+          "$RUNNER_TEMP/midi-test"
+          python3 tools/verify_apple_address.py
+      - name: Build iPhone, iPad and Mac
+        run: |
+          xcodebuild -project apps/beca-apple/BECAApple.xcodeproj -scheme BECAApple -configuration Release -destination 'generic/platform=iOS' -derivedDataPath build/apple-device CODE_SIGNING_ALLOWED=NO build
+          xcodebuild -project apps/beca-apple/BECAApple.xcodeproj -scheme BECAApple -destination 'generic/platform=macOS' -derivedDataPath build/apple-mac ARCHS='arm64 x86_64' ONLY_ACTIVE_ARCH=NO CODE_SIGNING_ALLOWED=NO build
+          python3 apps/beca-apple/verify-bundle.py build/apple-device/Build/Products/Release-iphoneos/BECAApple.app
+          mkdir -p build/apple-handoff/Payload
+          ditto build/apple-device/Build/Products/Release-iphoneos/BECAApple.app build/apple-handoff/Payload/BECAApple.app
+          cd build/apple-handoff
+          zip -qr BECA-unsigned.ipa Payload
+      - uses: actions/upload-artifact@v4
+        with:
+          name: beca-apple-release
+          path: build/apple-handoff/BECA-unsigned.ipa
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/apps-v')
+    needs: [firmware, build-installers, phone-checks, apple-device]
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: beca-setup-*
+          path: dist/installers
+      - uses: actions/download-artifact@v4
+        with:
+          name: beca-firmware
+          path: dist/firmware-release
+      - uses: actions/download-artifact@v4
+        with:
+          name: beca-phone-release
+          path: apps/beca-phone/dist
+      - uses: actions/download-artifact@v4
+        with:
+          name: beca-apple-release
+          path: dist/apple
+      - name: Validate and stage all platforms
+        run: python3 tools/release/stage_assets.py --desktop-version 0.3.1 --phone-version 1.7.1 --firmware-version 1.2.1 --tag "$GITHUB_REF_NAME" --phone-url https://fattyrecordingco.github.io/BECAfirmware/ --mac-zip
+      - name: Publish checked downloads and notify release subscribers
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo 'Release already exists; refusing to replace published downloads.' >&2
+            exit 1
+          fi
+          gh release create "$GITHUB_REF_NAME" dist/publish/* --verify-tag --latest --title "BECA 0.3.1 — MIDI Learn" --notes-file docs/releases/apps-v0.3.1.md
