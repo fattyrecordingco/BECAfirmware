@@ -49,3 +49,13 @@ The final results and release artifact references are recorded below after verif
 - The unchanged Ableton instrument's HTTP/runtime regression suite passed 15/15. Apple local address validation and deterministic embedded-player generation checks passed.
 
 - Final native interaction review found stale controller status after choosing No controller. The status now clears immediately, saved missing inputs show Disconnected, and the disconnect regression covers deselection. The unpublished release build was cancelled and restarted with this fix; no public release assets were replaced.
+
+## Published result
+
+Release source: `9e3034ab812f2f3e3c608a82dd9c77717b1aaf85` (`apps-v0.3.1`). [All release jobs passed](https://github.com/fattyrecordingco/BECAfirmware/actions/runs/39042805018): core 2.0.14 firmware/audio, phone regression suite, native iPhone/iPad/Mac checks, Rust/browser checks, Windows, Apple Silicon, Intel Mac and Linux installers, complete staging and publication.
+
+[BECA 0.3.1](https://github.com/fattyrecordingco/BECAfirmware/releases/tag/apps-v0.3.1) became public on 17 October 2026 at 16:10 BST. Public verification confirmed 20 assets, every published SHA256SUMS entry against GitHub's stored digest, firmware manifest version/URL/checksum and the latest-release marker. No previously public assets were replaced. The phone app at https://fattyrecordingco.github.io/BECAfirmware/ serves 1.7.1; its published service worker waits for Update.
+
+The final Windows 0.3.1 installer was applied locally and its installed native MIDI connection/deselection status check passed. The app was reopened normally without the diagnostic browser port. This does not change the physical-controller/BLE validation limits recorded above.
+
+Notification reach: the GitHub release announcement and existing PWA update discovery are available. Earlier desktop/native installations without an update receiver cannot be reached retroactively; no direct notification to every installed user is claimed. Desktop 0.3.1 includes a bounded receiver for future stable releases.

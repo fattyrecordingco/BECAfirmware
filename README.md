@@ -154,7 +154,7 @@ Additional regression fixes preserve tempo across swung step pairs, let each emb
 ## Published Release Baseline
 
 - desktop app: `0.3.0` · phone/Apple app: `1.7.0`
-- release tag: `apps-v0.3.0` · firmware: `1.2.0`
+- release tag: `apps-v0.3.1` · firmware: `1.2.1`
 - primary branch for release-ready source: `master`
 - firmware build target: ESP32 Arduino core `2.0.14`
 
@@ -246,7 +246,7 @@ Start here:
 3. Download the installer for your computer.
 4. Install BECA.
 5. Restart if a USB serial driver was installed or updated.
-6. Open BECA, connect the device by USB, then install `Included 1.2.0 · works offline` from Setup.
+6. Open BECA, connect the device by USB, then install `Included 1.2.1 · works offline` from Setup.
 
 Signing status: the current Windows installer is unsigned and Mac builds are not notarized. Publishing a GitHub release does not add platform signing trust. Do not disable OS security protections to run BECA; signing and notarization remain publisher work.
 
@@ -267,7 +267,7 @@ On the `Setup` screen:
 
 ### 2. Flash Firmware
 
-1. select `Included 1.2.0 · works offline` in `upload firmware`
+1. select `Included 1.2.1 · works offline` in `upload firmware`
 2. click `install firmware`
 3. wait for flash completion before doing anything else
 
