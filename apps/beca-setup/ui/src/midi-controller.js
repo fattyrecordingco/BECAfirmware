@@ -95,6 +95,7 @@ export function createMidiController({ host, invoke, controls, change }) {
           connected = ""; mapper.reset(); paintLearn(); await nativeConnect("");
           setStatus("MIDI input disconnected. Reconnect the controller.");
         }
+        if (selected && !names.includes(selected)) setStatus("MIDI input disconnected. Reconnect the controller.");
         if (selected && !connected && names.includes(selected)) {
           await nativeConnect(selected);
           if (requestEpoch !== epoch) return;
@@ -120,6 +121,7 @@ export function createMidiController({ host, invoke, controls, change }) {
   }
   function restart() {
     epoch++; clearTimeout(timer); connected = ""; mapper.reset(); paintLearn(); due = 0;
+    setStatus(selected ? "Connecting MIDI input…" : "Select a MIDI input, choose a control, then Learn.");
     nativeConnect("").catch(() => {});
     if (active && !document.hidden) poll();
   }

@@ -43,3 +43,9 @@ The final results and release artifact references are recorded below after verif
 - Local USB discovery exposed a separate serial device and Bluetooth COM ports; no identifiable BECA CH340/CP210x device was attached. Firmware flashing, live plant normalization/BLE advertisement and physical controller knob acceptance could not be performed in this session.
 
 - Final desktop browser suite: 94/94 passed, including mapping, accessibility, both appearances, 360 px navigation, phone/tablet orientations, update notices and cancelled initial Performance loads. Desktop logic checks: 14/14 passed.
+
+- Local Windows EXE/MSI installers built and the per-user app was upgraded to 0.3.1. The installed WebView/native IPC reports 0.3.1 and enumerates LoopBe Internal MIDI and TouchOSC Bridge. The installed firmware SHA256 matches the rebuilt bundled image. The app was reopened normally after the diagnostic session.
+- Native port connection/disconnection succeeded. A LoopBe delivery test received no bytes in BECA or in a separate direct-midir probe; end-to-end loopback/physical controller delivery is therefore not certified by this machine's result. No claim that every physical controller has passed is made.
+- The unchanged Ableton instrument's HTTP/runtime regression suite passed 15/15. Apple local address validation and deterministic embedded-player generation checks passed.
+
+- Final native interaction review found stale controller status after choosing No controller. The status now clears immediately, saved missing inputs show Disconnected, and the disconnect regression covers deselection. The unpublished release build was cancelled and restarted with this fix; no public release assets were replaced.

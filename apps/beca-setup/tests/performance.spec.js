@@ -764,6 +764,9 @@ test("MIDI disconnect, overflow and leaving Performance clear learn and input ow
   await page.evaluate(() => { window.__controllerMock.inputs = ["Knobs"]; });
   await page.getByRole("button", { name: "Refresh MIDI inputs" }).click();
   await expect(page.locator("[data-controller-status]")).toHaveText("Knobs connected.");
+  await page.locator("#controller-input").selectOption("");
+  await expect(page.locator("[data-controller-status]")).toContainText("Select a MIDI input");
+  await expect.poll(() => page.evaluate(() => window.__controllerMock.connected)).toBe(null);
   await page.getByRole("navigation", { name: "App views" }).getByRole("button", { name: "Setup", exact: true }).click();
   await expect.poll(() => page.evaluate(() => window.__controllerMock.connected)).toBe(null);
 });
