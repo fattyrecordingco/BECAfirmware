@@ -11,8 +11,8 @@ BECA is a plant-driven music instrument built around an ESP32 device and a deskt
 | Device | Download | Install steps |
 | --- | --- | --- |
 | Windows x64 | [Complete Windows folder ZIP](https://github.com/fattyrecordingco/BECAfirmware/releases/download/apps-v0.3.1/BECA-Windows-0.3.1.zip) · [EXE installer](https://github.com/fattyrecordingco/BECAfirmware/releases/download/apps-v0.3.1/BECA_0.3.1_x64-setup.exe) · [MSI](https://github.com/fattyrecordingco/BECAfirmware/releases/download/apps-v0.3.1/BECA_0.3.1_x64_en-US.msi) | [Windows](docs/install/WINDOWS.md) |
-| Android / web | [Open the Chrome web app](https://fattyrecordingco.github.io/BECAfirmware/) · [Separate web folder ZIP](https://github.com/fattyrecordingco/BECAfirmware/releases/download/apps-v0.3.1/BECA-Android-Web-1.7.1.zip) | [Android / web](docs/install/ANDROID.md) |
-| iPhone / iPad | [Open the Safari web app](https://fattyrecordingco.github.io/BECAfirmware/) · [Apple development folder ZIP](https://github.com/fattyrecordingco/BECAfirmware/releases/download/apps-v0.3.1/BECA-Apple-1.7.1.zip) | [Apple](docs/install/APPLE.md) |
+| Android / web | [Open the Chrome web app](https://fattyrecordingco.github.io/BECAfirmware/) · [1.7.1 web folder ZIP](https://github.com/fattyrecordingco/BECAfirmware/releases/download/apps-v0.3.1/BECA-Android-Web-1.7.1.zip) | [Android / web](docs/install/ANDROID.md) |
+| iPhone / iPad | [Open the Safari web app](https://fattyrecordingco.github.io/BECAfirmware/) · [1.8.0 Apple development download](https://github.com/fattyrecordingco/BECAfirmware/releases/tag/phone-v1.8.0) | [Apple](docs/install/APPLE.md) |
 | macOS M-series desktop | [Apple Silicon DMG](https://github.com/fattyrecordingco/BECAfirmware/releases/download/apps-v0.3.1/BECA_0.3.1_aarch64.dmg) | [Mac desktop](docs/install/APPLE.md#macos-desktop) |
 | macOS Intel desktop | [Intel DMG](https://github.com/fattyrecordingco/BECAfirmware/releases/download/apps-v0.3.1/BECA_0.3.1_x64.dmg) | [Mac desktop](docs/install/APPLE.md#macos-desktop) |
 

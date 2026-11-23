@@ -3,7 +3,7 @@
 The published BECA 1.8.0 web app installs from Chrome. For an existing Home Screen installation, reopen it online and tap **Update** when prompted.
 
 - [Open the web app](https://fattyrecordingco.github.io/BECAfirmware/)
-- [Download the separate Android/web folder ZIP](https://github.com/fattyrecordingco/BECAfirmware/releases/download/apps-v0.3.1/BECA-Android-Web-1.7.1.zip)
+- [Download the older 1.7.1 Android/web ZIP](https://github.com/fattyrecordingco/BECAfirmware/releases/download/apps-v0.3.1/BECA-Android-Web-1.7.1.zip)
 - [Release notes and checksums](https://github.com/fattyrecordingco/BECAfirmware/releases/tag/apps-v0.3.1)
 
 ## Install and connect over USB
@@ -34,7 +34,7 @@ The ZIP is a web bundle/backup, not an Android installer. Extract it to inspect 
 - **Device absent from the picker:** try another data cable, unlock the phone, close other USB apps, and reopen the published HTTPS page directly in Chrome.
 - **Wi-Fi page absent:** confirm the phone is still on the intended network. Use numeric `192.168.4.1` on the setup access point; `.local` names may fail there. On a router, use BECA's current station IP.
 - **Hotspot rejected:** check its name, password and 2.4 GHz setting. Use BECA's setup page to change credentials.
-- **App looks old:** reopen it online and tap **Update** when offered. Download your recordings before clearing BECA's site data.
+- **App looks old:** reopen it online and tap **Update** when offered. If the update finishes downloading while the old screen stays open, close BECA and reopen it once. Download your recordings before clearing BECA's site data.
 - **Notes remain held:** tap Panic. If the connection dropped, reconnect and tap Listen again.
 
 [iPhone/iPad instructions](APPLE.md) · [Windows firmware installation](WINDOWS.md)

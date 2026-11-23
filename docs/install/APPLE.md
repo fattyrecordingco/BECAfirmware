@@ -3,14 +3,15 @@
 Use Safari for Wi-Fi sound without app signing, or install the native iPhone/iPad development app with your own Apple Account.
 
 - [Open the BECA 1.8.0 web app in Safari](https://fattyrecordingco.github.io/BECAfirmware/)
-- [Download the separate Apple 1.7.1 folder ZIP](https://github.com/fattyrecordingco/BECAfirmware/releases/download/apps-v0.3.1/BECA-Apple-1.7.1.zip)
+- [Download the Apple 1.8.0 development IPA and checksum](https://github.com/fattyrecordingco/BECAfirmware/releases/tag/phone-v1.8.0)
+- [Download the older Apple 1.7.1 folder ZIP](https://github.com/fattyrecordingco/BECAfirmware/releases/download/apps-v0.3.1/BECA-Apple-1.7.1.zip)
 - [Release notes, available Mac packages and checksums](https://github.com/fattyrecordingco/BECAfirmware/releases/tag/apps-v0.3.1)
 
-The Apple ZIP contains an **unsigned development IPA** and installation information. It does not contain another user's signing identity or an App Store/TestFlight installation. Tapping an IPA in Safari or Files cannot install it directly.
+The native download is an **unsigned development IPA**. Follow the signing and installation steps below.
 
 ## Install the web app in Safari
 
-Open the published web app, then choose **Add to Home Screen** from Safari's Share menu. If it is already installed, reopen BECA online and tap **Update** when offered. The published app can record **Test sound** on its own or record live input through its computer link. For a direct Wi-Fi connection, use BECA's device page below. Its controls come from the firmware installed on the unit.
+Open the published web app, then choose **Add to Home Screen** from Safari's Share menu. If it is already installed, reopen BECA online and tap **Update** when offered. If the old screen stays open after the update downloads, close BECA and reopen it once. The published app can record **Test sound** on its own or record live input through its computer link. For a direct Wi-Fi connection, use BECA's device page below. Its controls come from the firmware installed on the unit.
 
 ## Safari: play without an Apple Account
 
@@ -30,13 +31,13 @@ Current BECA hardware uses a CH340 USB serial adapter. iPhone/iPad browsers cann
 
 The native app requires iOS/iPadOS 15 or later. Installation needs a computer, a trusted USB connection to the iPhone/iPad, and your own signing/provisioning. Normal instrument use afterwards uses **Wi-Fi controls plus BLE MIDI**.
 
-1. Download and extract the Apple ZIP. Check the IPA against the release checksum. Keep the included folder together.
-2. Install [xtool](https://github.com/xtool-org/xtool). On Windows, follow the repository's [Windows xtool setup](../../apps/beca-apple/WINDOWS.md) for Ubuntu/WSL and the Apple Devices connection bridge. Obtain the repository scripts from the same release's source archive if your ZIP does not include them. Installing a prebuilt IPA does not require extracting an Apple SDK.
+1. Download the Apple IPA and check it against the release checksum. For the older 1.7.1 ZIP, extract the folder first.
+2. Install [xtool](https://github.com/xtool-org/xtool). On Windows, follow the repository's [Windows xtool setup](../../apps/beca-apple/WINDOWS.md) for Ubuntu/WSL and the Apple Devices connection bridge. The release's source archive includes the Windows setup scripts. Installing a prebuilt IPA does not require extracting an Apple SDK.
 3. Sign into Apple **in your own terminal**. With the repository helpers on Windows, run `.\apps\beca-apple\xtool-windows.ps1 -Step Auth`. Complete any two-factor prompt there. Keep signing credentials and profiles local.
 4. Connect the unlocked iPhone/iPad to the computer, accept **Trust This Computer**, and verify it appears in xtool's device list. The helper command is `.\apps\beca-apple\xtool-windows.ps1 -Step Devices --usb --no-wait`. If WSL cannot see it, follow the Apple Devices bridge steps in the linked Windows guide.
-5. Run `xtool install /path/to/BECA-unsigned.ipa`, substituting the actual extracted filename. On Windows, use the helper's `-Step Install` with the IPA's WSL path, for example `.\apps\beca-apple\xtool-windows.ps1 -Step Install /mnt/c/Users/YOUR_NAME/Downloads/BECA-Apple-1.7.1/BECA-unsigned.ipa`. xtool signs the candidate for your account/device and installs it. See the [repository device installation guide](../../apps/beca-apple/INSTALL-IPAD.md) for the complete handoff.
+5. Run `xtool install /path/to/BECAApple-unsigned.ipa`, substituting the actual path to the downloaded file. On Windows, use the helper's `-Step Install` with the IPA's WSL path, for example `.\apps\beca-apple\xtool-windows.ps1 -Step Install /mnt/c/Users/YOUR_NAME/Downloads/BECAApple-unsigned.ipa`. xtool signs the candidate for your account and device, then installs it. See the [repository device installation guide](../../apps/beca-apple/INSTALL-IPAD.md) for the complete handoff.
 6. If the device requests it, enable **Settings → Privacy & Security → Developer Mode**, restart, and confirm. If a developer-trust prompt appears, follow it in **Settings → General → VPN & Device Management** for your own account.
-7. Open BECA and allow **Local Network** and **Bluetooth**. Expand **Connection** at the top of the native app to reveal **BECA address**, **MIDI source**, **Refresh MIDI** and **Bluetooth MIDI**. Enter its address: `192.168.4.1` on the setup access point, or its current station IP on a shared network. Choose **Bluetooth MIDI**, connect **BECA BLE-MIDI**, then close the panel. Use **Refresh MIDI** if needed and choose BECA in **MIDI source**. Collapse Connection to return to the playing surface, tap **Connect BECA**, then **Listen on this device**. Close other apps connected to BECA's BLE MIDI source if pairing fails.
+7. Open BECA and allow **Local Network** and **Bluetooth**. Expand **Connection** at the top of the native app to reveal **BECA address**, **MIDI source**, **Refresh MIDI** and **Bluetooth MIDI**. Enter `192.168.4.1` on the setup access point, or the unit's current station IP on a shared network. Choose **Bluetooth MIDI**, connect **BECA BLE-MIDI**, then close the panel. Use **Refresh MIDI** if needed and choose BECA in **MIDI source**. Collapse Connection, tap **Connect BECA**, then **Listen**. Close other apps connected to BECA's BLE MIDI source if pairing fails.
 
 A free Apple Personal Team's development profile expires after **seven days**. Re-sign and reinstall before or after expiry; this is Apple's provisioning limit, not a BECA firmware failure. [Apple's account documentation](https://developer.apple.com/help/account/basics/about-your-developer-account) explains these limits. Installing a development IPA is separate from public App Store/TestFlight distribution.
 
