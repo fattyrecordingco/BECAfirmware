@@ -9,7 +9,7 @@ function render(engine, blocks = 100) {
   const output = [];
   for (let block = 0; block < blocks; block++) {
     const pointer = engine.render(128);
-    output.push(...new Int16Array(engine.memory.buffer, pointer, 256));
+    for (const sample of new Float32Array(engine.memory.buffer, pointer, 256)) output.push(sample * 32768);
   }
   return output;
 }

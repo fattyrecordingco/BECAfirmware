@@ -883,8 +883,13 @@ void SynthEngine::renderBlock(const SynthParams& p) {
     const float outL = dsp::clampf(mixL, -1.0f, 1.0f);
     const float outR = dsp::clampf(mixR, -1.0f, 1.0f);
 
+#ifdef BECA_WEB_AUDIO
+    webBlock_[i * 2] = outL;
+    webBlock_[i * 2 + 1] = outR;
+#else
     i2sBlock_[i * 2] = static_cast<int16_t>(outL * 32767.0f);
     i2sBlock_[i * 2 + 1] = static_cast<int16_t>(outR * 32767.0f);
+#endif
   }
 }
 
@@ -903,14 +908,19 @@ void SynthEngine::renderSensorSine(const SynthParams& p) {
     sensorGain_ += dsp::clampf(gainTarget - sensorGain_, -gainStep, gainStep);
     fadeValue_ += dsp::clampf(fadeTarget_ - fadeValue_, -fadeStep_, fadeStep_);
     const float sample = sinf(2.0f * dsp::kPi * sensorPhase_) * sensorGain_ * fadeValue_;
+#ifdef BECA_WEB_AUDIO
+    webBlock_[i * 2] = sample;
+    webBlock_[i * 2 + 1] = sample;
+#else
     const int16_t out = static_cast<int16_t>(sample * 32767.0f);
     i2sBlock_[i * 2] = out;
     i2sBlock_[i * 2 + 1] = out;
+#endif
   }
 }
 
 #ifdef BECA_WEB_AUDIO
-const int16_t* SynthEngine::renderWeb(uint16_t frames) {
+const float* SynthEngine::renderWeb(uint16_t frames) {
   blockSize_ = min(frames, kBlockMax);
   service(millis());
   SynthParams p;
@@ -920,7 +930,7 @@ const int16_t* SynthEngine::renderWeb(uint16_t frames) {
   Event event;
   while (popEvent(event)) handleEvent(event, p);
   renderBlock(p);
-  return i2sBlock_;
+  return webBlock_;
 }
 #else
 void SynthEngine::audioTask() {

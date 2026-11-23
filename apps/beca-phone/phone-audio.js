@@ -41,7 +41,12 @@ export class PhoneAudio extends EventTarget {
     if (this.context?.state === "closed") { this.context = null; this.node = null; this.lastParams = null; }
     // Create/resume before awaiting downloads to retain the user's audio gesture.
     if (!this.context) {
-      this.context = new (globalThis.AudioContext || globalThis.webkitAudioContext)({ latencyHint: "interactive", sampleRate: 44100 });
+      const Context = globalThis.AudioContext || globalThis.webkitAudioContext;
+      try { this.context = new Context({ latencyHint: "interactive", sampleRate: 44100 }); }
+      catch (error) {
+        if (error.name !== "NotSupportedError") throw error;
+        this.context = new Context({ latencyHint: "interactive" });
+      }
       this.context.onstatechange = () => {
         if (this.enabled && this.context.state !== "running") this.stop();
         else this.dispatchEvent(new Event("statechange"));
@@ -52,7 +57,8 @@ export class PhoneAudio extends EventTarget {
     if (generation !== this.startGeneration) return;
     if (this.context.state !== "running") throw new Error("Audio was interrupted. Keep the app visible, then tap Listen again.");
     if (!this.node) {
-      if (!globalThis.isSecureContext || !globalThis.AudioWorkletNode || !this.context.audioWorklet) {
+      this.useWorklet = Boolean(globalThis.isSecureContext && globalThis.AudioWorkletNode && this.context.audioWorklet);
+      if (!this.useWorklet) {
         this.node = this.createFallback();
       } else {
         await this.context.audioWorklet.addModule(new URL("./audio-worklet.js", import.meta.url));
@@ -85,7 +91,7 @@ export class PhoneAudio extends EventTarget {
     const engine = instantiateEngine(this.module);
     engine.init(this.context.sampleRate);
     const node = this.context.createScriptProcessor(1024, 0, 2);
-    const samples = new Int16Array(engine.memory.buffer);
+    const samples = new Float32Array(engine.memory.buffer);
     let mode = Number(this.performance.mode);
     node.port = { postMessage: (data) => {
       if (data.type === "mode") { mode = Number(data.mode); engine.mode(mode); }
@@ -100,14 +106,54 @@ export class PhoneAudio extends EventTarget {
     node.onaudioprocess = ({ outputBuffer }) => {
       for (let offset = 0; offset < outputBuffer.length; offset += 128) {
         const count = Math.min(128, outputBuffer.length - offset);
-        const pointer = engine.render(count) / 2;
+        const pointer = engine.render(count) / 4;
         for (let channel = 0; channel < outputBuffer.numberOfChannels; channel++) {
           const output = outputBuffer.getChannelData(channel);
-          for (let i = 0; i < count; i++) output[offset + i] = samples[pointer + i * 2 + (channel % 2)] / 32768;
+          for (let i = 0; i < count; i++) output[offset + i] = samples[pointer + i * 2 + (channel % 2)];
         }
       }
     };
     return node;
+  }
+  capture(onSamples, onError) {
+    const { context, gain } = this;
+    if (!this.enabled || context.state !== "running") throw new Error("Audio is off. Tap Listen and try again.");
+    const node = this.useWorklet
+      ? new AudioWorkletNode(context, "beca-recording", { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1] })
+      : context.createScriptProcessor(4096, 2, 1);
+    // The capture node outputs silence. The main playback path stays connected.
+    let resolveFlush;
+    if (this.useWorklet) {
+      node.port.onmessage = ({ data }) => { if (data) onSamples(data); else resolveFlush?.(); };
+      node.onprocessorerror = onError;
+    } else {
+      node.onaudioprocess = ({ inputBuffer }) => {
+        const left = inputBuffer.getChannelData(0);
+        const right = inputBuffer.getChannelData(1);
+        const samples = new Float32Array(left.length * 2);
+        for (let i = 0; i < left.length; i++) {
+          samples[i * 2] = left[i];
+          samples[i * 2 + 1] = right[i];
+        }
+        onSamples(samples);
+      };
+    }
+    gain.connect(node).connect(context.destination);
+    return async () => {
+      if (this.useWorklet && context.state === "running") {
+        let timeout;
+        await new Promise((resolve) => {
+          resolveFlush = resolve;
+          timeout = setTimeout(resolve, 400);
+          node.port.postMessage("stop");
+        });
+        clearTimeout(timeout);
+      }
+      gain.disconnect(node);
+      node.disconnect();
+      if (node.port) node.port.close();
+      else node.onaudioprocess = null;
+    };
   }
   midiExact(bytes) {
     if (!this.enabled) return;
@@ -160,7 +206,7 @@ export class PhoneAudio extends EventTarget {
       this.lastParams = signature;
     }
   }
-  midi(bytes) {
+  midi(bytes, audition = false) {
     if (!this.enabled) return;
     let [status, note, velocity = 0] = bytes;
     const command = status & 0xf0;
@@ -178,7 +224,7 @@ export class PhoneAudio extends EventTarget {
         const key = `${status & 15}:${note}`;
         if (on) {
           // One arp voice at a time; release the previous pitch before advancing.
-          for (const active of this.activeNotes) this.node?.port.postMessage({ type: "midi", bytes: [0x80, active, 0] });
+          for (const active of this.activeNotes) this.sendMidi([0x80, active, 0], audition);
           this.activeNotes.clear();
           this.noteMap.clear();
           note = this.arp.next(this.performance);
@@ -192,8 +238,12 @@ export class PhoneAudio extends EventTarget {
       if (on) { this.activeNotes.add(note); this.lastNote = note; this.lastVelocity = velocity; }
       else this.activeNotes.delete(note);
     }
-    this.node?.port.postMessage({ type: "midi", bytes: [status, note, velocity] });
+    this.sendMidi([status, note, velocity], audition);
     this.dispatchEvent(new Event("noteschange"));
+  }
+  sendMidi(bytes, audition) {
+    this.node?.port.postMessage({ type: "midi", bytes });
+    if (audition) this.dispatchEvent(new CustomEvent("auditionmidi", { detail: bytes }));
   }
   sensor(raw, connected) {
     if (this.enabled) this.node?.port.postMessage({ type: "sensor", raw: Math.max(0, Math.min(4095, Number(raw) || 0)), connected: Boolean(connected) });
@@ -205,21 +255,22 @@ export class PhoneAudio extends EventTarget {
       for (let i = 0; i < 8; i++) {
         const note = drum ? [36,38,42,46,45,47,51,49][i] : 60;
         const timer = setTimeout(() => {
-          this.midi([drum ? 0x99 : 0x90, note, 88]);
+          this.midi([drum ? 0x99 : 0x90, note, 88], true);
           this.timers.delete(timer);
         }, i * 220);
         const off = setTimeout(() => {
-          this.midi([drum ? 0x89 : 0x80, note, 0]);
+          this.midi([drum ? 0x89 : 0x80, note, 0], true);
           this.timers.delete(off);
         }, i * 220 + 160);
         this.timers.add(timer); this.timers.add(off);
       }
       return;
     }
-    if (Number(this.params.preset) === 12) this.sensor(440, true);
-    else (Number(this.performance.mode) === 2 ? [60,64,67] : [60]).forEach((note) => this.midi([0x90, note, 88]));
+    const notes = Number(this.params.preset) === 12 ? [] : Number(this.performance.mode) === 2 ? [60, 64, 67] : [60];
+    if (!notes.length) this.sensor(440, true);
+    notes.forEach((note) => this.midi([0x90, note, 88], true));
     const timer = setTimeout(() => {
-      [60, 64, 67].forEach((note) => this.midi([0x80, note, 0]));
+      notes.forEach((note) => this.midi([0x80, note, 0], true));
       this.sensor(0, false);
       this.timers.delete(timer);
     }, 1200);

@@ -2,10 +2,15 @@
 
 Use Safari for Wi-Fi sound without app signing, or install the native iPhone/iPad development app with your own Apple Account.
 
+- [Open the BECA 1.8.0 web app in Safari](https://fattyrecordingco.github.io/BECAfirmware/)
 - [Download the separate Apple 1.7.1 folder ZIP](https://github.com/fattyrecordingco/BECAfirmware/releases/download/apps-v0.3.1/BECA-Apple-1.7.1.zip)
 - [Release notes, available Mac packages and checksums](https://github.com/fattyrecordingco/BECAfirmware/releases/tag/apps-v0.3.1)
 
 The Apple ZIP contains an **unsigned development IPA** and installation information. It does not contain another user's signing identity or an App Store/TestFlight installation. Tapping an IPA in Safari or Files cannot install it directly.
+
+## Install the web app in Safari
+
+Open the published web app, then choose **Add to Home Screen** from Safari's Share menu. If it is already installed, reopen BECA online and tap **Update** when offered. The published app can record **Test sound** on its own or record live input through its computer link. For a direct Wi-Fi connection, use BECA's device page below. Its controls come from the firmware installed on the unit.
 
 ## Safari: play without an Apple Account
 

@@ -3,6 +3,8 @@ import Network
 
 // Loopback serves the bundled app in a secure localhost context for AudioWorklet.
 final class LocalWebServer {
+    // WebKit uses the port as part of the origin for saved recordings.
+    private let port = NWEndpoint.Port(rawValue: 24331)!
     private var listener: NWListener?
     private let queue = DispatchQueue(label: "BECA.web")
     private var connections = [ObjectIdentifier: NWConnection]()
@@ -10,7 +12,7 @@ final class LocalWebServer {
     func start(ready: @escaping (Result<URL, Error>) -> Void) {
         do {
             let parameters = NWParameters.tcp
-            parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: .any)
+            parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: port)
             let listener = try NWListener(using: parameters)
             self.listener = listener
             listener.stateUpdateHandler = { state in

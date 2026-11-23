@@ -199,7 +199,7 @@ test("unsupported USB browsers offer direct Apple routes and the browser compute
   });
   await page.reload();
   await expect(page.locator("#connectButton")).toBeDisabled();
-  await expect(page.locator("#connectionMessage")).toContainText("direct Wi-Fi instrument");
+  await expect(page.locator("#connectionMessage")).toHaveText("See Settings to connect");
   await expect(page.locator("#compatibilityNotice")).toContainText("through a computer");
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   await page.locator("#appleConnectionHelp summary").click();
@@ -378,7 +378,7 @@ test("original synth plays live USB notes, releases them, and stops on disconnec
   await expect.poll(peak, { timeout: 10000 }).toBeLessThan(0.001);
   await page.locator("#panicButton").click();
   await expect.poll(peak).toBe(0);
-  await expect(page.locator("#audioStatus")).toContainText("Live synth");
+  await expect(page.locator("#audioStatus")).toHaveText("Phone audio on");
   expect(await page.evaluate(() => window.__audioErrors)).toEqual([]);
   await page.getByRole("button", { name: "Disconnect", exact: true }).click();
   await expect(page.locator("#listenButton")).toHaveAttribute("aria-pressed", "false");
@@ -388,6 +388,10 @@ test("standalone previews retain all original presets and editable synth setting
   await expect(page.locator("#presetGrid .preset-button")).toHaveCount(13);
   await page.getByRole("button", { name: "Dewdrop Glass", exact: true }).click();
   await expect(page.locator("#presetName")).toHaveText("Dewdrop Glass");
+  const preset = page.getByRole("combobox", { name: "Preset", exact: true });
+  await expect(preset.locator("option:checked")).toHaveText("Dewdrop Glass");
+  await preset.selectOption({ label: "Moss Bells" });
+  await expect(page.locator("#presetName")).toHaveText("Moss Bells");
   if (await page.evaluate(() => Boolean(window.AudioContext && window.AudioWorkletNode))) {
     await page.getByRole("button", { name: "Test sound", exact: true }).click();
     await expect(page.locator("#listenButton")).toHaveAttribute("aria-pressed", "true");

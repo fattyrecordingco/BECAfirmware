@@ -6,6 +6,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 FILES = [
     "index.html", "apps/beca-phone/index.html", "apps/beca-phone/app.js",
+    "apps/beca-phone/recordings.js", "apps/beca-phone/recordings-ui.js",
     "apps/beca-setup/ui/index.html", "apps/beca-setup/ui/control.html",
     "apps/beca-setup/ui/src/main.js", "apps/beca-setup/ui/src/performance.js",
     "apps/beca-setup/ui/src/performance-instrument.js",

@@ -6,6 +6,8 @@ The **1.7.0 candidate compiled and was installed on the connected iPad**. Its na
 
 This project provides Wi-Fi control and native MIDI for **iPhone/iPad on iOS/iPadOS 15+** and **Mac on macOS 12+**. BECA 1.6.0 was development-signed, installed and opened on the user's iPad Air M3 on 11 October 2026. The user requires **direct USB-C serial on both iPad and iPhone**, which this build does not provide. Instrument acceptance, physical iPhone testing and public distribution remain outstanding. Do not advertise this as a finished wired Apple app.
 
+The current development source includes the [recording controls](../beca-phone/README.md#record-a-take). Saved takes are kept in the app's Recordings library across launches. Downloads go to **Files › On My iPhone/iPad › BECA › Recordings** or **Downloads › Recordings** on macOS.
+
 The app bundles the existing BECA Phone Control synth and controls, serves them on a loopback-only localhost endpoint, and adds two native connections:
 
 - Local Wi-Fi HTTP for settings, presets, plant readings and status. Works with BECA's setup access point or a shared router; no computer, cloud service or internet connection is required during use.
@@ -130,7 +132,7 @@ The [Apple app checks run](https://github.com/fattyrecordingco/BECAfirmware/acti
 1. Power BECA from a charger or power bank. Join its setup Wi-Fi, or join the same router as BECA. If the setup network has no internet, remain connected. The app's synth assets are bundled locally.
 2. Enter `192.168.4.1`, BECA's current router IP, or its `.local` hostname in **BECA address**. If unsure, open `http://192.168.4.1` in Safari on the setup network. The native app permits private IPv4 addresses and `.local` names, on HTTP port 80.
 3. Tap **Bluetooth MIDI**, connect **BECA BLE-MIDI**, and select its source. On Mac, use Audio MIDI Setup → Window → Show MIDI Studio → Bluetooth, then refresh the app's source list.
-4. Tap **Connect BECA**. Wait for the board's presets/settings to load, then tap **Listen on this device**. BECA switches to BLE MIDI. Start with a low master level and test a sound, then attach the plant.
+4. Tap **Connect BECA**. Wait for the board's presets/settings to load, then tap **Listen**. BECA switches to BLE MIDI. Start with a low master level and test a sound, then attach the plant.
 5. Choose headphones or speakers in system audio settings. Keep the app visible while playing. Bluetooth speakers add audio latency independently of Bluetooth MIDI.
 
 Allow **Local Network** and **Bluetooth** when prompted. If denied, restore permission in Settings → Privacy & Security. The native iOS audio session uses playback mode; the system media volume still applies. On backgrounding or locking, the app silences local notes and closes its device session; reconnect and tap Listen after returning. Audio interruptions clear voices/effect tails and require a fresh user tap.

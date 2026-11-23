@@ -4,6 +4,22 @@
 
 BECA Phone Control is an installable web instrument and controller for phones, tablets and desktops. Version 1.7.0 uses BECA's C++ synthesizer through WebAssembly and AudioWorklet, including all 13 presets and eight drum voices, with higher-precision web delay and band-limited saw/square oscillators. USB control uses the existing `@C` protocol at 115200 baud. The firmware's BLE-MIDI behavior is unchanged.
 
+## Record a take
+
+Choose **Audio**, **MIDI**, or **Both** in the play controls. Audio and Both turn on the phone's synth. Tap **Stop** to save the take, then open **Recordings** with the folder button. Play back a WAV, download it or the MIDI file separately, or use **ZIP** to download both together. The native Apple app saves to **Files › On My iPhone/iPad › BECA › Recordings**. The web app uses your browser's downloads.
+
+WAVs are stereo 24-bit PCM at 44.1 kHz, sampled from the phone synth after its volume control and effects. The hardware AUX jack, microphone and other apps are outside this audio path. MIDI files retain incoming note, velocity, channel and control change messages in order with the app's playback timing. A held note is released at the end of the file. **Test sound** also works as a recording source without a connected BECA.
+
+The library stores takes on the current app or browser address. It saves chunks during a take so the committed portion can be recovered after an interruption. Keep the app visible while recording. Each take can run for up to 30 minutes, and stereo WAV uses about 16 MB per minute. Download important takes to keep copies outside browser storage.
+
+The standalone apps use the existing BECA MIDI connection. The copy served by BECA at `/play/` gets the new interface when you install firmware that bundles these web assets.
+
+## Updating the installed web app
+
+Open BECA online on Android or iPhone/iPad. The app checks for updates on open, when it returns to the foreground and when it comes back online. If an update is ready during a session, tap **Update** in the top bar when you finish playing. BECA saves an active take before restarting. The new release can also activate after you close all open copies of BECA and reopen it. The Home Screen icon and local recordings stay in place.
+
+These updates apply to the [published web app](https://fattyrecordingco.github.io/BECAfirmware/). A separately signed Apple development app is updated by installing a newer build. The page served by a BECA unit uses the web assets in its installed firmware.
+
 ## Direct Apple app transport (1.7.0)
 
 The [BECA Apple app project](../beca-apple/README.md) bundles this controller and synth and adds native Wi-Fi settings plus CoreMIDI notes, without a computer during use. Listening selects **BLE MIDI** on that transport; browser USB and tablet-link transports retain **Serial MIDI**. The separate Apple 1.7.0 release candidate has compiled; its unsigned IPA requires each user’s own development signing. Installation and physical validation of that new candidate remain pending. An earlier physical build 5 has user-confirmed setup-AP connection, knobs, themes, Test sound and Panic. Safari can separately play the Wi-Fi browser instrument at `/play/`; it does not gain native BLE or USB access. Follow the [Apple installation guide](../../docs/install/APPLE.md).
@@ -28,7 +44,7 @@ The web delay now stores floating-point samples instead of inheriting the firmwa
 
 ## Listen on a phone or tablet
 
-Open the published app over HTTPS (or localhost), or the new device-hosted `http://DEVICE_IP/play/` page, tap **Listen on this device**, select a preset, and use **Test sound**. Synth controls, instrument mode, root/scale/octave and arp settings work without hardware for previews; the plant graph stays empty until real data arrives. Clock, plant sensitivity and device controls require BECA. The layout supports phone and tablet portrait/landscape, and the manifest allows either orientation.
+Open the published app over HTTPS (or localhost), or the device-hosted `http://DEVICE_IP/play/` page. Tap **Listen**, select a preset, and use **Test sound**. Synth controls, instrument mode, root/scale/octave and arp settings work without hardware for previews. The plant graph stays empty until real data arrives. Clock, plant sensitivity and device controls require BECA. The layout supports phone and tablet portrait and landscape.
 
 For live input on Android, connect USB and tap Listen. Listening selects **Serial MIDI** on BECA; **Serial MIDI + Aux** can also be selected when AUX is ready. The synth consumes live `@M` messages, including note-offs and channel-10 drums; it never synthesizes from the slower display snapshots or duplicates telemetry notes. Presets and parameters synchronize from BECA, and edits also update the connected board. Select the output route you want on BECA after stopping phone playback.
 
@@ -42,7 +58,7 @@ iPad/iPhone Safari and Chrome cannot directly access this board's USB serial bri
 2. Expand **Link an iPad or tablet through a computer** on both devices.
 3. Create a computer code, copy it to the tablet's input, and choose **Join from tablet**.
 4. Copy the tablet's reply back into the computer's input and choose **Finish on computer**.
-5. Tap **Listen on this device** on the tablet. The graph, note monitor, presets and settings now receive live data through the computer.
+5. Tap **Listen** on the tablet. The graph, note monitor, presets and settings receive live data through the computer.
 
 The encrypted WebRTC data channel carries control messages and events, not audio. Audio is synthesized on the tablet. Pairing is manual, supports one tablet, and uses local ICE candidates without a signaling server, STUN or TURN service. Keep the host page open and computer awake. Guest Wi-Fi, client isolation, browser privacy policies and firewall rules may prevent connection; same-network physical iPad validation is still required. Link codes grant control of BECA; share them only with the intended device. Close Link revokes the active session.
 
@@ -165,7 +181,7 @@ The app uses `@C SET <key> <value>` for controls. It requests `TELEMETRY 0` duri
 
 **AUX is disabled:** wait for the startup countdown. If the firmware returns `aux not ready`, refresh state and retry after the displayed time.
 
-**No sound on the phone/tablet:** tap **Listen on this device**, check the device's media volume/output and BECA's mute state, then press **Test sound**. For live notes, select Serial MIDI or Serial MIDI + Aux. Test sound now plays locally, including without BECA. For an onboard AUX test, select AUX and send `SYNTH_TEST` from the connected console.
+**No sound on the phone/tablet:** tap **Listen**, check the device's media volume/output and BECA's mute state, then press **Test sound**. For live notes, select Serial MIDI or Serial MIDI + Aux. Test sound plays locally, including without BECA. For an onboard AUX test, select AUX and send `SYNTH_TEST` from the connected console.
 
 **Plant activity is absent:** open Console and run `PINS` and `PLANT`. Check electrode and jack connections. Plant jack detection may be disabled in some firmware builds, so raw readings are the useful diagnostic.
 
@@ -209,7 +225,7 @@ See the repository [browser Wi-Fi instrument instructions](../../README.md#brows
 
 Notes, Arpeggiator, Chords and Drums share the play surface, plant trace, MIDI feedback, master level and Panic. Pitched controls disappear in Drums; drum kit and parts appear only in Drums. Browser arp settings appear only for the browser’s local arpeggiator. Oscillators, Filter, Envelope and Effects are grouped in Synth. Network identity, hotspot setup, device output, LED settings and connection help live in Settings.
 
-To play on an iPhone or iPad browser without a computer, power BECA and join its setup Wi-Fi or the same home network/hotspot. Open `http://<BECA-IP>/play/`, tap **Connect Wi-Fi**, then **Listen on this device**. The page runs the same BECA WebAssembly sound engine locally and receives ordered device MIDI. Device arp notes retain their original pitches. On local HTTP, the audio engine uses the browser’s ScriptProcessor fallback because AudioWorklet requires a secure context. The published HTTPS app can open the device page from **Settings → Wi-Fi instrument**; it cannot fetch a local HTTP device through mixed content.
+To play on an iPhone or iPad browser without a computer, power BECA and join its setup Wi-Fi or the same home network/hotspot. Open `http://<BECA-IP>/play/`, tap **Connect Wi-Fi**, then **Listen**. The page runs the BECA sound engine locally and receives ordered device MIDI. Device arp notes retain their original pitches. On local HTTP, the audio engine uses the browser’s ScriptProcessor fallback because AudioWorklet requires a secure context. Open the device page from **Settings → Wi-Fi instrument** in the published HTTPS app.
 
 Wi-Fi MIDI polling is bounded and does not overlap. Existing snapshots update state/plant/notes at 2 Hz and synth at 0.5 Hz, with unchanged payloads skipped during rendering. Stream loss and disconnect panic held notes. Keep the browser visible while playing. This requires firmware containing the `/play/` assets and ordered browser MIDI endpoint; older firmware must be updated. Phone hotspot client isolation can prevent a connection.
 

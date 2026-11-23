@@ -21,7 +21,7 @@ extern "C" {
 EMSCRIPTEN_KEEPALIVE void init(int sampleRate) {
   engine.~SynthEngine();
   new (&engine) beca::SynthEngine();
-  rate = sampleRate == 48000 ? 48000 : 44100;
+  rate = constrain(sampleRate, 8000, 96000);
   renderedFrames = 0;
   becaWebMillis = 0;
   engine.start(0, 0, 0, rate, 128);
@@ -34,10 +34,10 @@ EMSCRIPTEN_KEEPALIVE void mode(int value) {
   playMode = value;
   engine.setDrumsEnabled(playMode == 3);
 }
-EMSCRIPTEN_KEEPALIVE const int16_t* render(int frames) {
+EMSCRIPTEN_KEEPALIVE const float* render(int frames) {
   frames = constrain(frames, 1, 128);
   becaWebMillis = static_cast<uint32_t>(renderedFrames * 1000 / rate);
-  const int16_t* samples = engine.renderWeb(frames);
+  const float* samples = engine.renderWeb(frames);
   renderedFrames += frames;
   return samples;
 }

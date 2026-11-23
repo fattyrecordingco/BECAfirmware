@@ -10,15 +10,17 @@ struct MIDISource: Identifiable {
 }
 
 @MainActor
-final class AppleSession: NSObject, ObservableObject, WKScriptMessageHandler, WKNavigationDelegate {
+final class AppleSession: NSObject, ObservableObject, WKScriptMessageHandler, WKNavigationDelegate, WKDownloadDelegate {
     @Published var address = UserDefaults.standard.string(forKey: "BECA.address") ?? "192.168.4.1"
     @Published var appearance = UserDefaults.standard.string(forKey: "BECA.appearance") == "light" ? "light" : "dark"
     @Published var sources = [MIDISource]()
     @Published var selectedSource: MIDIUniqueID = 0
     @Published var status = "Power BECA, join its Wi-Fi, then connect its Bluetooth MIDI source."
     @Published var webURL: URL?
+    @Published var launchFailed = false
     weak var webView: WKWebView?
     private let server = LocalWebServer()
+    private var downloadFiles = [ObjectIdentifier: URL]()
     private var client: MIDIClientRef = 0
     private var port: MIDIPortRef = 0
     private var connectedSource: MIDIEndpointRef = 0
@@ -69,7 +71,9 @@ final class AppleSession: NSObject, ObservableObject, WKScriptMessageHandler, WK
         server.start { [weak self] result in
             switch result {
             case .success(let url): self?.webURL = url
-            case .failure(let error): self?.status = "Could not load the bundled app: \(error.localizedDescription)"
+            case .failure:
+                self?.launchFailed = true
+                self?.status = "Could not open BECA. Close other copies of the app and try again."
             }
         }
     }
@@ -242,7 +246,68 @@ final class AppleSession: NSObject, ObservableObject, WKScriptMessageHandler, WK
 
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         let url = action.request.url
-        decisionHandler(url?.host == "127.0.0.1" && url?.port == webURL?.port ? .allow : .cancel)
+        if action.shouldPerformDownload, action.sourceFrame.isMainFrame, let base = webURL,
+           action.sourceFrame.securityOrigin.host == base.host, action.sourceFrame.securityOrigin.port == base.port,
+           url?.absoluteString.hasPrefix("blob:" + base.absoluteString) == true {
+            decisionHandler(.download)
+        } else {
+            decisionHandler(url?.host == "127.0.0.1" && url?.port == webURL?.port ? .allow : .cancel)
+        }
+    }
+
+    func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) {
+        download.delegate = self
+    }
+
+    func download(_ download: WKDownload, decideDestinationUsing response: URLResponse, suggestedFilename: String,
+                  completionHandler: @escaping (URL?) -> Void) {
+        let fileManager = FileManager.default
+        #if os(iOS)
+        let directory: FileManager.SearchPathDirectory = .documentDirectory
+        #else
+        let directory: FileManager.SearchPathDirectory = .downloadsDirectory
+        #endif
+        let extensions = ["audio/wav": "wav", "audio/midi": "mid", "application/zip": "zip"]
+        guard let type = response.mimeType, let fileExtension = extensions[type],
+              let root = fileManager.urls(for: directory, in: .userDomainMask).first else {
+            completionHandler(nil)
+            downloadStatus("Could not save the file. Try again.")
+            return
+        }
+        do {
+            let folder = root.appendingPathComponent("Recordings", isDirectory: true)
+            try fileManager.createDirectory(at: folder, withIntermediateDirectories: true)
+            let stem = (suggestedFilename as NSString).deletingPathExtension
+            let safe = stem.range(of: #"^BECA-[0-9A-Za-z_-]{1,64}$"#, options: .regularExpression) == nil ? "BECA-Recording" : stem
+            var file = folder.appendingPathComponent(safe).appendingPathExtension(fileExtension)
+            if fileManager.fileExists(atPath: file.path) || downloadFiles.values.contains(file) {
+                file = folder.appendingPathComponent(safe + "-" + UUID().uuidString.prefix(8)).appendingPathExtension(fileExtension)
+            }
+            downloadFiles[ObjectIdentifier(download)] = file
+            completionHandler(file)
+        } catch {
+            completionHandler(nil)
+            downloadStatus("Could not save the file. Free up space and try again.")
+        }
+    }
+
+    func downloadDidFinish(_ download: WKDownload) {
+        downloadFiles.removeValue(forKey: ObjectIdentifier(download))
+        #if os(iOS)
+        downloadStatus("Saved to Files › On My Device › BECA › Recordings.")
+        #else
+        downloadStatus("Saved to Downloads › Recordings.")
+        #endif
+    }
+
+    func download(_ download: WKDownload, didFailWithError error: Error, resumeData: Data?) {
+        if let file = downloadFiles.removeValue(forKey: ObjectIdentifier(download)) { try? FileManager.default.removeItem(at: file) }
+        downloadStatus("Could not save the file. Try again.")
+    }
+
+    private func downloadStatus(_ message: String) {
+        guard let data = try? JSONEncoder().encode(message), let text = String(data: data, encoding: .utf8) else { return }
+        webView?.evaluateJavaScript("window.dispatchEvent(new CustomEvent('beca-download', {detail: \(text)}))")
     }
 
     func suspend() { close() }

@@ -92,9 +92,9 @@ export class WifiBecaSerial extends EventTarget {
     this.deviceAnchor = undefined;
     this.localAnchor = undefined;
   }
-  resetStream(reason) {
+  resetStream(reason, midi) {
     this.clearScheduledMidi();
-    this.emit(`@R WIFI_STREAM_RESET ${JSON.stringify({ reason })}`);
+    this.emit(`@R WIFI_STREAM_RESET ${JSON.stringify({ reason, midi })}`);
   }
   acceptBatch(batch) {
     if (!Number.isInteger(batch.next) || !Array.isArray(batch.events) || batch.events.length > 64) throw new Error("Invalid BECA note stream.");
@@ -115,7 +115,8 @@ export class WifiBecaSerial extends EventTarget {
         if (this.deviceAnchor === undefined) { this.deviceAnchor = batch.now; this.localAnchor = received; }
       }
       const due = timestamp === undefined ? received : this.localAnchor + ((timestamp - this.deviceAnchor) | 0) + 60;
-      messages.push({ raw: `@M ${[status, data1, data2].map((byte) => byte.toString(16).padStart(2, "0")).join(" ")}`, due, timestamp, panic: (status & 0xf0) === 0xb0 && [120,123].includes(data1) });
+      const bytes = [status, data1, data2];
+      messages.push({ raw: `@M ${bytes.map((byte) => byte.toString(16).padStart(2, "0")).join(" ")}`, due, timestamp, panic: (status & 0xf0) === 0xb0 && [120,123].includes(data1), bytes });
     }
     this.sequence = batch.next;
     this.boot = batch.boot;
@@ -126,7 +127,7 @@ export class WifiBecaSerial extends EventTarget {
       return;
     }
     for (const message of messages) {
-      if (message.panic) { this.resetStream("all notes off"); continue; }
+      if (message.panic) { this.resetStream("all notes off", message.bytes); continue; }
       if (message.timestamp === undefined) { this.emit(message.raw); continue; }
       const timer = setTimeout(() => {
         this.pendingMidi.delete(timer);

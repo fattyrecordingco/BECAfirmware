@@ -6,8 +6,10 @@ import { ARP_DEFAULTS } from "./plant-arp.js";
 import { capabilities, connectionHelp } from "./compatibility.js";
 import { appleNativeProvider } from "./apple-native.js";
 import { WifiBecaSerial } from "./wifi-provider.js";
+import { Recordings } from "./recordings.js";
+import { initRecordings } from "./recordings-ui.js";
 
-const APP_VERSION = "1.7.1";
+const APP_VERSION = "1.8.0";
 // Appearance stays on this device and never changes the instrument's settings.
 let savedTheme = globalThis.__BECA_NATIVE_THEME__ === "light" ? "light" : "dark";
 try { const stored = localStorage.getItem("beca-appearance"); if (["light", "dark"].includes(stored)) savedTheme = stored; } catch {}
@@ -26,6 +28,7 @@ themeSelect.addEventListener("change", () => {
   try { localStorage.setItem("beca-appearance", themeSelect.value); } catch {}
 });
 const phoneAudio = new PhoneAudio();
+const recordings = new Recordings(phoneAudio, startPhoneAudio);
 const NOTE_NAMES = ["C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B"];
 const LEAF_PATH = "M100 48.864C100 77.106 77.106 100 48.864 100H0V51.136C0 22.894 22.894 0 51.136 0H100v48.864ZM51.136 11.364c-21.965 0-39.772 17.807-39.772 39.772V81.17l42.005-42.005c2.219-2.219 5.817-2.219 8.036 0 2.219 2.219 2.219 5.817 0 8.036L19.967 88.636h28.897c21.965 0 39.772-17.807 39.772-39.772V11.364H51.136Z";
 const FALLBACK_PARAMS = {
@@ -233,13 +236,11 @@ function setConnectedUi(connected) {
   $("#connectButton").classList.toggle("connected", connected);
   $("#connectButton span:last-child").textContent = connected ? "Disconnect" : nativeProvider ? "Connect BECA" : wifiProvider ? "Connect Wi-Fi" : "Connect USB";
   $("#deviceStatus").textContent = connected ? (verified ? "BECA connected" : "Checking device…") : "Not connected";
-  $("#connectionMessage").textContent = connected
+  const connection = connected
     ? (verified ? `${transportName} connected` : "Checking BECA…")
-    : wifiProvider ? "Tap Connect Wi-Fi, then Listen." : nativeProvider ? "Enter BECA’s Wi-Fi address and select its MIDI source."
-    : !transport.supported ? "Open BECA’s direct Wi-Fi instrument from Settings, or link through a computer." : isAndroid
-      ? "Connect BECA with a USB-C OTG/data cable, then tap Connect USB and approve the device permission."
-      : "Connect your device to BECA with a USB data cable.";
-  $$('button[data-requires-connection], button[data-command], .preset-button, .midi-leaf, input[data-key], select[data-key], #muteButton, #testButton, #refreshButton, #resetPreset, #randomizeButton, #commandInput, #commandForm button[type="submit"]').forEach((element) => {
+    : !wifiProvider && !nativeProvider && !transport.supported ? "See Settings to connect" : "BECA disconnected";
+  if ($("#connectionMessage").textContent !== connection) $("#connectionMessage").textContent = connection;
+  $$('button[data-requires-connection], button[data-command], .preset-button, .midi-leaf, input[data-key], select[data-key], #quickPreset, #muteButton, #testButton, #refreshButton, #resetPreset, #randomizeButton, #commandInput, #commandForm button[type="submit"]').forEach((element) => {
     element.disabled = !connected || !verified;
   });
   $("#expressionPad").setAttribute("aria-disabled", String(!connected || !verified));
@@ -250,7 +251,7 @@ function setConnectedUi(connected) {
 function enableLocalControls() {
   if (wifiBusy || connecting || (transport.connected && !verified)) return;
   if (!phoneAudio.presets) return;
-  $$('[data-source="synth"], .preset-button, #resetPreset, #testButton').forEach((element) => { element.disabled = false; });
+  $$('[data-source="synth"], .preset-button, #quickPreset, #resetPreset, #testButton').forEach((element) => { element.disabled = false; });
   $$('[data-key]').filter((element) => LOCAL_PERFORMANCE.has(element.dataset.key)).forEach((element) => { element.disabled = false; });
   $$("[data-play-mode]").forEach((button) => { button.disabled = false; });
   renderModeRestrictions();
@@ -265,12 +266,19 @@ function updateAudioStatus() {
     return;
   }
   const active = phoneAudio.enabled;
-  $("#listenButton").textContent = active ? "Stop listening" : "Listen on this device";
+  $("#listenButton span").textContent = active ? "Stop listening" : "Listen";
   $("#listenButton").setAttribute("aria-pressed", String(active));
-  $("#audioStatus").textContent = active
-    ? phoneAudio.context?.state !== "running" ? "Audio paused by browser — tap Stop, then Listen to resume."
-      : transport.connected ? wifiProvider ? "Live synth · Wi-Fi MIDI" : nativeProvider ? "Live synth · select BECA’s native MIDI source above and BLE MIDI output" : "Live synth · select Serial MIDI or Serial MIDI + Aux for notes" : "Preview ready · connect BECA for live plant input"
-    : "Sound is off. Tap Listen to enable this device’s audio.";
+  const status = active
+    ? (transport.connected ? "Phone audio on" : "Preview audio on")
+    : "Phone audio off";
+  if ($("#audioStatus").textContent !== status) $("#audioStatus").textContent = status;
+}
+
+function useDeviceMidi() {
+  if (!transport.connected || wifiProvider) return;
+  const mode = Number(model.state.outputmode);
+  if (!nativeProvider && [1, 3].includes(mode)) return;
+  scheduleSet("outputmode", serialProvider?.audioOutputMode ?? (mode === 2 ? 3 : 1), null, true);
 }
 
 async function startPhoneAudio() {
@@ -346,6 +354,7 @@ async function verifyDevice() {
   setNotice();
   showToast(transport.remote ? "Computer link connected" : wifiProvider || nativeProvider ? "Wi-Fi connected" : "USB connected");
   if (phoneAudio.enabled && !wifiProvider) scheduleSet("outputmode", serialProvider?.audioOutputMode ?? 1, null, true);
+  else if (recordings.active?.info.mode === "midi") useDeviceMidi();
   updateAudioStatus();
 }
 
@@ -449,7 +458,12 @@ function receive(parsed) {
       if (replySignatures.get(parsed.tag) === signature && unchanged) return;
       replySignatures.set(parsed.tag, signature);
     }
-    if (parsed.tag === "WIFI_STREAM_RESET") { phoneAudio.panic(); return; }
+    if (parsed.tag === "WIFI_STREAM_RESET") {
+      if (parsed.payload?.midi) recordings.midi(...parsed.payload.midi);
+      else recordings.stop("interrupted");
+      phoneAudio.panic();
+      return;
+    }
     if (parsed.tag === "PARAMS" && parsed.payload) {
       model.params = { ...model.params, ...parsed.payload, ranges: { ...model.params.ranges, ...parsed.payload.ranges } };
       renderAllControls();
@@ -494,8 +508,9 @@ function receive(parsed) {
       renderNotes();
     }
   } else if (parsed.type === "midi") {
+    const bytes = [parsed.status, parsed.data1, parsed.data2];
+    recordings.midi(...bytes);
     if (!model.state.io_muted) {
-      const bytes = [parsed.status, parsed.data1, parsed.data2];
       if (wifiProvider && !transport.remote) phoneAudio.midiExact(bytes);
       else phoneAudio.midi(bytes);
     }
@@ -544,8 +559,7 @@ function renderState() {
     : state.aux_ready
       ? (state.aux_jack ? "AUX connected" : "AUX ready")
       : `AUX ready in ${Math.ceil((state.aux_wait_ms ?? 0) / 1000)}s`;
-  $("#muteButton span:last-child").textContent = state.io_muted ? "Unmute" : "Mute";
-  $("#muteButton").classList.toggle("accent", Boolean(state.io_muted));
+  $("#muteButton").setAttribute("aria-pressed", String(Boolean(state.io_muted)));
   $("#presetName").textContent = state.preset_name ?? model.synth.preset_name ?? "—";
   if (state.last && !phoneAudio.enabled) updateLastNote(state.last, state.vel);
   renderOutputModes();
@@ -739,6 +753,7 @@ function renderOutputModes() {
 
 function renderPresets() {
   const presets = model.params.synth_presets ?? FALLBACK_PARAMS.synth_presets;
+  $("#quickPreset").replaceChildren(...presets.map((name, index) => new Option(name, String(index))));
   $("#presetGrid").replaceChildren(...presets.map((name, index) => {
     const button = document.createElement("button");
     button.type = "button";
@@ -746,15 +761,25 @@ function renderPresets() {
     button.textContent = name;
     button.disabled = !transport.connected || !verified;
     button.dataset.preset = String(index);
-    button.addEventListener("click", () => scheduleSet(model.params.live_preset ? "preset_live" : "preset", index, null, true));
+    button.addEventListener("click", () => choosePreset(index));
     return button;
   }));
   renderPresetSelection();
 }
 
+function choosePreset(index) {
+  scheduleSet(model.params.live_preset ? "preset_live" : "preset", index, null, true);
+}
+
 function renderPresetSelection() {
   const selected = Number(model.synth.preset ?? model.state.preset);
-  $$("[data-preset]").forEach((button) => button.classList.toggle("selected", Number(button.dataset.preset) === selected));
+  const select = $("#quickPreset");
+  if (select.value !== String(selected) && select.options[selected]) select.value = String(selected);
+  $$("[data-preset]").forEach((button) => {
+    const active = Number(button.dataset.preset) === selected;
+    button.classList.toggle("selected", active);
+    if (button.getAttribute("aria-pressed") !== String(active)) button.setAttribute("aria-pressed", String(active));
+  });
 }
 
 function renderModeRestrictions() {
@@ -1087,10 +1112,15 @@ function initActions() {
     finally { button.disabled = false; }
   });
   $("#panicButton").addEventListener("click", () => phoneAudio.panic());
-  phoneAudio.addEventListener("statechange", updateAudioStatus);
+  phoneAudio.addEventListener("statechange", () => {
+    if (!phoneAudio.enabled && recordings.active?.start !== undefined && recordings.active.info.mode !== "midi") recordings.stop("interrupted");
+    updateAudioStatus();
+  });
+  phoneAudio.addEventListener("auditionmidi", ({ detail }) => recordings.midi(...detail));
   phoneAudio.addEventListener("noteschange", () => {
     renderNotes();
-    $("#arpReadout").textContent = phoneAudio.arp.chord.length ? `${phoneAudio.arp.chord.map(noteLabel).join(" · ")} — ${phoneAudio.arp.order}` : "Waiting for the next note. Plant energy chooses the chord; signal contour chooses its order.";
+    const readout = phoneAudio.arp.chord.length ? phoneAudio.arp.chord.map(noteLabel).join(" · ") : "Waiting for notes";
+    if ($("#arpReadout").textContent !== readout) $("#arpReadout").textContent = readout;
   });
   phoneAudio.addEventListener("engineerror", () => handleError(new Error("Audio engine stopped. Reload to restart.")));
   $("#connectButton").addEventListener("click", () => toggleConnection().catch(handleError));
@@ -1101,6 +1131,7 @@ function initActions() {
     catch (error) { handleError(error); }
   });
   $("#resetPreset").addEventListener("click", () => scheduleSet("preset_reset", 1, null, true));
+  $("#quickPreset").addEventListener("change", (event) => choosePreset(Number(event.target.value)));
   $("#randomizeButton").addEventListener("click", () => transport.send("RANDOMIZE").catch(handleError));
   $("#master").addEventListener("pointerdown", () => interaction.add("master"));
   ["pointerup", "pointercancel", "blur"].forEach(event => $("#master").addEventListener(event, () => interaction.delete("master")));
@@ -1181,7 +1212,7 @@ transport.addEventListener("connect", () => {
 transport.addEventListener("remoteconnect", () => {
   $("#connectButton").disabled = false;
   verifyDevice().then(() => {
-    $("#connectionMessage").textContent = "Live plant input and controls are linked through your computer.";
+    $("#connectionMessage").textContent = "Computer link connected";
     showToast("BECA linked through computer.");
   }).catch(handleError);
 });
@@ -1220,6 +1251,7 @@ transport.addEventListener("sent", (event) => logLine(event.detail, "out"));
 transport.addEventListener("line", (event) => receive(event.detail));
 transport.addEventListener("transporterror", (event) => handleError(event.detail));
 transport.addEventListener("disconnect", () => {
+  recordings.stop("interrupted");
   for (const waiter of pendingReplies.values()) { clearTimeout(waiter.timer); waiter.reject(new Error("BECA disconnected before replying.")); }
   pendingReplies.clear();
   phoneAudio.stop();
@@ -1255,16 +1287,20 @@ navigator.usb?.addEventListener?.("connect", () => refreshUsbDiagnostics());
 navigator.usb?.addEventListener?.("disconnect", () => refreshUsbDiagnostics());
 
 document.addEventListener("visibilitychange", () => {
-  if (document.hidden) phoneAudio.stop();
+  if (document.hidden) { recordings.stop("interrupted"); phoneAudio.stop(); }
   if (!document.hidden && !wifiBusy && transport.connected) {
     transport.send("PING").then(() => transport.send("STATE")).catch(handleError);
   }
 });
-window.addEventListener("pagehide", () => { if (transport.connected) transport.disconnect(); });
+window.addEventListener("pagehide", () => {
+  recordings.stop("interrupted");
+  if (transport.connected) transport.disconnect();
+});
 
 $("#appVersion").textContent = `v${APP_VERSION}`;
 initTabs();
 initActions();
+initRecordings(recordings, useDeviceMidi);
 initInstall();
 initCompatibility();
 initVisualControls();
@@ -1279,39 +1315,36 @@ phoneAudio.load().then((presets) => {
   updateAudioStatus();
 }).catch((error) => { $("#audioStatus").textContent = error.message; handleError(error); });
 
-if ("serviceWorker" in navigator && location.protocol !== "file:") {
+if (!nativeProvider && "serviceWorker" in navigator && location.protocol !== "file:") {
   const hadServiceWorkerController = Boolean(navigator.serviceWorker.controller);
-  navigator.serviceWorker.register("./service-worker.js").then((registration) => {
+  navigator.serviceWorker.register("./service-worker.js", { updateViaCache: "none" }).then((registration) => {
+    const updateButton = $("#updateButton");
     const showUpdate = () => {
-      $("#updateButton").classList.remove("hidden");
+      if (!updateButton.classList.contains("hidden")) return;
+      updateButton.classList.remove("hidden");
       showToast("Update available. Tap Update when you have finished playing.");
     };
-    if (registration.waiting) showUpdate();
-    registration.addEventListener("updatefound", () => {
+    const watchInstall = () => {
       const worker = registration.installing;
-      worker?.addEventListener("statechange", () => {
-        if (worker.state === "installed" && navigator.serviceWorker.controller) {
-          showUpdate();
-        }
-      });
-    });
+      const showWhenReady = () => {
+        if (worker?.state === "installed" && navigator.serviceWorker.controller) showUpdate();
+      };
+      worker?.addEventListener("statechange", showWhenReady);
+      showWhenReady();
+    };
+    if (registration.waiting) showUpdate();
+    registration.addEventListener("updatefound", watchInstall);
+    watchInstall();
     let updateRequested = false;
-    $("#updateButton").addEventListener("click", async () => {
+    updateButton.addEventListener("click", async () => {
       updateRequested = true;
-      $("#updateButton").disabled = true;
-      phoneAudio.panic();
+      updateButton.disabled = true;
+      await recordings.stop();
+      phoneAudio.stop();
       try { if (transport.connected) await transport.disconnect(); }
       finally {
         if (registration.waiting) registration.waiting.postMessage({ type: "SKIP_WAITING" });
         else location.reload();
-      }
-    });
-    // Check on return to the app, at most once per hour.
-    let lastUpdateCheck = Date.now();
-    document.addEventListener("visibilitychange", () => {
-      if (!document.hidden && Date.now() - lastUpdateCheck >= 3600000) {
-        lastUpdateCheck = Date.now();
-        registration.update().catch(() => {});
       }
     });
     let refreshing = false;
@@ -1321,5 +1354,17 @@ if ("serviceWorker" in navigator && location.protocol !== "file:") {
       refreshing = true;
       location.reload();
     });
+    // Check on open, on return and when the phone comes back online.
+    let lastUpdateCheck = -Infinity;
+    const checkForUpdate = () => {
+      if (document.hidden || !navigator.onLine || registration.waiting || registration.installing) return;
+      const now = performance.now();
+      if (now - lastUpdateCheck < 60000) return;
+      lastUpdateCheck = now;
+      registration.update().catch(() => {});
+    };
+    document.addEventListener("visibilitychange", checkForUpdate);
+    window.addEventListener("online", checkForUpdate);
+    checkForUpdate();
   }).catch((error) => logLine(`Offline cache unavailable: ${error.message}`, "warning"));
 }

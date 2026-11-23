@@ -2,6 +2,8 @@
 
 BECA is a plant-driven music instrument built around an ESP32 device and a desktop control app.
 
+**Phone web app 1.8.0** adds audio and MIDI recording. Open the published app on Android, iPhone or iPad. If you already have it on your Home Screen, reopen it online and tap **Update** when prompted. [Open BECA on your phone](https://fattyrecordingco.github.io/BECAfirmware/)
+
 ## Download BECA 0.3.1
 
 [Release apps-v0.3.1](https://github.com/fattyrecordingco/BECAfirmware/releases/tag/apps-v0.3.1) contains desktop app **0.3.1**, firmware **1.2.1**, and phone/Apple app **1.7.1**. Choose the package for your device. Windows, Android/web and Apple folders are separate downloads.
@@ -10,7 +12,7 @@ BECA is a plant-driven music instrument built around an ESP32 device and a deskt
 | --- | --- | --- |
 | Windows x64 | [Complete Windows folder ZIP](https://github.com/fattyrecordingco/BECAfirmware/releases/download/apps-v0.3.1/BECA-Windows-0.3.1.zip) · [EXE installer](https://github.com/fattyrecordingco/BECAfirmware/releases/download/apps-v0.3.1/BECA_0.3.1_x64-setup.exe) · [MSI](https://github.com/fattyrecordingco/BECAfirmware/releases/download/apps-v0.3.1/BECA_0.3.1_x64_en-US.msi) | [Windows](docs/install/WINDOWS.md) |
 | Android / web | [Open the Chrome web app](https://fattyrecordingco.github.io/BECAfirmware/) · [Separate web folder ZIP](https://github.com/fattyrecordingco/BECAfirmware/releases/download/apps-v0.3.1/BECA-Android-Web-1.7.1.zip) | [Android / web](docs/install/ANDROID.md) |
-| iPhone / iPad | [Apple development folder ZIP](https://github.com/fattyrecordingco/BECAfirmware/releases/download/apps-v0.3.1/BECA-Apple-1.7.1.zip) · Safari at `http://192.168.4.1/play/` on BECA's setup Wi-Fi | [Apple](docs/install/APPLE.md) |
+| iPhone / iPad | [Open the Safari web app](https://fattyrecordingco.github.io/BECAfirmware/) · [Apple development folder ZIP](https://github.com/fattyrecordingco/BECAfirmware/releases/download/apps-v0.3.1/BECA-Apple-1.7.1.zip) | [Apple](docs/install/APPLE.md) |
 | macOS M-series desktop | [Apple Silicon DMG](https://github.com/fattyrecordingco/BECAfirmware/releases/download/apps-v0.3.1/BECA_0.3.1_aarch64.dmg) | [Mac desktop](docs/install/APPLE.md#macos-desktop) |
 | macOS Intel desktop | [Intel DMG](https://github.com/fattyrecordingco/BECAfirmware/releases/download/apps-v0.3.1/BECA_0.3.1_x64.dmg) | [Mac desktop](docs/install/APPLE.md#macos-desktop) |
 

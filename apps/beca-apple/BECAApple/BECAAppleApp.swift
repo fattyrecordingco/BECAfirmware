@@ -51,6 +51,7 @@ struct BECAAppleApp: App {
                 Text(session.status).font(.caption).frame(maxWidth: .infinity, alignment: .leading)
             }.font(.caption)
             if let url = session.webURL { InstrumentView(session: session, url: url) }
+            else if session.launchFailed { Text(session.status).frame(maxWidth: .infinity, maxHeight: .infinity) }
             else { ProgressView("Loading BECA…").frame(maxWidth: .infinity, maxHeight: .infinity) }
         }
         .padding(8)
@@ -75,7 +76,7 @@ struct BECAAppleApp: App {
     config.userContentController.addUserScript(WKUserScript(
         source: "globalThis.__BECA_NATIVE_THEME__ = \"\(session.appearance)\";",
         injectionTime: .atDocumentStart, forMainFrameOnly: true))
-    config.websiteDataStore = .nonPersistent()
+    config.websiteDataStore = .default()
     #if os(iOS)
     config.allowsInlineMediaPlayback = true
     config.mediaTypesRequiringUserActionForPlayback = []

@@ -81,7 +81,7 @@ class SynthEngine {
   static void presetDefaults(uint8_t index, SynthParams& out);
 
 #ifdef BECA_WEB_AUDIO
-  const int16_t* renderWeb(uint16_t frames);
+  const float* renderWeb(uint16_t frames);
 #endif
 
  private:
@@ -181,7 +181,11 @@ class SynthEngine {
   float revMemL_;
   float revMemR_;
 
+#ifdef BECA_WEB_AUDIO
+  float webBlock_[kBlockMax * 2];
+#else
   int16_t i2sBlock_[kBlockMax * 2];
+#endif
 
   volatile uint32_t underruns_;
 

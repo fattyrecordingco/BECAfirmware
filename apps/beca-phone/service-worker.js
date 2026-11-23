@@ -1,4 +1,4 @@
-const CACHE_NAME = "beca-phone-v1.7.1-controller-1";
+const CACHE_NAME = "beca-phone-v1.8.0";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -11,6 +11,9 @@ const APP_SHELL = [
   "./phone-audio.js", "./plant-arp.js", "./compatibility.js", "./apple-native.js",
   "./audio-engine.js",
   "./audio-worklet.js",
+  "./recordings.js",
+  "./recordings-ui.js",
+  "./recording-formats.js",
   "./beca-synth.wasm",
   "./manifest.webmanifest",
   "./icons/icon.svg",
@@ -18,11 +21,12 @@ const APP_SHELL = [
   "./icons/icon-192.png",
   "./icons/icon-512.png"
 ];
+const shellPaths = new Set(APP_SHELL.map((file) => new URL(file, self.registration.scope).pathname));
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then((cache) => cache.addAll(APP_SHELL))
+      .then((cache) => cache.addAll(APP_SHELL.map((file) => new Request(new URL(file, self.registration.scope), { cache: "reload" }))))
   );
 });
 
@@ -35,18 +39,12 @@ self.addEventListener("activate", (event) => {
 });
 
 self.addEventListener("fetch", (event) => {
-  if (event.request.method !== "GET" || new URL(event.request.url).origin !== self.location.origin) return;
-  event.respondWith(
-    fetch(event.request)
-      .then((response) => {
-        if (response.ok) {
-          const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
-        }
-        return response;
-      })
-      .catch(() => caches.match(event.request).then((cached) => cached || (event.request.mode === "navigate" ? caches.match("./index.html") : Response.error())))
-  );
+  const url = new URL(event.request.url);
+  if (event.request.method !== "GET" || url.origin !== self.location.origin || !shellPaths.has(url.pathname)) return;
+  // Load HTML, scripts and WASM from the same installed release.
+  event.respondWith(caches.open(CACHE_NAME)
+    .then((cache) => cache.match(event.request, { ignoreSearch: true }))
+    .then((cached) => cached || fetch(event.request)));
 });
 
 self.addEventListener("message", (event) => {

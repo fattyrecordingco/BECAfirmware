@@ -249,21 +249,11 @@ button:disabled {
   opacity:.5;
 }
 
-.listen-panel {
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap:16px;
+.play-deck {
+  display:grid;
+  gap:8px;
   padding:14px 18px;
   margin-bottom:12px;
-}
-
-.listen-panel h2 {
-  display:none;
-}
-
-.listen-panel .eyebrow {
-  margin:0 0 4px;
 }
 
 #audioStatus {
@@ -271,17 +261,6 @@ button:disabled {
   line-height:1.5;
   color:var(--muted);
   min-height:18px;
-  max-width:580px;
-}
-
-.listen-panel .instrument-caption {
-  display:none;
-}
-
-.listen-actions {
-  display:flex;
-  gap:8px;
-  flex-shrink:0;
 }
 
 .instrument-caption {
@@ -291,30 +270,10 @@ button:disabled {
   margin-top:8px;
 }
 
-.instrument-modes {
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap:20px;
-  padding:12px 18px;
-  margin-bottom:12px;
-}
-
-.instrument-modes > .eyebrow {
-  display:none;
-}
-
-.instrument-modes h2 {
-  font-size:12px;
-  color:var(--muted);
-}
-
 .mode-buttons {
   display:grid;
   grid-template-columns:repeat(4,minmax(0,1fr));
   gap:4px;
-  flex:1;
-  max-width:760px;
 }
 
 .mode-buttons button {
@@ -334,15 +293,11 @@ button:disabled {
   box-shadow:inset 0 -2px var(--accent);
 }
 
-.control-grid.two-column {
+.play-controls {
   display:grid;
-  grid-template-columns:minmax(0,1fr) minmax(0,1fr);
-  gap:12px;
-  margin-bottom:12px;
-}
-
-.master-card,.action-card {
-  padding:12px 18px;
+  grid-template-columns:minmax(0,1fr) minmax(0,.65fr) auto;
+  align-items:center;
+  gap:16px;
 }
 
 .master-card h2 {
@@ -350,8 +305,24 @@ button:disabled {
   font-weight:500;
 }
 
-.master-card .eyebrow,.action-card .eyebrow {
-  display:none;
+.quick-preset {
+  display:grid;
+  gap:4px;
+  min-width:0;
+  color:var(--muted);
+  font-size:12px;
+}
+
+.quick-preset select {
+  width:100%;
+  min-height:44px;
+  min-width:0;
+  padding:0 8px;
+  border:1px solid var(--line);
+  border-radius:5px;
+  background:var(--panel-ghost);
+  color:var(--text);
+  font:inherit;
 }
 
 .card-title {
@@ -367,8 +338,8 @@ button:disabled {
 }
 
 .master-card .range {
-  margin-top:8px;
-  min-height:32px;
+  margin:0;
+  min-height:44px;
 }
 
 .range-labels {
@@ -378,36 +349,159 @@ button:disabled {
   font:9px var(--mono);
 }
 
-.action-row {
+.play-actions,.recording-controls {
   display:grid;
-  grid-template-columns:repeat(3,minmax(0,1fr));
+  grid-template-columns:minmax(0,1fr) 44px 44px auto;
   gap:6px;
-  height:100%;
+}
+
+.recording-controls {
+  grid-template-columns:repeat(3,minmax(0,1fr)) 44px;
+  border-top:1px solid var(--line-soft);
+  padding-top:10px;
 }
 
 .action-button {
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:6px;
+  min-width:44px;
   min-height:44px;
-  padding:8px;
+  padding:0 10px;
   border:1px solid var(--line);
   border-radius:5px;
   background:var(--panel-ghost);
   font-size:12px;
 }
 
-.action-icon {
-  margin-right:6px;
+.control-icon {
+  width:18px;
+  height:18px;
+  flex:none;
+  fill:none;
+  stroke:currentColor;
+  stroke-width:1.7;
+  stroke-linecap:round;
+  stroke-linejoin:round;
+}
+
+.action-button[aria-pressed="true"],.record-button.recording {
   color:var(--accent);
-  font-size:16px;
-}
-
-.action-button.accent {
-  color:var(--on-accent);
   border-color:var(--accent);
-  background:var(--accent);
+  background:var(--panel-muted);
 }
 
-.action-button.accent .action-icon {
-  color:inherit;
+.record-mark {
+  width:10px;
+  height:10px;
+  border-radius:50%;
+  background:var(--accent);
+  flex:none;
+}
+
+.recording .record-mark {
+  border-radius:2px;
+}
+
+.recording-status {
+  display:flex;
+  justify-content:space-between;
+  align-items:start;
+  gap:8px;
+  min-height:18px;
+  color:var(--muted);
+  font-size:12px;
+  line-height:1.5;
+}
+
+#recordingTime {
+  color:var(--accent);
+  font-family:var(--mono);
+  font-variant-numeric:tabular-nums;
+}
+
+#recordingsDialog[open] {
+  position:fixed;
+  inset:0;
+  margin:auto;
+  width:min(560px,calc(100% - 24px));
+  max-height:calc(100% - 24px);
+  overflow:auto;
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  padding:14px;
+  color:var(--text);
+  background:var(--panel);
+  z-index:20;
+}
+
+#recordingsDialog:not([open]) {
+  display:none;
+}
+
+#recordingsDialog[aria-modal] {
+  box-shadow:0 0 0 100vmax #000a;
+}
+
+#recordingsDialog::backdrop {
+  background:#000a;
+}
+
+.recordings-header {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+}
+
+#libraryStatus {
+  color:var(--muted);
+  font-size:13px;
+  margin:8px 0 12px;
+}
+
+#recordingsList {
+  list-style:none;
+  padding:0;
+}
+
+#recordingsList li {
+  display:grid;
+  gap:8px;
+  padding:12px 0;
+  border-top:1px solid var(--line-soft);
+}
+
+#recordingsList strong,#recordingsList small {
+  display:block;
+}
+
+#recordingsList small {
+  color:var(--muted);
+  margin-top:3px;
+}
+
+.recording-row-actions {
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:6px;
+}
+
+.recording-row-actions .action-button {
+  gap:4px;
+  padding:0 6px;
+}
+
+.recording-row-actions .control-icon {
+  width:16px;
+  height:16px;
+}
+
+#recordingPreview {
+  width:100%;
+  margin-top:8px;
 }
 
 .live-deck {
@@ -1353,26 +1447,15 @@ footer {
   .brand small {
     display:none;
   }
-  .listen-panel {
-    align-items:stretch;
-    flex-direction:column;
+  .play-deck {
     padding:12px;
-    gap:8px;
   }
-  .listen-actions {
-    display:grid;
-    grid-template-columns:1fr auto;
+  .play-controls {
+    grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+    gap:6px 12px;
   }
-  .listen-actions button {
-    font-size:11px;
-    padding:0 10px;
-  }
-  .instrument-modes {
-    display:block;
-    padding:10px;
-  }
-  .instrument-modes h2 {
-    display:none;
+  .play-actions {
+    grid-column:1 / -1;
   }
   .mode-buttons {
     gap:4px;
@@ -1381,24 +1464,8 @@ footer {
     font-size:11px;
     padding:0 4px;
   }
-  .control-grid.two-column {
-    grid-template-columns:1fr;
-    gap:8px;
-  }
-  .master-card {
-    padding:10px 12px;
-  }
-  .master-card .range-labels {
-    display:none;
-  }
-  .master-card .range {
-    margin:4px 0 0;
-  }
-  .action-card {
-    padding:8px;
-  }
   .action-button {
-    font-size:11px;
+    font-size:12px;
   }
   .live-deck {
     padding:12px;
@@ -1507,14 +1574,11 @@ footer {
   .topbar {
     position:relative;
   }
-  .listen-panel {
-    flex-direction:row;
+  .play-controls {
+    grid-template-columns:minmax(0,1fr) minmax(0,.65fr) auto;
   }
-  .listen-actions {
-    grid-template-columns:1fr;
-  }
-  .control-grid.two-column {
-    grid-template-columns:1fr 1fr;
+  .play-actions {
+    grid-column:auto;
   }
   .live-deck-grid {
     display:grid;

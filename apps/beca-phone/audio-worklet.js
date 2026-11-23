@@ -5,7 +5,7 @@ class BecaProcessor extends AudioWorkletProcessor {
     super();
     this.engine = instantiateEngine(new WebAssembly.Module(options.processorOptions.bytes));
     this.engine.init(sampleRate);
-    this.samples = new Int16Array(this.engine.memory.buffer);
+    this.samples = new Float32Array(this.engine.memory.buffer);
     this.mode = 0;
     this.params = {};
     this.port.onmessage = ({ data }) => {
@@ -31,12 +31,48 @@ class BecaProcessor extends AudioWorkletProcessor {
     if (!channels?.length) return true;
     for (let offset = 0; offset < channels[0].length; offset += 128) {
       const count = Math.min(128, channels[0].length - offset);
-      const pointer = this.engine.render(count) / 2;
+      const pointer = this.engine.render(count) / 4;
       for (let channel = 0; channel < channels.length; channel++) {
-        for (let i = 0; i < count; i++) channels[channel][offset + i] = this.samples[pointer + i * 2 + (channel % 2)] / 32768;
+        for (let i = 0; i < count; i++) channels[channel][offset + i] = this.samples[pointer + i * 2 + (channel % 2)];
       }
     }
     return true;
   }
 }
 registerProcessor("beca-synth", BecaProcessor);
+
+class RecordingProcessor extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    this.buffer = new Float32Array(16384 * 2);
+    this.used = 0;
+    this.stopped = false;
+    this.port.onmessage = () => {
+      this.stopped = true;
+      this.flush();
+      this.port.postMessage(null);
+    };
+  }
+
+  flush() {
+    if (!this.used) return;
+    const samples = this.used === this.buffer.length ? this.buffer : this.buffer.slice(0, this.used);
+    this.port.postMessage(samples, [samples.buffer]);
+    this.buffer = new Float32Array(16384 * 2);
+    this.used = 0;
+  }
+
+  process([channels]) {
+    if (this.stopped) return false;
+    const [left, right = left] = channels ?? [];
+    if (!left) return true;
+    for (let i = 0; i < left.length; i++) {
+      this.buffer[this.used++] = left[i];
+      this.buffer[this.used++] = right[i];
+      if (this.used === this.buffer.length) this.flush();
+    }
+    return true;
+  }
+}
+
+registerProcessor("beca-recording", RecordingProcessor);

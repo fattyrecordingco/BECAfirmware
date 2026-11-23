@@ -24,7 +24,8 @@ MIMES = {
 
 
 def render_header() -> tuple[str, int, int]:
-    required = {"index.html", "app.js", "app.css", "protocol.js", "phone-audio.js", "wifi-provider.js", "beca-synth.wasm"}
+    required = {"index.html", "app.js", "app.css", "protocol.js", "phone-audio.js", "wifi-provider.js", "beca-synth.wasm",
+                "recordings.js", "recordings-ui.js", "recording-formats.js"}
     files = sorted(p for p in DIST.rglob("*") if p.is_file() and p.suffix in MIMES)
     names = {p.relative_to(DIST).as_posix() for p in files}
     if not required <= names:
