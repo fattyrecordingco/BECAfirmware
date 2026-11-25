@@ -1,0 +1,21 @@
+name: macOS Serial MIDI Diagnostic
+on:
+  push:
+    branches: [diagnostics/macos-serial-midi]
+permissions:
+  contents: read
+jobs:
+  coremidi:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Identify runner and test serial bridge through native CoreMIDI
+        run: |
+          sw_vers
+          uname -m
+          cargo test --locked -p beca-bridge --lib -- --nocapture

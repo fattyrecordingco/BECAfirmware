@@ -309,7 +309,11 @@ impl Outputs {
 }
 
 fn connect_port(name: &str) -> Result<Box<dyn SerialPort>> {
-    let mut port = serialport::new(name, 115200)
+    let baud = 115200;
+    // Darwin pseudo terminals reject the hardware-only baud ioctl.
+    #[cfg(all(test, target_os = "macos"))]
+    let baud = if name.contains("beca-mac-pty-") { 0 } else { baud };
+    let mut port = serialport::new(name, baud)
         .timeout(Duration::from_millis(8))
         .dtr_on_open(false)
         .open()?;
@@ -335,6 +339,10 @@ fn connect_port(name: &str) -> Result<Box<dyn SerialPort>> {
     }
     Err(anyhow!("BECA did not answer the serial handshake."))
 }
+
+#[cfg(all(test, target_os = "macos"))]
+#[path = "macos_session_test.rs"]
+mod macos_session_test;
 
 fn emit(events: &Events, event: &str, state: &str, detail: &str) {
     events(SessionEvent {
