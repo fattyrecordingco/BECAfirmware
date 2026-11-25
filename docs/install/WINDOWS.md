@@ -22,7 +22,11 @@ For MIDI in a Windows DAW, follow the [virtual MIDI cable and routing steps](../
 
 - **No port:** try a known data cable and another USB port. Check Device Manager for the board's adapter. Use the matching [WCH CH340/CH341 driver](https://www.wch-ic.com/downloads/CH341SER_EXE.html) or [Silicon Labs CP210x driver](https://www.silabs.com/software-and-tools/usb-to-uart-bridge-vcp-drivers) if Windows has no driver.
 - **Port busy:** close Serial Monitor, serial terminals and other BECA instances, then reconnect.
+- **Bridge says Live, but Ableton's MIDI input meter is still:** match the split destination to the MIDI input in Live and enable its **Track** switch. If you use **LoopBe Internal MIDI**, check **Mute** in the LoopBe1 notification-area menu. Remove any routing back into the same virtual cable before unmuting it. Test with BECA in **Notes**, **Clock → Internal**, **Follow DAW clock** off and outputs unmuted. [LoopBe1 feedback detection](https://www.nerds.de/en/loopbe1.html)
 - **Firmware installed but no Wi-Fi:** wait for reboot, then power-cycle BECA. Use the device's setup access point and numeric `192.168.4.1`; `.local` names may not resolve there. Reflashing is not needed for a wrong Wi-Fi password.
 - **No sound:** verify the selected output, master level and mute state. A DAW also needs an instrument and monitoring enabled. Use Panic to release held browser/app notes.
+- **Internal clock plays, but Plant clock stays silent:** check the plant scope. If the raw reading stays at zero, reseat the plant lead and check both electrode contacts. On firmware with jack detection disabled, a connected indicator cannot confirm contact.
+
+Live with Max for Live can also play BECA over USB without a virtual cable. Close the desktop app to free the serial port. On a track with **BECA Instrument**, open **Connect**, enter the COM port and press **Enter**, then choose **Connect USB** and set **Note source → BECA device**. This route plays the instrument inside Live. Use the desktop bridge and a Live MIDI input to record editable MIDI clips. [BECA Instrument setup](../../ableton/instrument/README.md#hardware-controls)
 
 [Full manual](../user/BECA_MANUAL.md) · [Firmware build and recovery tools](../../tools/release/README.md) · [Windows build script](../../tools/build_setup_windows.ps1)

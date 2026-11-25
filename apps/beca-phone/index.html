@@ -35,40 +35,49 @@
           <button type="button" data-play-mode="2" aria-pressed="false">Chords</button>
           <button type="button" data-play-mode="3" aria-pressed="false">Drums</button>
         </div>
-        <div class="play-controls">
-          <div class="master-card">
-            <div class="card-title"><h2>Master</h2><output id="masterOutput" for="master">—</output></div>
-            <label class="sr-only" for="master">Master volume</label>
-            <input id="master" class="range" type="range" min="0" max="1" step="0.01" value="0.7" data-key="master" data-source="synth" disabled>
-          </div>
-          <div class="quick-preset">
-            <label for="quickPreset">Preset</label>
-            <select id="quickPreset" disabled></select>
-          </div>
-          <div class="play-actions">
-            <button id="listenButton" class="action-button" type="button" aria-pressed="false">
-              <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9h4l5-4v14l-5-4H3zM16 9a4 4 0 0 1 0 6m3-9a8 8 0 0 1 0 12"/></svg><span>Listen</span>
-            </button>
-            <button id="testButton" class="action-button" type="button" aria-label="Test sound" title="Test sound" disabled>
-              <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 11 7-11 7z"/></svg>
-            </button>
-            <button id="muteButton" class="action-button" type="button" aria-label="Mute BECA" title="Mute BECA" aria-pressed="false" disabled>
-              <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9h4l5-4v14l-5-4H3zM16 10l5 5m0-5-5 5"/></svg>
-            </button>
-            <button id="panicButton" class="action-button" type="button" title="Release all notes">Panic</button>
-          </div>
-        </div>
-        <p id="audioStatus" role="status">Loading sound…</p>
-        <div class="recording-controls" role="group" aria-label="Record">
-          <button class="action-button record-button" data-record="audio" aria-label="Record audio" type="button"><span class="record-mark" aria-hidden="true"></span><span>Audio</span></button>
-          <button class="action-button record-button" data-record="midi" aria-label="Record MIDI" type="button"><span class="record-mark" aria-hidden="true"></span><span>MIDI</span></button>
-          <button class="action-button record-button" data-record="both" aria-label="Record audio and MIDI" type="button"><span class="record-mark" aria-hidden="true"></span><span>Both</span></button>
-          <button id="openRecordings" class="action-button" type="button" aria-label="Recordings" title="Recordings" aria-haspopup="dialog">
-            <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h7l2 3h9v10H3z"/></svg>
-          </button>
-        </div>
-        <div class="recording-status">
-          <span id="recordingStatus" role="status">Record a take</span><span id="recordingTime"></span>
+        <div class="play-tools">
+          <section class="sound-controls" aria-label="Sound">
+            <div class="sound-settings">
+              <div class="master-card">
+                <div class="card-title"><h2>Master</h2><output id="masterOutput" for="master">—</output></div>
+                <label class="sr-only" for="master">Master volume</label>
+                <input id="master" class="range" type="range" min="0" max="1" step="0.01" value="0.7" data-key="master" data-source="synth" disabled>
+              </div>
+              <div class="quick-preset">
+                <label for="quickPreset">Preset</label>
+                <select id="quickPreset" disabled></select>
+              </div>
+            </div>
+            <div class="play-actions">
+              <button id="listenButton" class="action-button" type="button" aria-pressed="false">
+                <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9h4l5-4v14l-5-4H3zM16 9a4 4 0 0 1 0 6m3-9a8 8 0 0 1 0 12"/></svg><span>Listen</span>
+              </button>
+              <button id="testButton" class="action-button" type="button" aria-label="Test sound" title="Test sound" disabled>
+                <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 11 7-11 7z"/></svg><span>Test</span>
+              </button>
+              <button id="muteButton" class="action-button" type="button" aria-label="Mute BECA" title="Mute BECA" aria-pressed="false" disabled>
+                <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9h4l5-4v14l-5-4H3zM16 10l5 5m0-5-5 5"/></svg><span>Mute</span>
+              </button>
+              <button id="panicButton" class="action-button" type="button" title="Release all notes">Panic</button>
+            </div>
+            <p id="audioStatus" role="status">Loading sound…</p>
+          </section>
+          <section class="recording-panel" aria-labelledby="recordTitle">
+            <div class="recording-heading">
+              <h2 id="recordTitle">Record</h2>
+              <button id="openRecordings" class="action-button" type="button" aria-haspopup="dialog">
+                <svg class="control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h7l2 3h9v10H3z"/></svg><span>Recordings</span>
+              </button>
+            </div>
+            <div class="recording-controls" role="group" aria-label="Recording type">
+              <button class="action-button record-button" data-record="audio" aria-label="Record audio" type="button"><span class="record-mark" aria-hidden="true"></span><span>Audio</span></button>
+              <button class="action-button record-button" data-record="midi" aria-label="Record MIDI" type="button"><span class="record-mark" aria-hidden="true"></span><span>MIDI</span></button>
+              <button class="action-button record-button" data-record="both" aria-label="Record audio and MIDI" type="button"><span class="record-mark" aria-hidden="true"></span><span>Both</span></button>
+            </div>
+            <div class="recording-status">
+              <span id="recordingStatus" role="status"></span><span id="recordingTime"></span>
+            </div>
+          </section>
         </div>
       </section>
 

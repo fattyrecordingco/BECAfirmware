@@ -6,7 +6,7 @@ BECA Phone Control is an installable web instrument and controller for phones, t
 
 ## Record a take
 
-Choose **Audio**, **MIDI**, or **Both** in the play controls. Audio and Both turn on the phone's synth. Tap **Stop** to save the take, then open **Recordings** with the folder button. Play back a WAV, download it or the MIDI file separately, or use **ZIP** to download both together. The native Apple app saves to **Files › On My iPhone/iPad › BECA › Recordings**. The web app uses your browser's downloads.
+Use **Listen** to toggle phone audio and **Test** to preview the preset. Under **Record**, choose **Audio**, **MIDI**, or **Both**. Audio and Both turn on the phone's synth. Tap **Stop** to save the take, then open **Recordings**. Play back a WAV, download it or the MIDI file separately, or use **ZIP** to download both together. The native Apple app saves to **Files › On My iPhone/iPad › BECA › Recordings**. The web app uses your browser's downloads.
 
 WAVs are stereo 24-bit PCM at 44.1 kHz, sampled from the phone synth after its volume control and effects. The hardware AUX jack, microphone and other apps are outside this audio path. MIDI files retain incoming note, velocity, channel and control change messages in order with the app's playback timing. A held note is released at the end of the file. **Test sound** also works as a recording source without a connected BECA.
 

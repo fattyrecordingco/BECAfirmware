@@ -1,4 +1,4 @@
-const CACHE_NAME = "beca-phone-v1.8.0";
+const CACHE_NAME = "beca-phone-v1.8.0-sound-controls";
 const APP_SHELL = [
   "./",
   "./index.html",

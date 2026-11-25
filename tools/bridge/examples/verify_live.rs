@@ -19,6 +19,7 @@ fn main() -> Result<()> {
     let midi_name = args
         .get(2)
         .ok_or_else(|| anyhow!("Provide a MIDI loopback port"))?;
+    let midi_only = args.iter().skip(3).any(|arg| arg == "--midi-only");
     let input = MidiInput::new("BECA verification")?;
     let port = input
         .ports()
@@ -67,31 +68,37 @@ fn main() -> Result<()> {
         Ok(reply)
     };
     let saved = command("STATE")?;
-    let sound = command("SYNTH")?;
+    let sound = (!midi_only).then(|| command("SYNTH")).transpose()?;
     let run = (|| -> Result<()> {
-        let params = command("PARAMS")?;
-        ensure!(
-            params["output_modes"]
-                .as_array()
-                .is_some_and(|p| p.len() == 4),
-            "Combined output missing"
-        );
+        let output = if midi_only { 1 } else { 3 };
         command("SET mute 1")?;
-        command("SET master 0.025")?;
-        command("SET outputmode 3")?;
+        if !midi_only {
+            let params = command("PARAMS")?;
+            ensure!(
+                params["output_modes"].get(3).is_some(),
+                "Combined output missing"
+            );
+            command("SET master 0.025")?;
+            command("SET bright 110")?;
+            command("SET vs 180")?;
+            command("SET vi 170")?;
+        }
+        command(&format!("SET outputmode {output}"))?;
         command("SET mode 0")?;
         command("SET daw_sync 0")?;
         command("SET clock 0")?;
         command("SET rest 0")?;
         command("SET bpm 180")?;
-        command("SET bright 110")?;
-        command("SET vs 180")?;
-        command("SET vi 170")?;
         command("SET mute 0")?;
-        command("SYNTH_TEST")?;
+        if midi_only {
+            thread::sleep(Duration::from_secs(2));
+        } else {
+            command("SYNTH_TEST")?;
+        }
         let mut led_checks = vec![];
         let mut worst_ms = 0u128;
-        for effect in 0..10 {
+        let effect_count = if midi_only { 0 } else { 10 };
+        for effect in 0..effect_count {
             command(&format!("SET fx {effect}"))?;
             let mut frames = BTreeSet::new();
             let mut nonzero = false;
@@ -124,10 +131,12 @@ fn main() -> Result<()> {
             led_checks.push(json!({"effect":effect,"distinct_frames":frames.len()}));
         }
         ensure!(
-            command("STATE")?["outputmode"] == 3,
-            "Combined output changed during live edits"
+            command("STATE")?["outputmode"] == output,
+            "Output mode changed during the test"
         );
-        command("SYNTH_TEST")?;
+        if !midi_only {
+            command("SYNTH_TEST")?;
+        }
         let before = received.lock().unwrap().clone();
         let notes: Vec<_> = before
             .iter()
@@ -135,11 +144,11 @@ fn main() -> Result<()> {
             .collect();
         ensure!(
             notes.iter().any(|p| p[0] == 0x92),
-            "No plant notes reached split 1"
+            "No clocked notes reached split 1"
         );
         ensure!(
             notes.iter().any(|p| p[0] == 0x93),
-            "No plant notes reached split 2"
+            "No clocked notes reached split 2"
         );
         for p in notes.iter().filter(|p| p[0] == 0x92) {
             ensure!(
@@ -216,14 +225,19 @@ fn main() -> Result<()> {
         ensure!(held.is_empty(), "Routed notes were left held: {held:?}");
         println!(
             "{}",
-            json!({"led_effects":led_checks,"control_response_ms_max":worst_ms,"loopback_packets":all.len(),"plant_note_ons":notes.len(),"held_notes_after_panic":held.len(),"combined_aux_test":true,"midi_drums":true})
+            json!({"led_effects":led_checks,"led_control_response_ms_max":(!midi_only).then_some(worst_ms),"loopback_packets":all.len(),"melodic_note_ons":notes.len(),"held_notes_after_panic":held.len(),"combined_aux_test":!midi_only,"midi_drums":true})
         );
         Ok(())
     })();
     let restore = (|| -> Result<()> {
         command("SET mute 1")?;
-        for key in ["master", "cutoff"] {
-            command(&format!("SET {key} {}", sound[key]))?;
+        if let Some(sound) = sound {
+            for key in ["master", "cutoff"] {
+                command(&format!("SET {key} {}", sound[key]))?;
+            }
+            for key in ["bright", "vs", "vi", "pal", "fx"] {
+                command(&format!("SET {key} {}", saved[key]))?;
+            }
         }
         for key in [
             "mode",
@@ -231,11 +245,6 @@ fn main() -> Result<()> {
             "clock",
             "rest",
             "bpm",
-            "bright",
-            "vs",
-            "vi",
-            "pal",
-            "fx",
             "drumsel",
             "outputmode",
         ] {
@@ -247,6 +256,6 @@ fn main() -> Result<()> {
     bridge.stop()?;
     restore?;
     run?;
-    println!("PASS: real device, shared serial control, LED frames, MIDI loopback splits and cleanup. Settings restored.");
+    println!("PASS: real device, shared serial control, MIDI loopback splits and cleanup. Settings restored.");
     Ok(())
 }

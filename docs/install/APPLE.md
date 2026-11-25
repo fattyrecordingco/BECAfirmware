@@ -52,6 +52,15 @@ If this release lists a macOS desktop DMG, choose **Apple Silicon / M-series** f
 3. For the desktop USB app, connect BECA with a data cable and use Setup. For the native Apple app, follow its Wi-Fi and native MIDI connection controls. The release identifies which app each package contains.
 4. Read the package's signing/notarization status. If macOS blocks an unsigned or unnotarized package, keep its protections enabled and use the Safari Wi-Fi instrument instead. A successful build is not notarization.
 
+### USB serial MIDI into Ableton Live
+
+1. Open the BECA desktop app and connect the unit over USB. Close Arduino Serial Monitor, browser USB sessions and any Max device that has opened BECA's serial port. If Setup cannot see the device, try a data cable and another port. If macOS sees the CH340 adapter but exposes no USB serial port, check the [WCH macOS driver](https://www.wch-ic.com/downloads/CH341SER_MAC_ZIP.html).
+2. In **Setup → MIDI routing**, choose **BECA (virtual MIDI)** for an enabled split, with **Input ch → All**, **Output ch → Keep**, and the full **0–127** note range. Start the MIDI bridge and keep the app open. In **Performance**, confirm **Serial MIDI** or **Serial MIDI + Aux**. The bridge creates a CoreMIDI source named **BECA** while it runs.
+3. In Live, enable **Track** for the **BECA** input in **Settings → Link, Tempo & MIDI**. On a MIDI track, choose **BECA** under **MIDI From**, load an instrument and set monitoring to **In** or arm the track with **Auto**. If the source is missing, start the bridge first and reopen Live. [Ableton MIDI settings](https://help.ableton.com/hc/en-us/articles/209774205-Live-s-MIDI-Settings)
+4. For a routing check, use **Notes**, **Clock → Internal**, **Follow DAW clock** off and outputs unmuted. Confirm that Live's MIDI input meter moves or record a short MIDI clip. Then check for movement on BECA's plant scope with the electrodes connected before testing **Plant** clock.
+
+You can also route to Apple's **IAC Driver**. Bring a bus online in Audio MIDI Setup, select that bus as the BECA split destination, and use the same bus as Live's input. Keep the track's output away from that bus. [Apple IAC setup](https://support.apple.com/guide/audio-midi-setup/transfer-midi-information-between-apps-ams1013/mac)
+
 ## Troubleshooting
 
 - **Safari cannot load BECA:** join the correct Wi-Fi, stay on a network without internet if prompted, and type `http://192.168.4.1/play/` on the setup AP. On a shared network, use its actual current IP rather than an old saved address.

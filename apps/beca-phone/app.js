@@ -266,8 +266,8 @@ function updateAudioStatus() {
     return;
   }
   const active = phoneAudio.enabled;
-  $("#listenButton span").textContent = active ? "Stop listening" : "Listen";
-  $("#listenButton").setAttribute("aria-pressed", String(active));
+  const listen = $("#listenButton");
+  if (listen.getAttribute("aria-pressed") !== String(active)) listen.setAttribute("aria-pressed", String(active));
   const status = active
     ? (transport.connected ? "Phone audio on" : "Preview audio on")
     : "Phone audio off";
